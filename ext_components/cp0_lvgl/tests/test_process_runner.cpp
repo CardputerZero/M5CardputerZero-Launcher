@@ -214,7 +214,14 @@ int main()
         &huge_input, {}, &cancel, 1000);
     assert(closed_stdin.exit_code == 0);
     assert(sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE));
-    timespec zero{0, 0}; assert(sigtimedwait(&pipe_set, nullptr, &zero) == SIGPIPE);
+#if defined(__APPLE__)
+    int consumed_signal = 0;
+    assert(sigwait(&pipe_set, &consumed_signal) == 0);
+    assert(consumed_signal == SIGPIPE);
+#else
+    timespec zero{0, 0};
+    assert(sigtimedwait(&pipe_set, nullptr, &zero) == SIGPIPE);
+#endif
     assert(pthread_sigmask(SIG_SETMASK, &old_set, nullptr) == 0);
 
     std::string secret_input = "secret\n";

@@ -1,7 +1,7 @@
 #include "hal_lvgl_bsp.h"
 #include "lvgl/lvgl.h"
 
-#include <linux/input.h>
+#include "input_keys.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>

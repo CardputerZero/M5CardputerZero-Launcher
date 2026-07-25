@@ -13,7 +13,7 @@
 #include "lvgl/src/drivers/sdl/lv_sdl_private.h"
 #include "lvgl/src/drivers/sdl/lv_sdl_window.h"
 
-#include <linux/input.h>
+#include "input_keys.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,10 +45,17 @@ __attribute__((weak)) void ui_global_hint_on_key(const struct key_item *elm)
 }
 
 static cp0_keyboard_key_handler_t global_key_handler;
+typedef int (*cp0_sdl_keyboard_filter_t)(const struct key_item *item);
+static cp0_sdl_keyboard_filter_t keyboard_filter;
 
 void cp0_keyboard_set_global_key_handler(cp0_keyboard_key_handler_t handler)
 {
     global_key_handler = handler;
+}
+
+void cp0_sdl_keyboard_set_filter(cp0_sdl_keyboard_filter_t filter)
+{
+    keyboard_filter = filter;
 }
 
 static uint32_t cp0_evdev_process_key(uint16_t code)
@@ -462,7 +469,14 @@ static void cp0_sdl_keyboard_read(lv_indev_t *indev, lv_indev_data_t *data)
     struct key_item *elm = cp0_keyboard_queue_pop();
     if (elm) {
 
-        int swallowed = ui_screensaver_filter_key(elm);
+        int swallowed = keyboard_filter
+            ? keyboard_filter(elm)
+            : ui_screensaver_filter_key(elm);
+        if (getenv("EMU_DEBUG_INPUT") != NULL)
+            fprintf(stderr,
+                    "[EMU] Keyboard filter key=%u state=%d handler=%s consumed=%d\n",
+                    elm->key_code, elm->key_state,
+                    keyboard_filter ? "app" : "fallback", swallowed);
         if (!swallowed) {
             lv_obj_t *root = lv_screen_active();
             if (root != NULL)

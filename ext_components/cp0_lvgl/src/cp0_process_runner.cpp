@@ -80,11 +80,21 @@ Result run(std::vector<std::string> argv, const std::string *input, Output outpu
         int count = 0;
         getgrouplist(user_name.c_str(), gid, nullptr, &count);
         if (count > 0) {
+#if defined(__APPLE__)
+            std::vector<int> native_groups(count);
+            if (getgrouplist(user_name.c_str(), static_cast<int>(gid),
+                             native_groups.data(), &count) < 0) {
+                result.exit_code = -EINVAL; return result;
+            }
+            native_groups.resize(count);
+            groups.assign(native_groups.begin(), native_groups.end());
+#else
             groups.resize(count);
             if (getgrouplist(user_name.c_str(), gid, groups.data(), &count) < 0) {
                 result.exit_code = -EINVAL; return result;
             }
             groups.resize(count);
+#endif
         }
     }
     int in[2] = {-1, -1}, out[2] = {-1, -1};
@@ -212,7 +222,12 @@ Result run(std::vector<std::string> argv, const std::string *input, Output outpu
     finish_input();
     if (sigpipe_blocked) {
         if (!sigpipe_was_pending && sigpending(&pending) == 0 && sigismember(&pending, SIGPIPE)) {
+#if defined(__APPLE__)
+            int consumed_signal = 0;
+            sigwait(&set, &consumed_signal);
+#else
             timespec zero{0, 0}; sigtimedwait(&set, nullptr, &zero);
+#endif
         }
         pthread_sigmask(SIG_SETMASK, &old, nullptr);
     }

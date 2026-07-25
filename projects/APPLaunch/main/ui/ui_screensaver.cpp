@@ -82,6 +82,14 @@ void overlay_delete_cb(lv_event_t *event) noexcept
 int timeout_seconds() noexcept
 {
     try {
+#if defined(HAL_PLATFORM_SDL)
+    if (const char *override_value = std::getenv("EMU_SCREENSAVER_TIMEOUT_SECONDS")) {
+        char *end = nullptr;
+        const long seconds = std::strtol(override_value, &end, 10);
+        if (end != override_value && *end == '\0' && seconds > 0 && seconds <= 3600)
+            return static_cast<int>(seconds);
+    }
+#endif
     bool succeeded = false;
     std::string response;
     cp0_signal_config_api({"GetInt", "dark_time", "30"},

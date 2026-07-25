@@ -3,7 +3,8 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 binary="${TMPDIR:-/tmp}/cp0_lvgl_test_async_utils.$$"
-trap 'rm -f "$binary"' EXIT HUP INT TERM
+init_plan_object="${TMPDIR:-/tmp}/cp0_lvgl_test_init_plan.$$"
+trap 'rm -f "$binary" "$init_plan_object"' EXIT HUP INT TERM
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
     -I"$root/src" "$root/tests/test_c_api_boundary.cpp" -o "$binary"
@@ -70,9 +71,10 @@ trap 'rm -f "$binary"' EXIT HUP INT TERM
     "$root/tests/test_signal_registration.cpp" -o "$binary"
 "$binary"
 
+"${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
+    -I"$root/src" -c "$root/src/cp0_init_plan.c" -o "$init_plan_object"
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
-    -I"$root/src" \
-    "$root/src/cp0_init_plan.c" \
+    -I"$root/src" "$init_plan_object" \
     "$root/tests/test_init_plan.cpp" -o "$binary"
 "$binary"
 
@@ -195,9 +197,11 @@ trap 'rm -f "$binary"' EXIT HUP INT TERM
     -I"$root/src" "$root/tests/test_sudo_timer_callback_boundary.cpp" -o "$binary"
 "$binary"
 
-"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
-    -I"$root/src" "$root/tests/test_external_process_group.cpp" -o "$binary"
-"$binary"
+if [ "$(uname -s)" = "Linux" ]; then
+    "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
+        -I"$root/src" "$root/tests/test_external_process_group.cpp" -o "$binary"
+    "$binary"
+fi
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
     -I"$root/src" \
@@ -402,11 +406,13 @@ trap 'rm -f "$binary"' EXIT HUP INT TERM
     "$root/tests/test_process_runner.cpp" -o "$binary"
 "$binary"
 
-"${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
-    -I"$root/include" -I"$root/src/cp0" \
-    "$root/src/cp0/cp0_keyboard_keymap.c" \
-    "$root/tests/test_keyboard_keymap.c" -lxkbcommon -o "$binary"
-"$binary"
+if [ "$(uname -s)" = "Linux" ]; then
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
+        -I"$root/include" -I"$root/src/cp0" \
+        "$root/src/cp0/cp0_keyboard_keymap.c" \
+        "$root/tests/test_keyboard_keymap.c" -lxkbcommon -o "$binary"
+    "$binary"
+fi
 
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -pthread \
     -I"$root/include" -I"$root/src" \
