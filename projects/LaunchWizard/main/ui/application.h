@@ -1,8 +1,11 @@
-#pragma once
+#ifndef LAUNCH_WIZARD_APPLICATION_H
+#define LAUNCH_WIZARD_APPLICATION_H
 
-#ifdef __cplusplus
 int lvgl_main(void);
-void ui_init(void);
+void launch_wizard_register_event(void);
+bool launch_wizard_ui_setup(void);
+bool launch_wizard_should_quit(void);
+void launch_wizard_ui_teardown(void);
 
 // Returns true if the first-boot OOBE wizard should be shown on this device.
 // Distinguishes a factory (unconfigured) image from a device the user already
@@ -10,9 +13,4 @@ void ui_init(void);
 bool launch_wizard_should_run(void);
 int launch_wizard_finish_configured_system(void);
 
-extern "C" {
-#endif
-
-#ifdef __cplusplus
-}
-#endif
+#endif  // LAUNCH_WIZARD_APPLICATION_H

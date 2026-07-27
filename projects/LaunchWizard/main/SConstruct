@@ -5,7 +5,8 @@ with open(env["PROJECT_TOOL_S"]) as f:
     exec(f.read())
 
 SRCS = Glob("src/*.c*")
-INCLUDE = [ADir("."), ADir("include")]
+SRCS += append_srcs_dir(ADir("ui"))
+INCLUDE = [ADir("."), ADir("ui")]
 PRIVATE_INCLUDE = []
 REQUIREMENTS = ["cp0_lvgl", "lvgl_component", "pthread", "Sigslot", "eventpp", "Miniaudio", "RadioLib"]
 STATIC_LIB = []
@@ -15,8 +16,6 @@ DEFINITIONS_PRIVATE = []
 LDFLAGS = []
 LINK_SEARCH_PATH = []
 STATIC_FILES = []
-
-SRCS += append_srcs_dir(ADir("ui"))
 
 lvgl_component = list(filter(lambda x: x["target"] == "lvgl_component", env["COMPONENTS"]))[0]
 toolchain_sysroot = os.environ.get("CONFIG_TOOLCHAIN_SYSROOT", "") or "/"
