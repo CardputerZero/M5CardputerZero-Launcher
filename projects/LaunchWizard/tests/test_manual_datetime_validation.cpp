@@ -21,6 +21,7 @@ int main()
 
     bool passed = true;
     passed &= expect(true, "2026-07-24", "00:00");
+    passed &= expect(true, "2026-06-01", "20:30");
     passed &= expect(true, "2024-02-29", "23:59");
     passed &= expect(true, "2000-02-29", "12:00");
     passed &= expect(false, "2023-02-29", "12:00");
