@@ -13,11 +13,18 @@
 #include <time.h>
 
 static cp0_keyboard_key_handler_t global_key_handler;
+static int lvgl_keypad_intercept;
 
 void cp0_keyboard_set_global_key_handler(cp0_keyboard_key_handler_t handler)
 {
     global_key_handler = handler;
 }
+
+void cp0_keyboard_set_lvgl_keypad_intercept(int intercept)
+{ lvgl_keypad_intercept = intercept != 0; }
+
+int cp0_keyboard_get_lvgl_keypad_intercept(void)
+{ return lvgl_keypad_intercept; }
 
 int cp0_process_run_sudo(const char *password, const char *const *argv)
 { (void)password; (void)argv; return -1; }

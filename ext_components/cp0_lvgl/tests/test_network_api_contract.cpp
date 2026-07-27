@@ -39,6 +39,10 @@ void test_request_contract()
     assert(cp0::network::parse_api_request({"Connect", "office", "secret"}, request));
     assert(request.password == "secret");
     assert(!cp0::network::parse_api_request({"Connect", "office", "secret", "junk"}, request));
+    assert(cp0::network::parse_api_request({"ConnectHidden", "hidden", "secret"}, request));
+    assert(request.command == ApiCommand::ConnectHidden && request.ssid == "hidden" &&
+           request.password == "secret");
+    assert(!cp0::network::parse_api_request({"ConnectHidden", ""}, request));
 
     assert(!cp0::network::parse_api_request({"ProfileForget", ""}, request));
     assert(!cp0::network::parse_api_request({"ProfileExists"}, request));

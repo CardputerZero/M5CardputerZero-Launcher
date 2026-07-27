@@ -39,8 +39,9 @@ public:
             report(callback, -1, cp0::screenshot::invalid_request_message());
             return;
         }
-        int ret = save_to_bmp(request.directory.c_str());
-        report(callback, ret, ret == 0 ? "screenshot saved\n" : "screenshot failed\n");
+        std::string filename;
+        int ret = save_to_bmp(request.directory.c_str(), filename);
+        report(callback, ret, ret == 0 ? filename : "screenshot failed\n");
     }
 
 private:
@@ -49,8 +50,9 @@ private:
         cp0::callback::invoke(callback, code, data);
     }
 
-    static int save_to_bmp(const char *dir)
+    static int save_to_bmp(const char *dir, std::string &saved_path)
     {
+        saved_path.clear();
         const char *fbdev = getenv("APPLAUNCH_LINUX_FBDEV_DEVICE");
         if (!fbdev) fbdev = "/dev/fb0";
 
@@ -167,6 +169,7 @@ private:
         if (write_failed) return -5;
 
         printf("[SCREENSHOT] Saved: %s (%dx%d %dbpp)\n", filename.c_str(), w, h, bpp);
+        saved_path = filename;
         return 0;
     }
 };

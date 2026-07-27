@@ -128,6 +128,21 @@ private:
     std::string password_;
 };
 
+class SetupWifiSsidModel
+{
+public:
+    static constexpr std::size_t MAX_SSID_BYTES = 32;
+
+    void reset() { ssid_.clear(); }
+    bool append(const std::string &text);
+    bool erase_last();
+    bool can_submit() const { return !ssid_.empty(); }
+    const std::string &ssid() const { return ssid_; }
+
+private:
+    std::string ssid_;
+};
+
 class SetupWifiFeedbackModel
 {
 public:

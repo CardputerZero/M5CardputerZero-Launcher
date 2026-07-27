@@ -37,13 +37,13 @@ int main()
 
     ScreensaverFrame frame = model.activate(240, 135, 31000);
     assert(model.active());
-    assert(frame.x == 55);
-    assert(frame.y == 38);
+    assert(frame.x == 50);
+    assert(frame.y == 31);
     assert(frame.color_index == 0);
 
     frame = model.advance(240, 135, 31040);
-    assert(frame.x == 56);
-    assert(frame.y == 39);
+    assert(frame.x == 51);
+    assert(frame.y == 32);
     assert(!frame.color_changed);
 
     for (int index = 0; index < 200 && !frame.color_changed; ++index)

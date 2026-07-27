@@ -46,6 +46,9 @@ void *keyboard_read_thread(void *argv);
 int cp0_keyboard_inject(uint32_t key_code, int key_state, uint32_t mods);
 int cp0_keyboard_inject_text(const char *utf8);
 void cp0_keyboard_set_global_key_handler(cp0_keyboard_key_handler_t handler);
+/* Keep LV_EVENT_KEYBOARD delivery while suppressing the LVGL keypad group path. */
+void cp0_keyboard_set_lvgl_keypad_intercept(int intercept);
+int cp0_keyboard_get_lvgl_keypad_intercept(void);
 const char *kbd_state_name(int state);
 void kbd_dump_keymap_table(void);
 #ifdef __cplusplus

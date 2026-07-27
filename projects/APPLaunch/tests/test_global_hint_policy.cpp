@@ -23,6 +23,12 @@
 #ifndef KEY_BRIGHTNESSDOWN
 #define KEY_BRIGHTNESSDOWN 224
 #endif
+#ifndef KEY_SYSRQ
+#define KEY_SYSRQ 99
+#endif
+#ifndef KEY_PRINT
+#define KEY_PRINT 210
+#endif
 
 int main()
 {
@@ -41,6 +47,11 @@ int main()
            GlobalHintAction::NONE);
     assert(policy.action_for({KEY_S, nullptr, false, true, true, true}) ==
            GlobalHintAction::NONE);
+    assert(policy.action_for({KEY_SYSRQ, "Print", true}) ==
+           GlobalHintAction::TAKE_SCREENSHOT);
+    assert(policy.action_for({KEY_PRINT, "Print", true}) ==
+           GlobalHintAction::TAKE_SCREENSHOT);
+    assert(policy.action_for({KEY_SYSRQ, "Print", false}) == GlobalHintAction::NONE);
 
     assert(policy.action_for({KEY_LEFTSHIFT, nullptr, true}) ==
            GlobalHintAction::SHOW_LOCK_HINT);
@@ -63,4 +74,9 @@ int main()
            "Screenshot failed");
     assert(std::string(GlobalHintScreenshotPolicy::result_message(0, -1)) ==
            "Screenshot failed");
+    assert(GlobalHintScreenshotPolicy::saved_file_message(
+               "/home/test/Screenshots/scr_20260727_151000.bmp", "/home/test") ==
+           "Saved: scr_20260727_151000.bmp\n~/Screenshots");
+    assert(GlobalHintScreenshotPolicy::saved_file_message("capture.bmp", "/home/test") ==
+           "Screenshot saved\ncapture.bmp");
 }

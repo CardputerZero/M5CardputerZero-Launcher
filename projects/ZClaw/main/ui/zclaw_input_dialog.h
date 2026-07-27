@@ -38,6 +38,7 @@ public:
 private:
     static void dialog_deleted(lv_event_t *event);
     void open(const FontManager *fonts);
+    void keep_single_line_cursor_visible();
     void release_dialog();
 
     lv_obj_t *dialog_ = nullptr;

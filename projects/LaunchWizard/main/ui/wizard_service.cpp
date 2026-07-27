@@ -16,7 +16,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifndef LAUNCH_WIZARD_DRY_RUN
@@ -569,23 +571,48 @@ std::string apply_ssh(bool enabled)
 }
 
 std::string WizardService::connect_wifi(const std::string &ssid, const std::string &password,
-                                        std::string *connected_ip)
+                                        std::string *connected_ip, bool hidden)
 {
     if (ssid.empty())
         return "";
 #if LAUNCH_WIZARD_DRY_RUN
-    print_command({"cp0_wifi_connect", ssid, password.empty() ? "<saved/open>" : "<password>"},
-                  nullptr);
+    print_command({hidden ? "nmcli-hidden-wifi-connect" : "cp0_wifi_connect", ssid,
+                   password.empty() ? "<saved/open>" : "<password>"}, nullptr);
     if (connected_ip)
         *connected_ip = "192.168.1.100";
 #else
     if (cp0_wifi_radio_set_enabled(1) != 0)
         return "Wi-Fi radio could not be enabled";
-    if (cp0_wifi_connect(ssid.c_str(), password.empty() ? nullptr : password.c_str()) != 0)
+    if (hidden) {
+        std::vector<std::string> args = {
+            "nmcli", "--wait", "20", "dev", "wifi", "connect", ssid,
+        };
+        if (!password.empty())
+            args.insert(args.end(), {"password", password});
+        args.insert(args.end(), {"hidden", "yes"});
+        const CommandResult result = run_command(args);
+        if (result.code != 0)
+            return result.output.empty() ? "Hidden Wi-Fi connect failed" : result.output;
+    } else if (cp0_wifi_connect(ssid.c_str(), password.empty() ? nullptr : password.c_str()) != 0) {
         return "Wi-Fi connect failed";
+    }
 
+    // Hidden connections are created directly through nmcli, while
+    // cp0_wifi_status_read() serves a cache refreshed every three seconds.
+    // Give that cache time to observe the successful NetworkManager change.
     cp0_wifi_status_t status{};
-    if (cp0_wifi_status_read(&status) != 0 || !status.connected || ssid != status.ssid)
+    const auto status_deadline =
+        std::chrono::steady_clock::now() + std::chrono::seconds(6);
+    bool active = false;
+    do {
+        status = {};
+        active = cp0_wifi_status_read(&status) == 0 && status.connected &&
+                 ssid == status.ssid;
+        if (active)
+            break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    } while (std::chrono::steady_clock::now() < status_deadline);
+    if (!active)
         return "Wi-Fi did not become active";
     if (connected_ip)
         *connected_ip = status.ip;
@@ -666,6 +693,7 @@ std::string WizardService::apply(
     const bool network_skipped = g.network_skipped;
     const std::string wifi_ssid = g.wifi_ssid;
     const std::string wifi_password = g.wifi_password;
+    const bool wifi_hidden = g.wifi_hidden;
     const bool ssh_enabled = g.ssh_enabled;
 
 #if !LAUNCH_WIZARD_DRY_RUN
@@ -691,7 +719,8 @@ std::string WizardService::apply(
         if (!ethernet_error.empty())
             return ethernet_error;
     } else if (!network_skipped && !g.wifi_connected && !wifi_ssid.empty()) {
-        std::string wifi_error = WizardService::connect_wifi(wifi_ssid, wifi_password);
+        std::string wifi_error = WizardService::connect_wifi(
+            wifi_ssid, wifi_password, nullptr, wifi_hidden);
         if (!wifi_error.empty()) return wifi_error;
     }
 

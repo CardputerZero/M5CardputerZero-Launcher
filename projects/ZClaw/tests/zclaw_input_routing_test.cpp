@@ -13,6 +13,10 @@ int main()
 {
     using zclaw::InputMode;
     using zclaw::InputSubmissionAction;
+    assert(!zclaw::input_is_single_line(InputMode::Chat));
+    assert(zclaw::input_is_single_line(InputMode::SetupEdit));
+    assert(zclaw::input_is_single_line(InputMode::ProviderEdit));
+    assert(zclaw::input_is_single_line(InputMode::PairingCode));
     zclaw::InputSubmission submission =
         zclaw::input_submission(InputMode::Chat, "hello");
     assert(submission.action == InputSubmissionAction::SendChat);

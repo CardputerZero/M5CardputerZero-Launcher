@@ -357,22 +357,25 @@ bool queue_has_data()
 
 void web_keyboard_read(lv_indev_t *, lv_indev_data_t *data)
 {
+    data->key = 0;
     data->state = LV_INDEV_STATE_RELEASED;
     data->continue_reading = false;
 
     pthread_mutex_lock(&keyboard_mutex);
     if (!STAILQ_EMPTY(&keyboard_queue)) {
+        const int intercept = cp0_keyboard_get_lvgl_keypad_intercept();
         key_item *elm = STAILQ_FIRST(&keyboard_queue);
         STAILQ_REMOVE_HEAD(&keyboard_queue, entries);
 
         lv_obj_t *root = lv_screen_active();
         if (root) lv_obj_send_event(root, static_cast<lv_event_code_t>(LV_EVENT_KEYBOARD), elm);
 
-        data->key = linux_key_to_lv(elm->key_code);
-        if (data->key) {
-            data->state = static_cast<lv_indev_state_t>(elm->key_state);
-            data->continue_reading = !STAILQ_EMPTY(&keyboard_queue);
+        if (!intercept) {
+            data->key = linux_key_to_lv(elm->key_code);
+            if (data->key)
+                data->state = static_cast<lv_indev_state_t>(elm->key_state);
         }
+        data->continue_reading = !STAILQ_EMPTY(&keyboard_queue);
         std::free(elm);
     }
     pthread_mutex_unlock(&keyboard_mutex);

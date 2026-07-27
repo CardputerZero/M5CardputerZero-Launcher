@@ -7,6 +7,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 enum class GlobalHintAction {
     NONE,
@@ -47,4 +48,7 @@ public:
         return should_save(ensure_directory_code) && save_code == 0
             ? "Saved to ~/Screenshots" : "Screenshot failed";
     }
+
+    static std::string saved_file_message(const std::string &path,
+                                          const std::string &home_directory);
 };

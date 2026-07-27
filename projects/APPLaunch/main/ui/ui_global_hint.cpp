@@ -41,6 +41,7 @@
 #include "input_keys.h"
 
 #include <string>
+#include <utility>
 
 #define MEDIA_OSD_STEP      5
 
@@ -114,11 +115,19 @@ void on_key(const struct key_item *elm) noexcept
             const std::string scr_dir = launcher_platform::path("home_dir") + "/Screenshots";
             const int ensure_result = ensure_screenshot_dir(scr_dir.c_str());
             int result = -1;
+            std::string saved_path;
             if (GlobalHintScreenshotPolicy::should_save(ensure_result))
-                cp0_signal_screenshot_api({"Save", scr_dir}, [&](int code, std::string) {
+                cp0_signal_screenshot_api({"Save", scr_dir}, [&](int code, std::string data) {
                     result = code;
+                    if (code == 0) saved_path = std::move(data);
                 });
-            show_hint(GlobalHintScreenshotPolicy::result_message(ensure_result, result));
+            if (ensure_result == 0 && result == 0 && !saved_path.empty()) {
+                const std::string message = GlobalHintScreenshotPolicy::saved_file_message(
+                    saved_path, launcher_platform::path("home_dir"));
+                show_hint(message.c_str());
+            } else {
+                show_hint(GlobalHintScreenshotPolicy::result_message(ensure_result, result));
+            }
             return;
         }
         case GlobalHintAction::SHOW_LOCK_HINT:

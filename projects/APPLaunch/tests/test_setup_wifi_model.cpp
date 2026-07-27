@@ -107,6 +107,15 @@ int main()
     assert(model.password().empty());
     assert(!model.can_submit());
 
+    SetupWifiSsidModel ssid;
+    assert(!ssid.can_submit());
+    assert(ssid.append("Hidden WiFi"));
+    assert(ssid.can_submit() && ssid.ssid() == "Hidden WiFi");
+    assert(ssid.erase_last() && ssid.ssid() == "Hidden WiF");
+    ssid.reset();
+    assert(!ssid.append(std::string(33, 'x')));
+    assert(!ssid.append("\n"));
+
     SetupWifiFeedbackModel feedback;
     assert(!feedback.pending());
     const auto first_feedback = feedback.begin();

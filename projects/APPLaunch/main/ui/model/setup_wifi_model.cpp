@@ -174,6 +174,25 @@ void SetupWifiPasswordModel::clear_password()
     secure_clear_password();
 }
 
+bool SetupWifiSsidModel::append(const std::string &text)
+{
+    if (text.empty() || ssid_.size() + text.size() > MAX_SSID_BYTES ||
+        !is_valid_utf8_text(text))
+        return false;
+    ssid_ += text;
+    return true;
+}
+
+bool SetupWifiSsidModel::erase_last()
+{
+    if (ssid_.empty()) return false;
+    std::size_t start = ssid_.size() - 1;
+    while (start > 0 && is_continuation(static_cast<unsigned char>(ssid_[start])))
+        --start;
+    ssid_.erase(start);
+    return true;
+}
+
 void SetupWifiPasswordModel::secure_clear_password()
 {
     volatile char *bytes = password_.data();
