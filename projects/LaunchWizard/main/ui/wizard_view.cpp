@@ -305,7 +305,7 @@ void render_account()
     add_key_hint(8, "ESC", 31, "BACK", kAccentAccount);
     add_key_hint(72, "ALT", 98, g.account_password_visible ? "HIDE" : "SHOW", kAccentAccount);
     add_key_hint(145, "OK", 164, "CONFIRM", kAccentAccount);
-    add_key_hint(244, "TAB", 268, "NEXT", kAccentAccount);
+    add_key_hint(232, "TAB", 256, "SWITCH", kAccentAccount);
 
     if (g.account_warning_visible) {
         add_rect(ui.screen_obj, 0, 0, kScreenWidth, kScreenHeight, 0x000000,
@@ -330,12 +330,13 @@ void render_network()
 {
     add_chrome(kAccentNetwork, 60);
     add_label(ui.screen_obj, "NETWORK", font_sm(), kAccentNetwork, 36, 38);
-    render_pill(ui.screen_obj, 36, 64, 132, "Wi-Fi", g.network_focus == 0, kAccentNetwork);
-    render_pill(ui.screen_obj, 36, 92, 132, "Ethernet", g.network_focus == 1, kAccentNetwork);
+    render_pill(ui.screen_obj, 36, 56, 132, "Wi-Fi", g.network_focus == 0, kAccentNetwork);
+    render_pill(ui.screen_obj, 36, 83, 132, "Ethernet", g.network_focus == 1, kAccentNetwork);
+    render_pill(ui.screen_obj, 36, 110, 132, "Next", g.network_focus == 2, kAccentNetwork);
 
     add_key_hint(14, "ESC", 38, "BACK", kAccentNetwork);
     add_key_hint(132, "OK", 156, "CONFIRM", kAccentNetwork);
-    add_key_hint(244, "TAB", 268, "SKIP", kAccentNetwork);
+    add_key_hint(232, "TAB", 256, "SWITCH", kAccentNetwork);
 }
 
 void render_ethernet_config()
@@ -499,7 +500,7 @@ void render_manual_time()
 
     add_key_hint(14, "ESC", 38, "BACK", kAccentTime);
     add_key_hint(132, "OK", 156, "CONFIRM", kAccentTime);
-    add_key_hint(244, "TAB", 268, "NEXT", kAccentTime);
+    add_key_hint(232, "TAB", 256, "SWITCH", kAccentTime);
 
     if (g.time_warning_visible) {
         add_rect(ui.screen_obj, 0, 0, kScreenWidth, kScreenHeight, 0x000000,
@@ -522,7 +523,7 @@ void render_ssh()
 
     add_key_hint(14, "ESC", 38, "BACK", kAccentSsh);
     add_key_hint(132, "OK", 156, "CONFIRM", kAccentSsh);
-    add_key_hint(244, "TAB", 268, "NEXT", kAccentSsh);
+    add_key_hint(232, "TAB", 256, "SWITCH", kAccentSsh);
 }
 
 void set_loading_arc_rotation(void *object, int32_t rotation)
@@ -858,7 +859,7 @@ void move_focus(int delta)
         render();
         break;
     case Screen::Network:
-        g.network_focus = (g.network_focus + delta + 2) % 2;
+        g.network_focus = (g.network_focus + delta + 3) % 3;
         render();
         break;
     case Screen::EthernetConfig:
@@ -899,14 +900,6 @@ void confirm_manual_time()
     std::string error;
     if (!launch_wizard::validate_manual_datetime(g.manual_date, g.manual_time, error)) {
         g.time_warning_message = error;
-        g.time_warning_visible = true;
-        render();
-        return;
-    }
-    const std::string apply_error = launch_wizard::WizardService::set_manual_time(
-        g.manual_date, g.manual_time);
-    if (!apply_error.empty()) {
-        g.time_warning_message = field_tail(apply_error, false, 32);
         g.time_warning_visible = true;
         render();
         return;
@@ -967,27 +960,25 @@ void handle_enter()
         break;
     }
     case Screen::Account:
-        if (g.account_focus < 2) {
-            ++g.account_focus;
-            g.form_error.clear();
-            render();
-        } else {
-            if (!validate_account_fields())
-                return;
-            go(Screen::Network);
-        }
+        if (!validate_account_fields())
+            return;
+        go(Screen::Network);
         break;
     case Screen::Network:
         if (g.network_focus == 0) {
             g.use_ethernet = false;
             g.network_skipped = false;
             enter_wifi_list();
-        } else {
+        } else if (g.network_focus == 1) {
             g.use_ethernet = true;
             g.network_skipped = false;
             g.ethernet_focus = 0;
             g.ethernet_error.clear();
             go(Screen::EthernetConfig);
+        } else {
+            g.network_skipped = true;
+            g.use_ethernet = false;
+            go(Screen::ManualTime);
         }
         break;
     case Screen::EthernetConfig:
@@ -1061,19 +1052,18 @@ void handle_enter()
     }
 }
 
-// TAB: NEXT / SKIP depending on the screen.
+// TAB only moves focus within forms that explicitly use it for switching.
 void handle_tab()
 {
     switch (g.screen) {
     case Screen::Account:
-        if (!validate_account_fields())
-            return;
-        go(Screen::Network);
+        g.account_focus = (g.account_focus + 1) % 3;
+        g.form_error.clear();
+        render();
         break;
     case Screen::Network:
-        g.network_skipped = true;
-        g.use_ethernet = false;
-        go(Screen::ManualTime);
+        g.network_focus = (g.network_focus + 1) % 3;
+        render();
         break;
     case Screen::EthernetConfig:
         g.ethernet_error = launch_wizard::validate_ethernet_config(g);
@@ -1087,11 +1077,12 @@ void handle_tab()
         handle_enter();
         break;
     case Screen::ManualTime:
-        confirm_manual_time();
+        g.time_focus = (g.time_focus + 1) % 2;
+        render();
         break;
     case Screen::Ssh:
-        g.ssh_enabled = g.ssh_focus == 0;
-        start_apply();
+        g.ssh_focus = (g.ssh_focus + 1) % 2;
+        render();
         break;
     default:
         break;
