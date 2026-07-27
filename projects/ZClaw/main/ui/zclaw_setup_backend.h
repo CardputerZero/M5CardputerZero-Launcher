@@ -18,6 +18,7 @@ public:
     virtual bool apply_config(UiConfig *config, const ProviderConfig &provider,
                               std::string *error) const = 0;
     virtual bool start_service(std::string *error) const = 0;
+    virtual bool restart_service(std::string *error) const = 0;
     virtual std::string generate_pairing_code() const = 0;
 };
 

@@ -55,6 +55,11 @@ bool LocalSetupBackend::start_service(std::string *error) const
     return cli_service(processes_).start_service(error);
 }
 
+bool LocalSetupBackend::restart_service(std::string *error) const
+{
+    return cli_service(processes_).restart_service(error);
+}
+
 std::string LocalSetupBackend::generate_pairing_code() const
 {
     return cli_service(processes_).generate_pairing_code();

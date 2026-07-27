@@ -46,6 +46,8 @@ SettingsPresentation present_setup(const ProviderConfig &provider)
         presentation.rows.push_back({"API Key", provider.api_key.empty() ? "Required" : "Set"});
     if (provider.family == "custom")
         presentation.rows.push_back({"API Model", provider.model.empty() ? "Required" : "Set"});
+    if (provider.family == "custom")
+        presentation.rows.push_back({"API Type", provider.wire_api});
     presentation.rows.push_back({"Confirm", "Quickstart"});
     return presentation;
 }
@@ -85,17 +87,17 @@ SettingsPresentation present_providers(const std::vector<ProviderConfig> &provid
 
 SettingsPresentation present_provider_detail(const ProviderConfig &provider)
 {
-    return {
-        "Provider",
-        "Enter / Del",
-        {
+    SettingsPresentation presentation = {
+        "Provider", "Enter / Del", {
             {"Alias", provider.alias},
             {"Family", provider.family},
             {"Model", provider.model},
             {"URI", provider.uri},
             {"API Key", provider.api_key.empty() ? "(empty)" : "set"},
-        },
-    };
+        }};
+    if (provider.family == "custom")
+        presentation.rows.push_back({"API Type", provider.wire_api});
+    return presentation;
 }
 
 SettingsPresentation present_setup_progress()

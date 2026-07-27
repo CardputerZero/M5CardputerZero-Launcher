@@ -31,6 +31,16 @@ bool SettingsPanel::create(lv_obj_t *parent, const FontManager *fonts)
                                    fonts_->font_12(), theme::kText);
     hint_label_ = widgets::label(bar, "Tab / Esc", 214, 5, 94, 10,
                                  fonts_->font_10(), theme::kDim, LV_TEXT_ALIGN_RIGHT);
+    rows_container_ = widgets::box(panel_, 0, 20, kScreenWidth, 150,
+                                   theme::kBackground);
+    lv_obj_add_flag(rows_container_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(rows_container_, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(rows_container_, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_style_width(rows_container_, 3, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_color(rows_container_, lv_color_hex(theme::kPurple),
+                              LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(rows_container_, LV_OPA_COVER, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(rows_container_, 1, LV_PART_SCROLLBAR);
     return true;
 }
 
@@ -79,15 +89,18 @@ void SettingsPanel::clear_rows()
     for (lv_obj_t *&value : values_)
         value = nullptr;
     row_count_ = 0;
+    if (rows_container_)
+        lv_obj_scroll_to_y(rows_container_, 0, LV_ANIM_OFF);
 }
 
 bool SettingsPanel::add_row(const std::string &title, const std::string &value)
 {
-    if (!panel_ || !fonts_ || row_count_ >= kMaximumRows)
+    if (!rows_container_ || !fonts_ || row_count_ >= kMaximumRows)
         return false;
     const int index = row_count_;
-    const lv_coord_t y = 32 + index * 28;
-    lv_obj_t *row = widgets::box(panel_, 12, y, 296, 26, theme::kPanel, 8);
+    const lv_coord_t y = 8 + index * 28;
+    lv_obj_t *row = widgets::box(rows_container_, 12, y, 296, 26,
+                                 theme::kPanel, 8);
     lv_obj_set_style_border_width(row, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(row, lv_color_hex(theme::kPanel),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -123,6 +136,9 @@ void SettingsPanel::update_selection(int selected_index)
                                         lv_color_hex(selected ? theme::kText : theme::kMuted),
                                         LV_PART_MAIN | LV_STATE_DEFAULT);
     }
+    if (selected_index >= 0 && selected_index < kMaximumRows &&
+        rows_[selected_index])
+        lv_obj_scroll_to_view(rows_[selected_index], LV_ANIM_ON);
 }
 
 void SettingsPanel::animation_completed(lv_anim_t *animation)
@@ -178,6 +194,7 @@ void SettingsPanel::release_panel()
     panel_ = nullptr;
     header_label_ = nullptr;
     hint_label_ = nullptr;
+    rows_container_ = nullptr;
     for (lv_obj_t *&row : rows_)
         row = nullptr;
     for (lv_obj_t *&value : values_)

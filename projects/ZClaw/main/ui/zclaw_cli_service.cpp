@@ -85,6 +85,17 @@ bool CliService::start_service(std::string *error) const
     return true;
 }
 
+bool CliService::restart_service(std::string *error) const
+{
+    const CommandResult result =
+        command_runner_(zeroclaw_command({"service", "restart"}));
+    if (result.ok())
+        return true;
+    if (error)
+        *error = "service restart failed:\n" + result.output;
+    return false;
+}
+
 std::string CliService::generate_pairing_code() const
 {
     for (int attempt = 0; attempt < 12; ++attempt) {
