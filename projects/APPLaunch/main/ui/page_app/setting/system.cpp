@@ -102,7 +102,7 @@ bool Help::build_page(UISetupPage &page)
     if (!add_line("Help", 0x58A6FF, launcher_fonts().get(
             "Montserrat-Bold.ttf", 16, LV_FREETYPE_FONT_STYLE_BOLD)) ||
         !add_line("Screenshot: PrtSc / Ctrl+Alt+S", 0xCCCCCC, &lv_font_montserrat_12) ||
-        !add_line("  Saved to ~/Screenshots", 0x888888, &lv_font_montserrat_10) ||
+        !add_line("  Saved to ~/Pictures/Screenshots", 0x888888, &lv_font_montserrat_10) ||
         !add_line("Home: Hold ESC 3s", 0xCCCCCC, &lv_font_montserrat_12) ||
         !add_line("Navigate: Arrow keys / OK / ESC", 0xCCCCCC, &lv_font_montserrat_12) ||
         !add_line("WiFi: Setting > WiFi > Scan", 0xCCCCCC, &lv_font_montserrat_12))

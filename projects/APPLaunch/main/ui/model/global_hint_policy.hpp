@@ -46,7 +46,7 @@ public:
     static const char *result_message(int ensure_directory_code, int save_code)
     {
         return should_save(ensure_directory_code) && save_code == 0
-            ? "Saved to ~/Screenshots" : "Screenshot failed";
+            ? "Saved to ~/Pictures/Screenshots" : "Screenshot failed";
     }
 
     static std::string saved_file_message(const std::string &path,

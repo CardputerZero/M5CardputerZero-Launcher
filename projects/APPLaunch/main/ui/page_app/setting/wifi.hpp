@@ -20,6 +20,7 @@ namespace setting {
 class WiFiListView
 {
 public:
+    ~WiFiListView();
     bool mount(UISetupPage &page);
     bool render(UISetupPage &page, const SetupWifiListSnapshot &snapshot);
     void unmount();
@@ -55,6 +56,7 @@ private:
 class WiFiPasswordView
 {
 public:
+    ~WiFiPasswordView();
     bool show(UISetupPage &page, const std::string &ssid);
     void update_password(const std::string &password);
     void toggle_password_visibility();
@@ -74,6 +76,7 @@ private:
 class WiFiSsidView
 {
 public:
+    ~WiFiSsidView();
     bool show(UISetupPage &page);
     void update_ssid(const std::string &ssid);
     void update_password(const std::string &password);

@@ -48,6 +48,11 @@ void commit_view(lv_obj_t *container, lv_obj_t *view)
 
 } // namespace
 
+WiFiListView::~WiFiListView()
+{
+    unmount();
+}
+
 void WiFiListView::reset_objects()
 {
     root_ = nullptr;
@@ -256,6 +261,11 @@ bool WiFi::show_forget_confirmation(UISetupPage &page, const std::string &ssid)
     return true;
 }
 
+WiFiPasswordView::~WiFiPasswordView()
+{
+    unmount();
+}
+
 void WiFiPasswordView::reset_objects()
 {
     cp0_keyboard_set_lvgl_keypad_intercept(0);
@@ -364,6 +374,11 @@ void WiFiPasswordView::set_hint(const char *text, uint32_t color)
     if (!hint_) return;
     lv_label_set_text(hint_, text ? text : "");
     lv_obj_set_style_text_color(hint_, lv_color_hex(color), LV_PART_MAIN);
+}
+
+WiFiSsidView::~WiFiSsidView()
+{
+    unmount();
 }
 
 void WiFiSsidView::reset_objects()
