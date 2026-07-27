@@ -69,14 +69,14 @@ int main()
     assert(GlobalHintScreenshotPolicy::should_save(0));
     assert(!GlobalHintScreenshotPolicy::should_save(-1));
     assert(std::string(GlobalHintScreenshotPolicy::result_message(0, 0)) ==
-           "Saved to ~/Screenshots");
+           "Saved to ~/Pictures/Screenshots");
     assert(std::string(GlobalHintScreenshotPolicy::result_message(-1, 0)) ==
            "Screenshot failed");
     assert(std::string(GlobalHintScreenshotPolicy::result_message(0, -1)) ==
            "Screenshot failed");
     assert(GlobalHintScreenshotPolicy::saved_file_message(
-               "/home/test/Screenshots/scr_20260727_151000.bmp", "/home/test") ==
-           "Saved: scr_20260727_151000.bmp\n~/Screenshots");
+               "/home/test/Pictures/Screenshots/scr_20260727_151000.bmp", "/home/test") ==
+           "Saved: scr_20260727_151000.bmp\n~/Pictures/Screenshots");
     assert(GlobalHintScreenshotPolicy::saved_file_message("capture.bmp", "/home/test") ==
            "Screenshot saved\ncapture.bmp");
 }

@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 python3 "$(dirname "$0")/test_store_cache_sync.py"
+python3 "$(dirname "$0")/test_wifi_view_lifecycle_contract.py"
 PYTHONPATH="$(dirname "$0")/..${PYTHONPATH:+:$PYTHONPATH}" \
     python3 "$(dirname "$0")/test_config_default_file.py"
 build_dir="${TMPDIR:-/tmp}/applaunch-tests"

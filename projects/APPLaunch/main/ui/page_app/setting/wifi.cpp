@@ -46,6 +46,7 @@ WiFi::~WiFi()
 {
     shutdown();
     stop_connection_failure_feedback();
+    list_view_.unmount();
     clear_password_view();
     clear_ssid_view();
     password_model_.reset();

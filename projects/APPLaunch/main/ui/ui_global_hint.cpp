@@ -51,12 +51,12 @@ static void show_hint(const char *text)
     launcher_toast().show(text);
 }
 
-static int ensure_screenshot_dir(const char *scr_dir)
+static int ensure_user_dir(const std::string &dir)
 {
     int result = -1;
     try {
         cp0_signal_filesystem_api(
-            {"EnsureDirForUser", scr_dir ? scr_dir : ""},
+            {"EnsureDirForUser", dir},
             [&](int code, std::string) { result = code; });
     } catch (...) {
     }
@@ -112,8 +112,11 @@ void on_key(const struct key_item *elm) noexcept
             launcher_media_osd().show_mute(launcher_media_controls::toggle_mute());
             return;
         case GlobalHintAction::TAKE_SCREENSHOT: {
-            const std::string scr_dir = launcher_platform::path("home_dir") + "/Screenshots";
-            const int ensure_result = ensure_screenshot_dir(scr_dir.c_str());
+            const std::string pictures_dir = launcher_platform::path("home_dir") + "/Pictures";
+            const std::string scr_dir = pictures_dir + "/Screenshots";
+            const int ensure_result = ensure_user_dir(pictures_dir) == 0
+                ? ensure_user_dir(scr_dir)
+                : -1;
             int result = -1;
             std::string saved_path;
             if (GlobalHintScreenshotPolicy::should_save(ensure_result))
