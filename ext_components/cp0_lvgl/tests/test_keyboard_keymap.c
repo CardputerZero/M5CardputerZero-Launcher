@@ -11,6 +11,11 @@ int main(void)
     assert(mapped != NULL);
     assert(strcmp(mapped->sym_name, "exclam") == 0);
     assert(strcmp(mapped->utf8, "!") == 0);
+    mapped = cp0_keyboard_keymap_lookup(94);
+    assert(mapped != NULL);
+    assert(strcmp(mapped->sym_name, "parenright") == 0);
+    assert(strcmp(mapped->utf8, ")") == 0);
+    assert(cp0_keyboard_keymap_lookup(54) == NULL);
     assert(cp0_keyboard_keymap_lookup(9999) == NULL);
 
     assert(strcmp(cp0_keyboard_control_utf8(KEY_ENTER), "\r") == 0);
