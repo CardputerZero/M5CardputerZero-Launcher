@@ -71,6 +71,14 @@ extern "C" int cp0_wifi_connect(const char *ssid, const char *password)
                                    : wifi_command({"Connect", ssid});
 }
 
+extern "C" int cp0_wifi_connect_hidden(const char *ssid, const char *password)
+{
+    if (!ssid || !ssid[0])
+        return -1;
+    return password && password[0] ? wifi_command({"ConnectHidden", ssid, password})
+                                   : wifi_command({"ConnectHidden", ssid});
+}
+
 extern "C" int cp0_wifi_profile_forget(const char *ssid)
 {
     return ssid && ssid[0] ? wifi_command({"ProfileForget", ssid}) : -1;

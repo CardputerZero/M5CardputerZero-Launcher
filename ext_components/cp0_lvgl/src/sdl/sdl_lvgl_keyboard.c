@@ -45,10 +45,21 @@ __attribute__((weak)) void ui_global_hint_on_key(const struct key_item *elm)
 }
 
 static cp0_keyboard_key_handler_t global_key_handler;
+static volatile int lvgl_keypad_intercept;
 
 void cp0_keyboard_set_global_key_handler(cp0_keyboard_key_handler_t handler)
 {
     global_key_handler = handler;
+}
+
+void cp0_keyboard_set_lvgl_keypad_intercept(int intercept)
+{
+    lvgl_keypad_intercept = intercept != 0;
+}
+
+int cp0_keyboard_get_lvgl_keypad_intercept(void)
+{
+    return lvgl_keypad_intercept;
 }
 
 static uint32_t cp0_evdev_process_key(uint16_t code)
@@ -269,6 +280,8 @@ static uint32_t cp0_sdl_scancode_to_linux_key(SDL_Scancode scancode)
         return KEY_F11;
     case SDL_SCANCODE_F12:
         return KEY_F12;
+    case SDL_SCANCODE_PRINTSCREEN:
+        return KEY_SYSRQ;
     case SDL_SCANCODE_INSERT:
         return KEY_INSERT;
     case SDL_SCANCODE_HOME:
@@ -456,11 +469,13 @@ static void cp0_sdl_keyboard_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
     (void)indev;
 
+    data->key = 0;
     data->state = LV_INDEV_STATE_RELEASED;
     data->continue_reading = false;
 
     struct key_item *elm = cp0_keyboard_queue_pop();
     if (elm) {
+        const int intercept = lvgl_keypad_intercept;
 
         int swallowed = ui_screensaver_filter_key(elm);
         if (!swallowed) {
@@ -473,13 +488,13 @@ static void cp0_sdl_keyboard_read(lv_indev_t *indev, lv_indev_data_t *data)
             else
                 ui_global_hint_on_key(elm);
 
-            data->key = cp0_evdev_process_key(elm->key_code);
-            if (data->key)
-                data->state = (lv_indev_state_t)elm->key_state;
+            if (!intercept) {
+                data->key = cp0_evdev_process_key(elm->key_code);
+                if (data->key)
+                    data->state = (lv_indev_state_t)elm->key_state;
+            }
         }
-        if (data->key || swallowed) {
-            data->continue_reading = cp0_keyboard_queue_has_data();
-        }
+        data->continue_reading = cp0_keyboard_queue_has_data();
         free(elm);
     }
 }

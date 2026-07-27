@@ -14,7 +14,7 @@ struct ScreensaverFrame
 class ScreensaverModel
 {
 public:
-    static constexpr int BLOCK_SIZE = 20;
+    static constexpr int BLOCK_SIZE = 40;
     static constexpr size_t COLOR_COUNT = 8;
 
     void reset(uint32_t now);

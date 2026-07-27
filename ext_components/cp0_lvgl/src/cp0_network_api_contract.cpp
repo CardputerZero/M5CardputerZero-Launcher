@@ -99,8 +99,9 @@ bool parse_api_request(const std::list<std::string> &args, ApiRequest &request)
         return exact_size(args, 2) &&
             parse_integer(*argument, 0, CP0_WIFI_AP_MAX, request.scan_limit);
     }
-    if (command == "Connect") {
-        request.command = ApiCommand::Connect;
+    if (command == "Connect" || command == "ConnectHidden") {
+        request.command = command == "Connect"
+            ? ApiCommand::Connect : ApiCommand::ConnectHidden;
         if (args.size() != 2 && args.size() != 3)
             return false;
         request.ssid = *argument++;

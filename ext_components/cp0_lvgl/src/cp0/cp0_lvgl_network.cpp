@@ -110,6 +110,10 @@ public:
             result.complete(
                 connect(request.ssid.c_str(), request.password.empty() ? nullptr : request.password.c_str()), "");
             break;
+        case cp0::network::ApiCommand::ConnectHidden:
+            result.complete(connect(request.ssid.c_str(),
+                request.password.empty() ? nullptr : request.password.c_str(), true), "");
+            break;
         case cp0::network::ApiCommand::Disconnect:
             result.complete(disconnect(), "");
             break;
@@ -185,7 +189,7 @@ public:
         return count;
     }
 
-    int connect(const char *ssid, const char *password)
+    int connect(const char *ssid, const char *password, bool hidden = false)
     {
         if (!ssid || !ssid[0])
             return -1;
@@ -194,9 +198,19 @@ public:
         const bool with_password = password && password[0];
         char output[4096] = {};
         int command_result = -1;
-        if (with_password) {
-            const char *argv[] = {"nmcli", "--wait", kActivationTimeoutSeconds, "dev", "wifi", "connect",
-                                  ssid, "password", password, nullptr};
+        if (with_password && hidden) {
+            const char *argv[] = {"nmcli", "--wait", kActivationTimeoutSeconds,
+                                  "dev", "wifi", "connect", ssid, "password", password,
+                                  "hidden", "yes", nullptr};
+            command_result = cp0_process_capture_argv(argv, output, sizeof(output));
+        } else if (with_password) {
+            const char *argv[] = {"nmcli", "--wait", kActivationTimeoutSeconds,
+                                  "dev", "wifi", "connect", ssid, "password", password,
+                                  nullptr};
+            command_result = cp0_process_capture_argv(argv, output, sizeof(output));
+        } else if (hidden) {
+            const char *argv[] = {"nmcli", "--wait", kActivationTimeoutSeconds,
+                                  "dev", "wifi", "connect", ssid, "hidden", "yes", nullptr};
             command_result = cp0_process_capture_argv(argv, output, sizeof(output));
         } else {
             const char *argv[] = {"nmcli", "--wait", kActivationTimeoutSeconds, "con", "up", "id", ssid,

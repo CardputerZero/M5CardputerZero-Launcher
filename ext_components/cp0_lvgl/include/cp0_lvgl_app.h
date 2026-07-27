@@ -148,6 +148,7 @@ int cp0_network_list(cp0_netif_info_t *entries, int max_entries, int *out_count)
 int cp0_wifi_status_read(cp0_wifi_status_t *status);
 int cp0_wifi_scan(cp0_wifi_ap_t *entries, int max_entries);
 int cp0_wifi_connect(const char *ssid, const char *password);
+int cp0_wifi_connect_hidden(const char *ssid, const char *password);
 int cp0_wifi_profile_forget(const char *ssid);
 int cp0_wifi_profile_exists(const char *ssid);
 int cp0_wifi_disconnect_active(void);

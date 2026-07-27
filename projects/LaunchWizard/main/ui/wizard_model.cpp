@@ -56,6 +56,18 @@ bool validate_hostname(const std::string &name, std::string &error)
     return true;
 }
 
+bool validate_wifi_ssid(const std::string &ssid, std::string &error)
+{
+    if (ssid.empty()) { error = "SSID is required"; return false; }
+    if (ssid.size() > 32) { error = "SSID is too long"; return false; }
+    for (char ch : ssid) {
+        if (ch == '\0' || ch == '\n' || ch == '\r') {
+            error = "SSID has invalid characters"; return false;
+        }
+    }
+    return true;
+}
+
 bool valid_ipv4(const std::string &value)
 {
     in_addr address{};

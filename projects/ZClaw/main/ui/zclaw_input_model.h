@@ -24,6 +24,7 @@ struct InputSubmission {
     std::string value;
 };
 
+bool input_is_single_line(InputMode mode);
 InputSubmission input_submission(InputMode mode, std::string value);
 
 }  // namespace zclaw

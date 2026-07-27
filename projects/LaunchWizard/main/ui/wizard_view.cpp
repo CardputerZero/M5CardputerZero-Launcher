@@ -16,8 +16,10 @@
 #include "input_keys.h"
 #endif
 
-#include <chrono>
+#include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <cstddef>
 #include <memory>
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +28,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -160,6 +163,15 @@ lv_obj_t *add_field(lv_obj_t *parent, int x, int y, int w, int h, bool focused,
     return add_rect(parent, x, y, w, h, kColorFieldBg, 1, kColorFieldBorder, 3);
 }
 
+std::size_t &text_cursor(const std::string &value)
+{
+    static std::unordered_map<const std::string *, std::size_t> cursors;
+    auto [it, inserted] = cursors.emplace(&value, value.size());
+    if (inserted || it->second > value.size())
+        it->second = value.size();
+    return it->second;
+}
+
 lv_obj_t *add_text_field(lv_obj_t *parent, int x, int y, int w, int h,
                          const std::string &value, bool focused, uint32_t accent,
                          bool password = false, const lv_font_t *font = nullptr)
@@ -175,7 +187,7 @@ lv_obj_t *add_text_field(lv_obj_t *parent, int x, int y, int w, int h,
         lv_textarea_set_password_mode(field, true);
     }
     lv_textarea_set_text(field, value.c_str());
-    lv_textarea_set_cursor_pos(field, LV_TEXTAREA_CURSOR_LAST);
+    lv_textarea_set_cursor_pos(field, static_cast<int32_t>(text_cursor(value)));
 
     lv_obj_set_style_text_font(field, font ? font : font_md(), 0);
     lv_obj_set_style_text_color(field, lv_color_hex(0xffffff), 0);
@@ -384,7 +396,7 @@ void draw_signal_bars(lv_obj_t *parent, int x, int y, int signal, uint32_t accen
 void render_wifi_list()
 {
     add_chrome(kAccentNetwork, 60);
-    if (g.wifi_connected) {
+    if (g.wifi_status_connected) {
         const std::string connected = "Connected WiFi: " +
             field_tail(g.wifi_status_ssid, false, 10) + "  " +
             (g.wifi_status_ip.empty() ? std::string("No IP")
@@ -395,7 +407,7 @@ void render_wifi_list()
     }
 
     // #94: while the first scan is still running show a loading state with a
-    // spinner so the user isn't staring at an empty/"Other network..." list.
+    // spinner so the user isn't staring at an empty network list.
     if (g.wifi_scanning && g.wifi_list.empty()) {
         lv_obj_t *spinner = lv_spinner_create(ui.screen_obj);
         lv_obj_set_size(spinner, 28, 28);
@@ -407,10 +419,11 @@ void render_wifi_list()
         lv_obj_set_style_arc_width(spinner, 4, LV_PART_INDICATOR);
         add_label(ui.screen_obj, "Scanning for networks...", font_sm(), kColorMuted, 80, 86);
         add_key_hint(14, "ESC", 38, "BACK", kAccentNetwork);
+        add_key_hint(112, "ALT", 136, "ADD HIDDEN WI-FI", kAccentNetwork);
         return;
     }
 
-    const int count = static_cast<int>(g.wifi_list.size()) + 1;  // + manual entry
+    const int count = static_cast<int>(g.wifi_list.size());
     const int visible = 4;
     int start = g.wifi_sel - 1;
     if (start < 0)
@@ -430,18 +443,22 @@ void render_wifi_list()
             add_rect(ui.screen_obj, 30, y, 260, 21, kColorRowSelBg, 0, 0, 4);
             add_label(ui.screen_obj, ">", font_md(), kAccentNetwork, 42, y + 1);
         }
-        if (idx < static_cast<int>(g.wifi_list.size())) {
-            add_label(ui.screen_obj, g.wifi_list[idx].ssid.c_str(), font_sm(),
-                      is_sel ? 0xffffff : kColorMuted, 66, y + 4);
-            draw_signal_bars(ui.screen_obj, 252, y + 1, g.wifi_list[idx].signal, kAccentNetwork);
-        } else {
-            add_label(ui.screen_obj, "Other network...", font_sm(),
-                      is_sel ? 0xffffff : kColorMuted, 66, y + 4);
-        }
+        // Keep a comfortable gap before the signal indicator. The focused
+        // SSID scrolls so its full name remains inspectable.
+        lv_obj_t *ssid_label = add_label(
+            ui.screen_obj, g.wifi_list[idx].ssid.c_str(), font_sm(),
+            is_sel ? 0xffffff : kColorMuted, 66, y + 4);
+        lv_obj_set_size(ssid_label, 176, 16);
+        lv_label_set_long_mode(
+            ssid_label,
+            is_sel ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP);
+        draw_signal_bars(ui.screen_obj, 252, y + 1, g.wifi_list[idx].signal, kAccentNetwork);
     }
 
     add_key_hint(14, "ESC", 38, "BACK", kAccentNetwork);
-    add_key_hint(132, "OK", 156, "SELECT", kAccentNetwork);
+    add_key_hint(84, "ALT", 108, "ADD HIDDEN WI-FI", kAccentNetwork);
+    if (count > 0)
+        add_key_hint(230, "OK", 250, "SELECT", kAccentNetwork);
 }
 
 void render_wifi_password()
@@ -482,7 +499,7 @@ void render_wifi_password()
     add_key_hint(8, "ESC", 31, "BACK", kAccentNetwork);
     add_key_hint(72, "ALT", 98, g.wifi_password_visible ? "HIDE" : "SHOW", kAccentNetwork);
     add_key_hint(145, "OK", 164, "CONNECT", kAccentNetwork);
-    add_key_hint(244, "TAB", 268, "NEXT", kAccentNetwork);
+    add_key_hint(244, "TAB", 268, g.wifi_manual ? "SWITCH" : "NEXT", kAccentNetwork);
 }
 
 void render_manual_time()
@@ -699,7 +716,9 @@ void handle_text_char(char ch)
         return;
     if (field->size() >= 63)
         return;
-    field->push_back(ch);
+    std::size_t &cursor = text_cursor(*field);
+    field->insert(field->begin() + static_cast<std::ptrdiff_t>(cursor), ch);
+    ++cursor;
     g.form_error.clear();
     g.wifi_connect_error.clear();
     render();
@@ -711,11 +730,30 @@ void handle_backspace()
         return;
     std::string *field = active_text_field();
     if (field && !field->empty()) {
-        field->pop_back();
+        std::size_t &cursor = text_cursor(*field);
+        if (cursor == 0)
+            return;
+        field->erase(cursor - 1, 1);
+        --cursor;
         g.form_error.clear();
         g.wifi_connect_error.clear();
         render();
     }
+}
+
+void move_text_cursor(int delta)
+{
+    std::string *field = active_text_field();
+    if (!field)
+        return;
+    std::size_t &cursor = text_cursor(*field);
+    if (delta < 0) {
+        if (cursor > 0)
+            --cursor;
+    } else if (cursor < field->size()) {
+        ++cursor;
+    }
+    render();
 }
 
 void enter_wifi_list()
@@ -777,18 +815,35 @@ void cancel_wifi_scan()
     g.wifi_scanning = false;
 }
 
+void enter_hidden_wifi()
+{
+    cancel_wifi_scan();
+    g.wifi_ssid.clear();
+    g.wifi_password.clear();
+    g.wifi_manual = true;
+    g.wifi_hidden = true;
+    g.wifi_focus = 0;
+    g.wifi_password_visible = false;
+    g.wifi_ip.clear();
+    g.wifi_connect_error.clear();
+    g.wifi_connected = false;
+    go(Screen::WifiPassword);
+}
+
 void start_wifi_connection()
 {
     if (g.wifi_connecting)
         return;
-    if (g.wifi_ssid.empty()) {
-        g.wifi_connect_error = "SSID is required";
+    std::string validation_error;
+    if (!launch_wizard::validate_wifi_ssid(g.wifi_ssid, validation_error)) {
+        g.wifi_connect_error = validation_error;
         render();
         return;
     }
 
     const std::string ssid = g.wifi_ssid;
     const std::string password = g.wifi_password;
+    const bool hidden = g.wifi_hidden;
     g.wifi_connecting = true;
     g.wifi_connected = false;
     g.wifi_ip.clear();
@@ -796,15 +851,16 @@ void start_wifi_connection()
     render();
 
     if (ui.wifi_connect_worker.joinable()) ui.wifi_connect_worker.join();
-    ui.wifi_connect_worker = std::thread([ssid, password]() {
+    ui.wifi_connect_worker = std::thread([ssid, password, hidden]() {
         std::string connected_ip;
         const std::string error = launch_wizard::WizardService::connect_wifi(
-            ssid, password, &connected_ip);
+            ssid, password, &connected_ip, hidden);
         std::lock_guard<std::mutex> lock(g.mutex);
         g.wifi_connect_succeeded = error.empty();
         g.wifi_connect_error = error;
         g.wifi_ip = error.empty() ? connected_ip : std::string();
         if (error.empty()) {
+            g.wifi_status_connected = true;
             g.wifi_status_ssid = ssid;
             g.wifi_status_ip = connected_ip;
         }
@@ -870,7 +926,9 @@ void move_focus(int delta)
         }
         break;
     case Screen::WifiList: {
-        int n = static_cast<int>(g.wifi_list.size()) + 1;
+        int n = static_cast<int>(g.wifi_list.size());
+        if (n == 0)
+            break;
         g.wifi_sel = (g.wifi_sel + delta + n) % n;
         render();
         break;
@@ -995,16 +1053,13 @@ void handle_enter()
         }
         break;
     case Screen::WifiList:
+        if (g.wifi_list.empty())
+            break;
         cancel_wifi_scan();
-        if (g.wifi_sel < static_cast<int>(g.wifi_list.size())) {
-            g.wifi_ssid = g.wifi_list[g.wifi_sel].ssid;
-            g.wifi_manual = false;
-            g.wifi_focus = 1;
-        } else {
-            g.wifi_ssid.clear();
-            g.wifi_manual = true;
-            g.wifi_focus = 0;
-        }
+        g.wifi_ssid = g.wifi_list[g.wifi_sel].ssid;
+        g.wifi_manual = false;
+        g.wifi_hidden = false;
+        g.wifi_focus = 1;
         g.wifi_password.clear();
         g.wifi_password_visible = false;
         g.wifi_ip.clear();
@@ -1074,7 +1129,13 @@ void handle_tab()
         go(Screen::ManualTime);
         break;
     case Screen::WifiPassword:
-        handle_enter();
+        if (g.wifi_manual && !g.wifi_connecting && !g.wifi_connected) {
+            g.wifi_focus = (g.wifi_focus + 1) % 2;
+            g.wifi_connect_error.clear();
+            render();
+        } else {
+            handle_enter();
+        }
         break;
     case Screen::ManualTime:
         g.time_focus = (g.time_focus + 1) % 2;
@@ -1130,6 +1191,11 @@ void keyboard_event_cb(lv_event_t *event)
     }
 
     uint32_t key_code = key->key_code;
+    if (g.screen == Screen::WifiList && key_code == KEY_LEFTALT &&
+        key->key_state == KBD_KEY_PRESSED) {
+        enter_hidden_wifi();
+        return;
+    }
     if (g.screen == Screen::Account && key_code == KEY_LEFTALT &&
         key->key_state == KBD_KEY_PRESSED) {
         g.account_password_visible = !g.account_password_visible;
@@ -1156,8 +1222,9 @@ void keyboard_event_cb(lv_event_t *event)
         else if (key_code == KEY_X)
             key_code = KEY_DOWN;
     } else if (g.screen == Screen::EthernetConfig) {
-        if (key_code == KEY_LEFT || key_code == KEY_Z ||
-            key_code == KEY_RIGHT || key_code == KEY_C) {
+        if (g.ethernet_focus == 0 &&
+            (key_code == KEY_LEFT || key_code == KEY_Z ||
+             key_code == KEY_RIGHT || key_code == KEY_C)) {
             g.ethernet_dhcp = key_code == KEY_LEFT || key_code == KEY_Z;
             g.ethernet_focus = 0;
             g.ethernet_error.clear();
@@ -1183,12 +1250,22 @@ void keyboard_event_cb(lv_event_t *event)
         handle_tab();
         return;
     case KEY_UP:
-    case KEY_LEFT:
         move_focus(-1);
         return;
     case KEY_DOWN:
-    case KEY_RIGHT:
         move_focus(1);
+        return;
+    case KEY_LEFT:
+        if (active_text_field())
+            move_text_cursor(-1);
+        else
+            move_focus(-1);
+        return;
+    case KEY_RIGHT:
+        if (active_text_field())
+            move_text_cursor(1);
+        else
+            move_focus(1);
         return;
     case KEY_ENTER:
         handle_enter();
@@ -1221,6 +1298,7 @@ void poll_worker_cb(lv_timer_t *timer)
             g.wifi_list = std::move(g.wifi_scan_result);
             g.wifi_scan_result.clear();
             if (g.wifi_scan_status.available) {
+                g.wifi_status_connected = g.wifi_scan_status.connected;
                 g.wifi_connected = g.wifi_scan_status.connected;
                 g.wifi_status_ssid = g.wifi_scan_status.ssid;
                 g.wifi_status_ip = g.wifi_scan_status.ip;
@@ -1230,7 +1308,7 @@ void poll_worker_cb(lv_timer_t *timer)
         }
     }
     if (wifi_updated && g.screen == Screen::WifiList) {
-        if (g.wifi_sel >= static_cast<int>(g.wifi_list.size()) + 1)
+        if (g.wifi_sel >= static_cast<int>(g.wifi_list.size()))
             g.wifi_sel = 0;
         render();
     }
@@ -1316,6 +1394,7 @@ void launch_wizard_register_event(void)
 
 bool launch_wizard_ui_setup(void)
 {
+    cp0_keyboard_set_lvgl_keypad_intercept(0);
     ui.cancel.store(false);
     ui.quit.store(false);
     ui.page = std::make_unique<AppPageRoot>();
@@ -1333,7 +1412,9 @@ bool launch_wizard_ui_setup(void)
     } else if (preview && strcmp(preview, "restart") == 0) {
         go(Screen::RestartPrompt);
     }
-    return ui.screen_obj != nullptr;
+    const bool ready = ui.screen_obj != nullptr;
+    cp0_keyboard_set_lvgl_keypad_intercept(ready);
+    return ready;
 }
 
 bool launch_wizard_should_quit(void)
@@ -1343,6 +1424,7 @@ bool launch_wizard_should_quit(void)
 
 void launch_wizard_ui_teardown(void)
 {
+    cp0_keyboard_set_lvgl_keypad_intercept(0);
     ui.cancel.store(true);
     {
         std::lock_guard<std::mutex> lock(g.mutex);

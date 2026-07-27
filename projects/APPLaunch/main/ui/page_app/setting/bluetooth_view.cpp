@@ -6,7 +6,8 @@ namespace setting {
 
 void Bluetooth::build_alias_view(UISetupPage &page)
 {
-    lv_obj_t *container = SetupPageAccess(page).content_container();
+    SetupPageAccess access(page);
+    lv_obj_t *container = access.content_container();
     lv_obj_clean(container);
     alias_input_lbl_ = nullptr;
     alias_hint_lbl_ = nullptr;
@@ -33,7 +34,7 @@ void Bluetooth::build_alias_view(UISetupPage &page)
 
     alias_hint_lbl_ = lv_label_create(container);
     lv_label_set_text(alias_hint_lbl_, "OK:set  BS:del  ESC:cancel");
-    lv_obj_set_pos(alias_hint_lbl_, 10, 70);
+    lv_obj_set_pos(alias_hint_lbl_, 10, access.content_height() - 14);
     lv_obj_set_style_text_color(alias_hint_lbl_, lv_color_hex(0x555555), LV_PART_MAIN);
     lv_obj_set_style_text_font(alias_hint_lbl_, &lv_font_montserrat_10, LV_PART_MAIN);
 }

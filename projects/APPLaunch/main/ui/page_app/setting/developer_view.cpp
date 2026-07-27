@@ -50,7 +50,8 @@ void Developer::enter_pair_view(UISetupPage &page, bool enable_after_pair)
     lv_obj_add_event_cb(pair_input_label_, view_object_delete_cb, LV_EVENT_DELETE, this);
     lv_obj_set_width(pair_input_label_, 304);
     lv_label_set_long_mode(pair_input_label_, LV_LABEL_LONG_CLIP);
-    pair_hint_label_ = guide_label(cont, 8, 82, "OK: authorize   ESC: cancel", 0x777777,
+    pair_hint_label_ = guide_label(cont, 8, access.content_height() - 14,
+                                   "OK: authorize   ESC: cancel", 0x777777,
                                    &lv_font_montserrat_10);
     if (!pair_hint_label_) {
         rollback();

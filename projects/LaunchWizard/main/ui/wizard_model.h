@@ -85,6 +85,7 @@ struct WizardModel {
     int wifi_sel = 0;
     std::string wifi_ssid;
     std::string wifi_password;
+    bool wifi_hidden = false;
     int wifi_focus = 0;
     bool wifi_manual = false;
     bool wifi_connected = false;
@@ -94,6 +95,7 @@ struct WizardModel {
     bool wifi_password_visible = false;
     std::string wifi_connect_error;
     std::string wifi_ip;
+    bool wifi_status_connected = false;
     std::string wifi_status_ssid;
     std::string wifi_status_ip;
     bool wifi_scanning = false;
@@ -121,6 +123,7 @@ struct WizardModel {
 bool validate_username(const std::string &name, std::string &error);
 bool validate_password(const std::string &password, std::string &error);
 bool validate_hostname(const std::string &name, std::string &error);
+bool validate_wifi_ssid(const std::string &ssid, std::string &error);
 bool valid_ipv4(const std::string &value);
 bool valid_ipv4_cidr(const std::string &value);
 std::string validate_ethernet_config(const WizardModel &model);

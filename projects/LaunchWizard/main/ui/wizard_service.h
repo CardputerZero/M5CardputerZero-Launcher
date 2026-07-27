@@ -15,7 +15,8 @@ public:
     static WifiConnectionStatus read_wifi_status();
     static std::string connect_wifi(const std::string &ssid,
                                     const std::string &password,
-                                    std::string *connected_ip = nullptr);
+                                    std::string *connected_ip = nullptr,
+                                    bool hidden = false);
     static std::string set_manual_time(const std::string &date,
                                        const std::string &time);
     static std::string apply(const WizardModel &model,
