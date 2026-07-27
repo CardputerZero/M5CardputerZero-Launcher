@@ -1,4 +1,4 @@
-#include <main.h>
+#include "application.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -13,8 +13,14 @@ int main(int argc, char *argv[])
     for (int i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "--test") == 0 || strcmp(argv[i], "--force") == 0) {
             force = true;
+        } else if (strcmp(argv[i], "--preview-configuring") == 0) {
+            force = true;
+            setenv("LAUNCH_WIZARD_PREVIEW", "configuring", 1);
+        } else if (strcmp(argv[i], "--preview-restart") == 0) {
+            force = true;
+            setenv("LAUNCH_WIZARD_PREVIEW", "restart", 1);
         } else if (strcmp(argv[i], "--help") == 0 || strcmp(argv[i], "-h") == 0) {
-            printf("Usage: %s [--test]\n", argv[0]);
+            printf("Usage: %s [--test|--preview-configuring|--preview-restart]\n", argv[0]);
             printf("  --test  show the setup wizard on an already-configured device\n");
             return 0;
         } else {

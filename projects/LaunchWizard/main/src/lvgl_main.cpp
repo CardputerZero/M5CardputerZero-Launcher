@@ -1,37 +1,14 @@
-#include "lvgl/lvgl.h"
+#include "application.h"
+#include "cp0_lvgl_app_runner.hpp"
 
-#include <stdio.h>
-#include <stdint.h>
-#include <unistd.h>
-
-#include "hal_lvgl_bsp.h"
-#include "keyboard_input.h"
-#include "main.h"
+#include <utility>
 
 int lvgl_main(void)
 {
-    lv_init();
-    cp0_lvgl_init();
-
-    if (LV_EVENT_KEYBOARD == 0)
-        LV_EVENT_KEYBOARD = lv_event_register_id();
-
-    lv_display_t *disp = lv_display_get_default();
-    if (disp == nullptr) {
-        fprintf(stderr, "LaunchWizard: failed to create LVGL display\n");
-        return 1;
-    }
-
-    printf("LaunchWizard: display %dx%d\n",
-           (int)lv_display_get_horizontal_resolution(disp),
-           (int)lv_display_get_vertical_resolution(disp));
-
-    ui_init();
-    lv_obj_invalidate(lv_screen_active());
-    lv_refr_now(nullptr);
-
-    while (1) {
-        lv_timer_handler();
-        usleep(10000);
-    }
+    Cp0LvglRunOptions options;
+    options.after_lvgl_init = [] { launch_wizard_register_event(); };
+    options.setup = [] { return launch_wizard_ui_setup(); };
+    options.should_quit = [] { return launch_wizard_should_quit(); };
+    options.teardown = [] { launch_wizard_ui_teardown(); };
+    return cp0_lvgl_run(std::move(options));
 }
