@@ -51,6 +51,14 @@ public:
         return service_ok;
     }
 
+    bool restart_service(std::string *error) const override
+    {
+        calls.push_back("restart");
+        if (!service_ok && error)
+            *error = "service failed";
+        return service_ok;
+    }
+
     std::string generate_pairing_code() const override
     {
         calls.push_back("pair-code");
@@ -82,8 +90,17 @@ int main()
     assert(backend.configured_provider.model == "gpt-4.1-mini");
     assert((progress == std::vector<int>{50, 72, 86, 94}));
 
+    backend.calls.clear();
+    config.setup_complete = true;
+    const zclaw::PreparedSetup reconfigured =
+        zclaw::SetupService(backend).prepare(config, provider, {});
+    assert(reconfigured.ok);
+    assert((backend.calls == std::vector<std::string>{
+        "install", "config", "restart", "pair-code"}));
+
     FakeSetupBackend failed_backend;
     failed_backend.service_ok = false;
+    config.setup_complete = false;
     const zclaw::PreparedSetup failed =
         zclaw::SetupService(failed_backend).prepare(config, provider, {});
     assert(!failed.ok);

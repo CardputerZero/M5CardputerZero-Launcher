@@ -73,6 +73,15 @@ void SetupWorkflow::edit_selected_field()
     settings_.state().set_setup_edit_field(setup_edit_field_for_row(
         providers_.setup_provider(), settings_.state().selected_row()));
     ProviderConfig provider = providers_.setup_provider();
+    if (settings_.state().setup_edit_field() == SetupEditField::WireApi) {
+        toggle_wire_api(&provider);
+        settings_.state().set_setup_edit_field(SetupEditField::None);
+        std::string error;
+        if (!providers_.update_setup_provider(provider, &error))
+            report_save_error(error);
+        render();
+        return;
+    }
     const std::string *value =
         setup_field_value(&provider, settings_.state().setup_edit_field());
     if (value)

@@ -21,6 +21,7 @@ public:
     bool apply_config(UiConfig *config, const ProviderConfig &provider,
                       std::string *error) const;
     bool start_service(std::string *error) const;
+    bool restart_service(std::string *error) const;
     std::string generate_pairing_code() const;
 
 private:

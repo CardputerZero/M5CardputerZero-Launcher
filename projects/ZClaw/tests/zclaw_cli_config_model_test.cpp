@@ -13,7 +13,7 @@ int main()
 
     assert(plan.agent_alias == "zclaw");
     assert(plan.webhook_url == "http://127.0.0.1:42617/webhook");
-    assert(plan.initial_settings.size() == 8);
+    assert(plan.initial_settings.size() == 9);
     assert(plan.initial_settings[0].path == "gateway.host");
     assert(plan.initial_settings[0].value == "127.0.0.1");
     assert(plan.initial_settings[4].path ==
@@ -28,6 +28,15 @@ int main()
     assert(plan.initial_settings[7].path ==
            "providers.models.openai.primary.api_key");
     assert(plan.initial_settings[7].value == "secret");
+    assert(plan.initial_settings[8].path ==
+           "providers.models.openai.primary.wire_api");
+    assert(plan.initial_settings[8].value == "chat_completions");
+
+    zclaw::ProviderConfig responses_provider = provider;
+    responses_provider.wire_api = "responses";
+    const zclaw::CliConfigPlan responses_plan =
+        zclaw::make_cli_config_plan(config, responses_provider);
+    assert(responses_plan.initial_settings[8].value == "responses");
 
     assert(plan.agent_settings.size() == 4);
     assert(plan.agent_settings[0].path == "agents.zclaw.enabled");

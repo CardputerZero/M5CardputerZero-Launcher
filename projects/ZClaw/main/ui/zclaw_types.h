@@ -12,6 +12,7 @@ struct ProviderConfig {
     std::string model;
     std::string uri;
     std::string api_key;
+    std::string wire_api = "completions";
 };
 
 struct UiConfig {

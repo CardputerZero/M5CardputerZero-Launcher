@@ -59,6 +59,16 @@ void ProviderWorkflow::edit_selected_field()
     if (settings_.state().provider_edit_field() == ProviderEditField::None)
         return;
     ProviderConfig provider = providers_.providers()[provider_index];
+    if (settings_.state().provider_edit_field() == ProviderEditField::WireApi) {
+        toggle_wire_api(&provider);
+        settings_.state().set_provider_edit_field(ProviderEditField::None);
+        std::string error;
+        if (!providers_.replace(static_cast<std::size_t>(provider_index), provider,
+                                &error))
+            report_save_error(error);
+        settings_.render_provider_detail();
+        return;
+    }
     const std::string *value = provider_field_value(
         &provider, settings_.state().provider_edit_field());
     if (value)

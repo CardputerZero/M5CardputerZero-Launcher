@@ -2,6 +2,7 @@
 
 #include "zclaw_config_codec.h"
 
+#include <algorithm>
 #include <set>
 #include <sstream>
 
@@ -24,16 +25,20 @@ bool parse_provider_document(const std::string &document,
         if (fields.size() < 5)
             continue;
         bool valid_encoding = true;
-        for (std::size_t index = 0; strict && index < 5; ++index)
+        const std::size_t field_count = std::min<std::size_t>(fields.size(), 6);
+        for (std::size_t index = 0; strict && index < field_count; ++index)
             valid_encoding = valid_encoding &&
                              is_valid_config_field_encoding(fields[index]);
         if (!valid_encoding)
             continue;
-        providers->push_back({
+        ProviderConfig provider = {
             decode_config_field(fields[0]), decode_config_field(fields[1]),
             decode_config_field(fields[2]), decode_config_field(fields[3]),
             decode_config_field(fields[4]),
-        });
+        };
+        if (fields.size() >= 6)
+            provider.wire_api = decode_config_field(fields[5]);
+        providers->push_back(std::move(provider));
     }
     return !providers->empty();
 }
@@ -119,7 +124,8 @@ std::string make_provider_config_document(
                     encode_config_field(provider.family) + '\t' +
                     encode_config_field(provider.model) + '\t' +
                     encode_config_field(provider.uri) + '\t' +
-                    encode_config_field(provider.api_key) + '\n';
+                    encode_config_field(provider.api_key) + '\t' +
+                    encode_config_field(provider.wire_api) + '\n';
     }
     return document;
 }

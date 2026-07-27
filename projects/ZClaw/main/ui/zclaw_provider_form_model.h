@@ -13,6 +13,7 @@ enum class ProviderEditField {
     Model,
     Uri,
     ApiKey,
+    WireApi,
 };
 
 enum class SetupEditField {
@@ -20,6 +21,7 @@ enum class SetupEditField {
     Uri,
     ApiKey,
     Model,
+    WireApi,
 };
 
 struct SetupValidation {
@@ -36,5 +38,6 @@ SetupEditField setup_edit_field_for_row(const ProviderConfig &provider, int row)
 const char *setup_field_name(SetupEditField field);
 std::string *setup_field_value(ProviderConfig *provider, SetupEditField field);
 SetupValidation validate_setup_provider(const ProviderConfig &provider);
+void toggle_wire_api(ProviderConfig *provider);
 
 }  // namespace zclaw

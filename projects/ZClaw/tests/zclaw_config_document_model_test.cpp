@@ -10,13 +10,14 @@ bool same_provider(const zclaw::ProviderConfig &left,
 {
     return left.alias == right.alias && left.family == right.family &&
            left.model == right.model && left.uri == right.uri &&
-           left.api_key == right.api_key;
+           left.api_key == right.api_key && left.wire_api == right.wire_api;
 }
 
 }  // namespace
 
 int main()
 {
+    std::vector<zclaw::ProviderConfig> checked_providers;
     const std::vector<zclaw::ProviderConfig> providers = {
         {"primary", "custom", "model\\name\nnext",
          "https://example.com/a\tb", "key\\value"},
@@ -31,6 +32,12 @@ int main()
     assert(same_provider(parsed_providers[0], providers[0]));
     assert(same_provider(parsed_providers[1], providers[1]));
     assert(zclaw::make_provider_config_document({}).empty());
+    const std::vector<zclaw::ProviderConfig> legacy =
+        zclaw::parse_provider_config_document("old\tcustom\tmodel\thttps://api\tkey\n");
+    assert(legacy.size() == 1);
+    assert(legacy[0].wire_api == "completions");
+    assert(!zclaw::parse_provider_config_document_checked(
+        "alias\tcustom\tmodel\turi\tkey\tbad\\q\n", &checked_providers));
 
     zclaw::UiConfig config;
     config.webhook_url = "https://example.com/hook\tpath";
@@ -51,7 +58,6 @@ int main()
     assert(defaults.agent_alias == "zclaw");
     assert(!defaults.setup_complete);
 
-    std::vector<zclaw::ProviderConfig> checked_providers;
     assert(!zclaw::parse_provider_config_document_checked(
         "alias\\q\tfamily\tmodel\turi\tkey\n", &checked_providers));
     assert(zclaw::parse_provider_config_document_checked(

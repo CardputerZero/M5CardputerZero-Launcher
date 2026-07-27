@@ -11,7 +11,7 @@ class FontManager;
 
 class SettingsPanel {
 public:
-    static constexpr int kMaximumRows = 5;
+    static constexpr int kMaximumRows = 6;
 
     SettingsPanel() = default;
     ~SettingsPanel();
@@ -46,6 +46,7 @@ private:
     lv_obj_t *panel_ = nullptr;
     lv_obj_t *header_label_ = nullptr;
     lv_obj_t *hint_label_ = nullptr;
+    lv_obj_t *rows_container_ = nullptr;
     lv_obj_t *rows_[kMaximumRows] = {};
     lv_obj_t *values_[kMaximumRows] = {};
     int row_count_ = 0;
