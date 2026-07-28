@@ -58,9 +58,13 @@ public:
             report(callback, 0, buffer);
             break;
         }
-        case cp0::settings::Command::Log:
         case cp0::settings::Command::GpioSet:
+            report(callback, 0, "ok");
+            break;
         case cp0::settings::Command::GpioGet:
+            report(callback, 0, "0");
+            break;
+        case cp0::settings::Command::Log:
         case cp0::settings::Command::Unknown:
         default:
             report(callback, -1, "unknown settings api command");
