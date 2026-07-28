@@ -34,6 +34,9 @@ struct ExtPortGpioMap {
 };
 
 static constexpr const char *kHwIdPath = "/proc/cardputerzero_hw_id";
+static constexpr const char *kGpioDebugPath = "/sys/kernel/debug/gpio";
+static constexpr const char *kBacklightControllerName = "m5ioe1";
+static constexpr unsigned int kBacklightLine = 9;
 static constexpr ExtPortGpioMap kCardputerZeroGpioMap = {"/dev/gpiochip1", 3, 12, false, false};
 static constexpr ExtPortGpioMap kFallbackGpioMap = {"/dev/gpiochip0", 17, 5, false, true};
 static constexpr const char *kGrove5vLedPaths[] = {
@@ -44,6 +47,20 @@ static constexpr const char *kExt5vLedPaths[] = {
 };
 
 static int gpio_v2_get_value(int line_fd);
+
+static std::string backlight_chip_path()
+{
+    FILE *file = std::fopen(kGpioDebugPath, "r");
+    if (!file) return {};
+    char line[512];
+    std::string path;
+    while (std::fgets(line, sizeof(line), file)) {
+        path = cp0::settings::gpiochip_path_from_debug_line(line, kBacklightControllerName);
+        if (!path.empty()) break;
+    }
+    std::fclose(file);
+    return path;
+}
 
 static int gpio_v2_request_output(const char *chip_path, unsigned int line, const char *consumer, int value)
 {
@@ -269,6 +286,12 @@ private:
             const ExtPortGpioMap &map = active_gpio_map_locked();
             return set_gpio_value(map.chip_path, map.ext5v_line, map.ext5v_active_low, "EXT5V", val);
         }
+        if (output == cp0::settings::PowerOutput::Backlight) {
+            const std::string chip_path = backlight_chip_path();
+            return chip_path.empty()
+                ? -ENOENT
+                : set_gpio_value(chip_path.c_str(), kBacklightLine, false, "BACKLIGHT", val);
+        }
         return -EINVAL;
     }
 
@@ -288,6 +311,12 @@ private:
                 return value;
             const ExtPortGpioMap &map = active_gpio_map_locked();
             return get_gpio_value(map.chip_path, map.ext5v_line, map.ext5v_active_low, "EXT5V");
+        }
+        if (output == cp0::settings::PowerOutput::Backlight) {
+            const std::string chip_path = backlight_chip_path();
+            return chip_path.empty()
+                ? -ENOENT
+                : get_gpio_value(chip_path.c_str(), kBacklightLine, false, "BACKLIGHT");
         }
         return -EINVAL;
     }

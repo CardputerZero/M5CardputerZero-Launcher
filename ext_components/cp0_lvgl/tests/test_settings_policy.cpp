@@ -27,6 +27,7 @@ int main()
     assert(!cp0::settings::valid_arguments({"BacklightWrite", "-1"}));
     assert(cp0::settings::valid_arguments({"GpioSet", "GROVE5V", "1"}));
     assert(cp0::settings::valid_arguments({"GpioSet", "EXT5V", "0"}));
+    assert(cp0::settings::valid_arguments({"GpioSet", "BACKLIGHT", "0"}));
     assert(!cp0::settings::valid_arguments({"GpioSet", "EXT5V", "-12"}));
     assert(!cp0::settings::valid_arguments({"GpioSet", "unknown", "1"}));
     assert(cp0::settings::valid_arguments({"GpioGet", "GROVE5V"}));
@@ -53,11 +54,22 @@ int main()
     assert(cp0::settings::parse_switch_response("0", parsed) && parsed == 0);
     assert(cp0::settings::parse_switch_response("1", parsed) && parsed == 1);
     assert(!cp0::settings::parse_switch_response("2", parsed));
+    assert(cp0::settings::gpiochip_path_from_debug_line(
+               "gpiochip2: GPIOs 0-15, parent: platform/m5ioe1, m5ioe1, can sleep:\n",
+               "m5ioe1") == "/dev/gpiochip2");
+    assert(cp0::settings::gpiochip_path_from_debug_line(
+               "  gpiochip12 : GPIOs 0-15, m5ioe1:\n", "m5ioe1") ==
+           "/dev/gpiochip12");
+    assert(cp0::settings::gpiochip_path_from_debug_line(
+               "gpiochip2: GPIOs 0-15, other-controller:\n", "m5ioe1").empty());
+    assert(cp0::settings::gpiochip_path_from_debug_line(
+               "not-a-chip: m5ioe1\n", "m5ioe1").empty());
 
     assert(cp0::settings::power_output_from_name("GROVE5V") == PowerOutput::Grove5V);
     assert(cp0::settings::power_output_from_name("extport_usb") == PowerOutput::Grove5V);
     assert(cp0::settings::power_output_from_name("EXT5V") == PowerOutput::Ext5V);
     assert(cp0::settings::power_output_from_name("extport_5vout") == PowerOutput::Ext5V);
+    assert(cp0::settings::power_output_from_name("BACKLIGHT") == PowerOutput::Backlight);
     assert(cp0::settings::power_output_from_name("") == PowerOutput::Unknown);
     assert(cp0::settings::power_output_from_name("ext5v") == PowerOutput::Unknown);
 
