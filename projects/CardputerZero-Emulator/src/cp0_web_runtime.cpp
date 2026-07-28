@@ -6,6 +6,7 @@
 #include <SDL2/SDL.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -102,6 +103,8 @@ volatile int LVGL_RUN_FLAGE = 1;
 volatile uint32_t LV_EVENT_KEYBOARD = 0;
 
 namespace {
+
+std::atomic<int> keyboard_input_context{KBD_INPUT_CONTEXT_NAVIGATION};
 
 struct WebKeyboard {
     key_item current{};
@@ -293,6 +296,7 @@ void fill_key_meta(WebKeyboard *kbd, const SDL_KeyboardEvent *event)
     kbd->current.keysym = static_cast<uint32_t>(event->keysym.sym);
     kbd->current.key_state = event->repeat ? KBD_KEY_REPEATED : KBD_KEY_PRESSED;
     kbd->current.codepoint = ctrl_to_lv_key(event->keysym.sym);
+    kbd->current.input_context = cp0_keyboard_get_input_context();
 
     SDL_Keymod mods = SDL_GetModState();
     if (mods & KMOD_SHIFT) kbd->current.mods |= KBD_MOD_SHIFT;
@@ -323,6 +327,7 @@ void set_text_key(WebKeyboard *kbd, const char *utf8)
     if (!kbd->current_valid) {
         std::memset(&kbd->current, 0, sizeof(kbd->current));
         kbd->current.key_state = KBD_KEY_PRESSED;
+        kbd->current.input_context = cp0_keyboard_get_input_context();
         kbd->current_valid = true;
     }
     std::snprintf(kbd->current.utf8, sizeof(kbd->current.utf8), "%s", utf8 ? utf8 : "");
@@ -442,6 +447,19 @@ void keyboard_pause(void) {}
 void keyboard_resume(void) {}
 void *keyboard_read_thread(void *) { return nullptr; }
 void kbd_dump_keymap_table(void) {}
+
+void cp0_keyboard_set_input_context(cp0_keyboard_input_context_t context)
+{
+    if (context < KBD_INPUT_CONTEXT_NAVIGATION || context > KBD_INPUT_CONTEXT_GAME)
+        context = KBD_INPUT_CONTEXT_NAVIGATION;
+    keyboard_input_context.store(context, std::memory_order_release);
+}
+
+cp0_keyboard_input_context_t cp0_keyboard_get_input_context(void)
+{
+    return static_cast<cp0_keyboard_input_context_t>(
+        keyboard_input_context.load(std::memory_order_acquire));
+}
 
 const char *kbd_state_name(int state)
 {
