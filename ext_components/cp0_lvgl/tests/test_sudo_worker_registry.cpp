@@ -4,6 +4,7 @@
 #include <cassert>
 #include <condition_variable>
 #include <mutex>
+#include <stdexcept>
 #include <thread>
 
 int main()
@@ -69,4 +70,22 @@ int main()
     assert(recognized_worker.load());
     self_join_registry.request_shutdown();
     assert(self_join_registry.join() == JoinResult::Joined);
+
+    WorkerRegistry throwing_registry;
+    std::atomic<int> failures{0};
+    assert(throwing_registry.start(
+        [] {}, [] { throw std::runtime_error("worker failed"); },
+        [&] { ++failures; }));
+    throwing_registry.request_shutdown();
+    assert(throwing_registry.join() == JoinResult::Joined);
+    assert(failures.load() == 1);
+
+    WorkerRegistry bounded_registry;
+    for (int i = 0; i < 200; ++i) {
+        assert(bounded_registry.start([] {}, [] {}));
+        while (bounded_registry.active() != 0) std::this_thread::yield();
+        assert(bounded_registry.tracked() <= 2);
+    }
+    bounded_registry.request_shutdown();
+    assert(bounded_registry.join() == JoinResult::Joined);
 }

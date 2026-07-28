@@ -27,13 +27,17 @@ void InputDialog::open_chat(const FontManager *fonts)
 }
 
 void InputDialog::open_text(const FontManager *fonts, const std::string &placeholder,
-                            const std::string &initial_text, InputMode mode)
+                            const std::string &initial_text, InputMode mode,
+                            bool secret)
 {
     mode_ = mode;
+    secret_ = secret;
+    secret_revealed_ = false;
     open(fonts);
     if (!textarea_)
         return;
     lv_textarea_set_placeholder_text(textarea_, placeholder.c_str());
+    lv_textarea_set_password_mode(textarea_, secret_);
     lv_textarea_set_text(textarea_, initial_text.c_str());
     lv_textarea_set_cursor_pos(textarea_, LV_TEXTAREA_CURSOR_LAST);
     keep_single_line_cursor_visible();
@@ -121,6 +125,14 @@ void InputDialog::move_down()
 {
     if (textarea_)
         lv_textarea_cursor_down(textarea_);
+}
+
+void InputDialog::toggle_secret_visibility()
+{
+    if (!textarea_ || !secret_)
+        return;
+    secret_revealed_ = !secret_revealed_;
+    lv_textarea_set_password_mode(textarea_, !secret_revealed_);
 }
 
 void InputDialog::open(const FontManager *fonts)
@@ -214,6 +226,8 @@ void InputDialog::release_dialog()
     cp0_keyboard_set_lvgl_keypad_intercept(0);
     dialog_ = nullptr;
     textarea_ = nullptr;
+    secret_ = false;
+    secret_revealed_ = false;
     mode_ = InputMode::Chat;
 }
 

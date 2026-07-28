@@ -54,10 +54,12 @@ extern "C" int cp0_wifi_scan(cp0_wifi_ap_t *entries, int max_entries)
         return 0;
     std::fill_n(entries, static_cast<size_t>(max_entries), cp0_wifi_ap_t{});
     const int request_limit = std::min(max_entries, CP0_WIFI_AP_MAX);
-    int count = 0;
+    int count = CP0_WIFI_ERROR_SERVICE;
     cp0::signal::invoke_noexcept([&] { cp0_signal_wifi_api({"Scan", std::to_string(request_limit)}, [&](int code, std::string data) {
-        if (code < 0)
+        if (code < 0) {
+            count = code;
             return;
+        }
         count = cp0::network::decode_scan_payload(data, entries, max_entries);
     }); });
     return count;

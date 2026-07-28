@@ -50,3 +50,7 @@ with tempfile.TemporaryDirectory() as temp_dir:
     packaged_images = package_root / "usr" / "share" / "APPLaunch" / "share" / "images"
     assert all((packaged_images / name).is_file() for name in expected_images)
     assert not (packaged_images / "source-only.png").exists()
+    assert (package_root / "usr/libexec/applaunch-updater").stat().st_mode & 0o111
+    assert (package_root / "usr/lib/systemd/system/applaunch-updater.service").is_file()
+    assert (package_root / "usr/lib/systemd/system/applaunch-apt-update.service").is_file()
+    assert (package_root / "usr/share/polkit-1/rules.d/60-applaunch-updater.rules").is_file()

@@ -60,6 +60,9 @@ void UiActionDispatcher::execute(const KeyAction &action)
     case KeyActionType::InputMoveDown:
         input_.move_down();
         break;
+    case KeyActionType::InputToggleSecretVisibility:
+        input_.toggle_secret_visibility();
+        break;
     case KeyActionType::InputClose:
         input_.close();
         break;

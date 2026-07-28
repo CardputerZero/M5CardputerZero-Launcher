@@ -1,5 +1,6 @@
 #include "cp0_keyboard_queue.h"
 
+#include "cp0_esc_state.h"
 #include "input_keys.h"
 
 #include <stdlib.h>
@@ -24,7 +25,7 @@ int cp0_keyboard_queue_push(const struct key_item *item)
     if (!copy) return -1;
     *copy = *item;
     copy->flage = 0;
-    if (copy->key_code == KEY_ESC) LVGL_HOME_KEY_FLAG = copy->key_state;
+    if (copy->key_code == KEY_ESC) cp0_esc_state_write(copy->key_state);
     if (!LVGL_RUN_FLAGE) {
         free(copy);
         return 0;

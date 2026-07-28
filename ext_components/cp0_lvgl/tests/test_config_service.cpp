@@ -60,6 +60,16 @@ int main()
 
     save_result = -1;
     assert(call(service, {"Save"}) == std::make_pair(-1, std::string("save failed")));
+    assert(call(service, {"SetManyAndSave", "ssh_host", "new", "ssh_port", "2222"}) ==
+           std::make_pair(-1, std::string("save failed")));
+    assert(call(service, {"GetStr", "ssh_host", "old"}).second == "old");
+    save_result = 0;
+    assert(call(service, {"SetManyAndSave", "ssh_host", "new", "ssh_port", "2222"}) ==
+           std::make_pair(0, std::string("ok")));
+    assert(call(service, {"GetStr", "ssh_host", "old"}).second == "new");
+    assert(call(service, {"GetStr", "ssh_port", "22"}).second == "2222");
+    assert(call(service, {"SetManyAndSave", "missing-value"}).first == -1);
+    assert(call(service, {"SetManyAndSave", "", "bad"}).first == -1);
     assert(call(service, {}).first == -1);
     assert(call(service, {"Unknown"}).first == -1);
 

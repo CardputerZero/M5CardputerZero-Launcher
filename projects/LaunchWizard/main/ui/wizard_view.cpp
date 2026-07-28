@@ -3,11 +3,14 @@
 #include <stdint.h>
 
 #include "keyboard_input.h"
+#include "cp0_keyboard_input_context.hpp"
 #include "lvgl/lvgl.h"
 #include "manual_datetime_validation.h"
 #include "wizard_model.h"
+#include "wizard_input_context.hpp"
 #include "wizard_service.h"
 #include "cp0_lvgl_app_runner.hpp"
+#include "cp0_bounded_task_registry.hpp"
 #include "ui_app_page.hpp"
 
 #ifdef __linux__
@@ -64,8 +67,6 @@ using launch_wizard::WifiNetwork;
 using launch_wizard::kTimezoneCount;
 using launch_wizard::kTimezones;
 constexpr auto kWifiInitialRetryPeriod = std::chrono::seconds(2);
-constexpr auto kWifiScanPeriod = std::chrono::seconds(8);
-constexpr int kWifiInitialRetryCount = 4;
 
 // ---------------------------------------------------------------------------
 // Wizard model (all data collected across screens)
@@ -74,13 +75,15 @@ struct UiRuntime {
     lv_obj_t *screen_obj = nullptr;
     lv_timer_t *poll_timer = nullptr;
     lv_obj_t *config_status_label = nullptr;
+    int rendered_apply_step = -1;
     std::unique_ptr<AppPageRoot> page;
     std::thread apply_worker;
-    std::thread wifi_scan_worker;
-    std::thread wifi_connect_worker;
+    Cp0BoundedTaskRegistry wifi_scan_tasks;
+    Cp0BoundedTaskRegistry wifi_connect_tasks;
     std::thread reboot_worker;
     std::atomic<bool> cancel{false};
     std::atomic<bool> quit{false};
+    std::unique_ptr<Cp0KeyboardInputContextScope> input_context_scope;
 };
 
 launch_wizard::WizardModel g;
@@ -278,7 +281,7 @@ void render_timezone_list()
 {
     std::vector<std::string> left, right;
     for (const Timezone &t : kTimezones) {
-        left.emplace_back(t.offset);
+        left.emplace_back(t.label);
         right.emplace_back("");
     }
     render_list("TIMEZONE", kAccentRegion, left, right, g.timezone_sel, "CONFIRM");
@@ -312,23 +315,14 @@ void render_account()
     add_text_field(ui.screen_obj, 142, 110, 142, 24, g.confirm,
                    g.account_focus == 2, kAccentAccount, !g.account_password_visible);
 
-    add_label(ui.screen_obj, "Default: pi / pi", font_sm(), kColorMuted, 36, 113);
+    if (!g.form_error.empty())
+        add_label(ui.screen_obj, g.form_error.c_str(), font_xs(), 0xff6b6b, 36, 137);
 
     add_key_hint(8, "ESC", 31, "BACK", kAccentAccount);
     add_key_hint(72, "ALT", 98, g.account_password_visible ? "HIDE" : "SHOW", kAccentAccount);
     add_key_hint(145, "OK", 164, "CONFIRM", kAccentAccount);
     add_key_hint(232, "TAB", 256, "SWITCH", kAccentAccount);
 
-    if (g.account_warning_visible) {
-        add_rect(ui.screen_obj, 0, 0, kScreenWidth, kScreenHeight, 0x000000,
-                 0, 0, 0, LV_OPA_60);
-        lv_obj_t *dialog = add_rect(ui.screen_obj, 38, 46, 244, 88, kColorFieldBg,
-                                    2, kAccentAccount, 4);
-        add_label(dialog, "ACCOUNT VALIDATION", font_sm(), kAccentAccount, 14, 11);
-        add_label(dialog, g.form_error.c_str(), font_sm(), 0xffffff, 14, 35);
-        add_label(dialog, "OK", font_xs(), kAccentAccount, 14, 66);
-        add_label(dialog, "CLOSE", font_xs(), 0xffffff, 38, 66);
-    }
 }
 
 void render_pill(lv_obj_t *parent, int x, int y, int w, const char *label,
@@ -408,7 +402,8 @@ void render_wifi_list()
 
     // #94: while the first scan is still running show a loading state with a
     // spinner so the user isn't staring at an empty network list.
-    if (g.wifi_scanning && g.wifi_list.empty()) {
+    if (g.wifi_scanning && g.wifi_list.empty() && !g.wifi_scan_retrying &&
+        g.wifi_scan_error.empty()) {
         lv_obj_t *spinner = lv_spinner_create(ui.screen_obj);
         lv_obj_set_size(spinner, 28, 28);
         lv_spinner_set_anim_params(spinner, 1000, 60);
@@ -420,6 +415,19 @@ void render_wifi_list()
         add_label(ui.screen_obj, "Scanning for networks...", font_sm(), kColorMuted, 80, 86);
         add_key_hint(14, "ESC", 38, "BACK", kAccentNetwork);
         add_key_hint(112, "ALT", 136, "ADD HIDDEN WI-FI", kAccentNetwork);
+        return;
+    }
+
+    if (g.wifi_list.empty()) {
+        const char *message = !g.wifi_scan_error.empty()
+            ? g.wifi_scan_error.c_str()
+            : (g.wifi_scan_retrying ? "No networks yet. Retrying..."
+                                    : "No networks found. Press R.");
+        add_label(ui.screen_obj, message, font_sm(),
+                  g.wifi_scan_error.empty() ? kColorMuted : 0xff5a5a, 36, 82);
+        add_key_hint(14, "ESC", 38, "BACK", kAccentNetwork);
+        add_key_hint(105, "R", 124, "RESCAN", kAccentNetwork);
+        add_key_hint(190, "ALT", 214, "ADD HIDDEN", kAccentNetwork);
         return;
     }
 
@@ -550,14 +558,20 @@ void set_loading_arc_rotation(void *object, int32_t rotation)
 
 void render_applying()
 {
-    add_chrome(kAccentDone, 80, false);
     std::string message;
+    int step = 0;
+    int total = 9;
     {
         std::lock_guard<std::mutex> lock(g.mutex);
         message = g.worker_message.empty() ? "Configuring..." : g.worker_message;
+        step = g.worker_step;
+        total = g.worker_total;
     }
+    const int progress_width = total > 0 && step > 0 ? (80 * step) / total : 4;
+    ui.rendered_apply_step = step;
+    add_chrome(kAccentDone, progress_width, true);
     lv_obj_t *title = add_label(
-        ui.screen_obj, "Configuring device", font_lg(), 0xffffff, 0, 42);
+        ui.screen_obj, "Configuring device", font_lg(), 0xffffff, 0, 36);
     lv_obj_set_width(title, kScreenWidth);
     lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
 
@@ -565,7 +579,7 @@ void render_applying()
     lv_obj_remove_style(loading_arc, nullptr, LV_PART_KNOB);
     lv_obj_remove_flag(loading_arc, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(loading_arc, 34, 34);
-    lv_obj_align(loading_arc, LV_ALIGN_TOP_MID, 0, 67);
+    lv_obj_align(loading_arc, LV_ALIGN_TOP_MID, 0, 62);
     lv_arc_set_bg_angles(loading_arc, 0, 360);
     lv_arc_set_angles(loading_arc, 0, 96);
     lv_obj_set_style_arc_width(loading_arc, 3, LV_PART_MAIN);
@@ -589,10 +603,16 @@ void render_applying()
     lv_anim_start(&rotation);
 
     ui.config_status_label = add_label(
-        ui.screen_obj, message.c_str(), font_sm(), kColorMuted, 24, 113);
+        ui.screen_obj, message.c_str(), font_sm(), kColorMuted, 24, 108);
     lv_label_set_long_mode(ui.config_status_label, LV_LABEL_LONG_DOT);
     lv_obj_set_width(ui.config_status_label, 272);
     lv_obj_set_style_text_align(ui.config_status_label, LV_TEXT_ALIGN_CENTER, 0);
+    const std::string step_text = "Step " + std::to_string(step) + "/" + std::to_string(total);
+    lv_obj_t *step_label = add_label(
+        ui.screen_obj, step_text.c_str(), font_sm(), kAccentDone, 0, 132);
+    lv_obj_set_width(step_label, kScreenWidth);
+    lv_obj_set_style_text_align(step_label, LV_TEXT_ALIGN_CENTER, 0);
+    add_key_hint(14, "ESC", 38, "CANCEL", kAccentDone);
 }
 
 void render_restart_prompt()
@@ -623,6 +643,8 @@ void render_restart_or_error(bool restarting)
 
 void render()
 {
+    if (ui.input_context_scope)
+        ui.input_context_scope->update(launch_wizard::wizard_input_context(g));
     ui.config_status_label = nullptr;
     lv_obj_clean(ui.screen_obj);
     switch (g.screen) {
@@ -656,20 +678,27 @@ void start_apply()
 {
     if (g.busy)
         return;
+    ui.cancel.store(false);
     g.busy = true;
     {
         std::lock_guard<std::mutex> lock(g.mutex);
         g.worker_message = "Configuring...";
+        g.worker_step = 0;
+        g.worker_total = 9;
     }
     go(Screen::Applying);
 
     if (ui.apply_worker.joinable()) ui.apply_worker.join();
     ui.apply_worker = std::thread([]() {
-        std::string message = launch_wizard::WizardService::apply(g, [](const std::string &status) {
-            { std::lock_guard<std::mutex> lock(g.mutex); g.worker_message = status; }
+        std::string message = launch_wizard::WizardService::apply(g, [](const launch_wizard::ProgressEvent &event) {
+            {
+                std::lock_guard<std::mutex> lock(g.mutex);
+                g.worker_message = event.label;
+                g.worker_step = event.step;
+                g.worker_total = event.total;
+            }
             cp0_lvgl_wake();
-            return !ui.cancel.load();
-        });
+        }, []() { return ui.cancel.load(); });
         std::lock_guard<std::mutex> lock(g.mutex);
         g.worker_message = message;
         g.worker_finished = true;
@@ -767,35 +796,45 @@ void enter_wifi_list()
         std::lock_guard<std::mutex> lock(g.mutex);
         g.wifi_scan_ready = false;
         g.wifi_scan_result.clear();
+        g.wifi_scan_result_error = 0;
+        g.wifi_scan_final_empty = false;
         scan_generation = ++g.wifi_scan_generation;
     }
     g.wifi_scanning = true;
+    g.wifi_scan_retrying = false;
+    g.wifi_scan_error.clear();
     go(Screen::WifiList);
 
-    if (ui.wifi_scan_worker.joinable()) ui.wifi_scan_worker.join();
-    ui.wifi_scan_worker = std::thread([scan_generation]() {
-        int scan_count = 0;
-        for (;;) {
-            std::vector<WifiNetwork> networks =
+    if (!ui.wifi_scan_tasks.start([scan_generation]() {
+        launch_wizard::WifiScanRetryPolicy retry_policy;
+        for (int scan_count = 0;
+             scan_count < launch_wizard::kWifiMaxAutomaticScans; ++scan_count) {
+            launch_wizard::WifiScanResult scan =
                 launch_wizard::WizardService::scan_wifi();
             const WifiConnectionStatus connection =
                 launch_wizard::WizardService::read_wifi_status();
+            const launch_wizard::WifiScanDecision decision =
+                retry_policy.observe(scan.error, scan.networks.size());
+            const bool final_empty =
+                decision == launch_wizard::WifiScanDecision::Empty;
             {
                 std::lock_guard<std::mutex> lock(g.mutex);
                 if (g.wifi_scan_generation != scan_generation)
                     return;
-                g.wifi_scan_result = networks;
+                g.wifi_scan_result = scan.networks;
+                g.wifi_scan_result_error = scan.error;
                 g.wifi_scan_status = connection;
+                g.wifi_scan_final_empty = final_empty;
                 g.wifi_scan_ready = true;
             }
             cp0_lvgl_wake();
-            if (!networks.empty())
+            if (decision != launch_wizard::WifiScanDecision::Retry)
                 return;
 
-            ++scan_count;
-            const auto delay = scan_count < kWifiInitialRetryCount
-                ? kWifiInitialRetryPeriod : kWifiScanPeriod;
-            const auto deadline = std::chrono::steady_clock::now() + delay;
+            if (final_empty)
+                return;
+            const auto deadline = std::chrono::steady_clock::now() +
+                                  kWifiInitialRetryPeriod;
             while (std::chrono::steady_clock::now() < deadline) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 std::lock_guard<std::mutex> lock(g.mutex);
@@ -803,7 +842,11 @@ void enter_wifi_list()
                     return;
             }
         }
-    });
+    })) {
+        g.wifi_scanning = false;
+        g.wifi_scan_error = "Unable to start Wi-Fi scan. Press R.";
+        render();
+    }
 }
 
 void cancel_wifi_scan()
@@ -819,6 +862,7 @@ void enter_hidden_wifi()
 {
     cancel_wifi_scan();
     g.wifi_ssid.clear();
+    g.wifi_security.clear();
     g.wifi_password.clear();
     g.wifi_manual = true;
     g.wifi_hidden = true;
@@ -835,7 +879,9 @@ void start_wifi_connection()
     if (g.wifi_connecting)
         return;
     std::string validation_error;
-    if (!launch_wizard::validate_wifi_ssid(g.wifi_ssid, validation_error)) {
+    if (!launch_wizard::validate_wifi_credentials(
+            g.wifi_ssid, g.wifi_security, g.wifi_password,
+            g.wifi_hidden, validation_error)) {
         g.wifi_connect_error = validation_error;
         render();
         return;
@@ -850,8 +896,7 @@ void start_wifi_connection()
     g.wifi_connect_error.clear();
     render();
 
-    if (ui.wifi_connect_worker.joinable()) ui.wifi_connect_worker.join();
-    ui.wifi_connect_worker = std::thread([ssid, password, hidden]() {
+    if (!ui.wifi_connect_tasks.start([ssid, password, hidden]() {
         std::string connected_ip;
         const std::string error = launch_wizard::WizardService::connect_wifi(
             ssid, password, &connected_ip, hidden);
@@ -866,7 +911,11 @@ void start_wifi_connection()
         }
         g.wifi_connect_ready = true;
         cp0_lvgl_wake();
-    });
+    })) {
+        g.wifi_connecting = false;
+        g.wifi_connect_error = "Unable to start Wi-Fi connection";
+        render();
+    }
 }
 
 // ESC navigation per screen.
@@ -969,30 +1018,27 @@ void confirm_manual_time()
 
 bool validate_account_fields()
 {
-    if (g.username.empty())
-        g.username = "pi";
-    if (g.password.empty() && g.confirm.empty()) {
-        g.password = "pi";
-        g.confirm = "pi";
-    }
-
     std::string error;
-    if (!launch_wizard::validate_username(g.username, error) ||
-        !launch_wizard::validate_password(g.password, error)) {
+    if (!launch_wizard::validate_username(g.username, error)) {
         g.form_error = error;
-        g.account_warning_visible = true;
+        g.account_focus = 0;
+        render();
+        return false;
+    }
+    if (!launch_wizard::validate_password(g.password, error)) {
+        g.form_error = error;
+        g.account_focus = 1;
         render();
         return false;
     }
     if (g.password != g.confirm) {
         g.form_error = "Passwords do not match";
-        g.account_warning_visible = true;
+        g.account_focus = 2;
         render();
         return false;
     }
 
     g.form_error.clear();
-    g.account_warning_visible = false;
     return true;
 }
 
@@ -1018,6 +1064,12 @@ void handle_enter()
         break;
     }
     case Screen::Account:
+        if (g.account_focus < 2) {
+            ++g.account_focus;
+            g.form_error.clear();
+            render();
+            return;
+        }
         if (!validate_account_fields())
             return;
         go(Screen::Network);
@@ -1057,6 +1109,7 @@ void handle_enter()
             break;
         cancel_wifi_scan();
         g.wifi_ssid = g.wifi_list[g.wifi_sel].ssid;
+        g.wifi_security = g.wifi_list[g.wifi_sel].security;
         g.wifi_manual = false;
         g.wifi_hidden = false;
         g.wifi_focus = 1;
@@ -1158,8 +1211,17 @@ void keyboard_event_cb(lv_event_t *event)
     auto *key = static_cast<key_item *>(lv_event_get_param(event));
     if (!key || key->key_state == KBD_KEY_RELEASED)
         return;
-    if (g.busy)
+    if (g.busy) {
+        if (g.screen == Screen::Applying && key->key_code == KEY_ESC &&
+            !ui.cancel.exchange(true)) {
+            {
+                std::lock_guard<std::mutex> lock(g.mutex);
+                g.worker_message = "Cancelling...";
+            }
+            cp0_lvgl_wake();
+        }
         return;
+    }
 
     if (g.account_warning_visible) {
         switch (key->key_code) {
@@ -1191,6 +1253,11 @@ void keyboard_event_cb(lv_event_t *event)
     }
 
     uint32_t key_code = key->key_code;
+    if (g.screen == Screen::WifiList && key_code == KEY_R &&
+        key->key_state == KBD_KEY_PRESSED) {
+        enter_wifi_list();
+        return;
+    }
     if (g.screen == Screen::WifiList && key_code == KEY_LEFTALT &&
         key->key_state == KBD_KEY_PRESSED) {
         enter_hidden_wifi();
@@ -1288,6 +1355,8 @@ void keyboard_event_cb(lv_event_t *event)
 void poll_worker_cb(lv_timer_t *timer)
 {
     (void)timer;
+    ui.wifi_scan_tasks.reap_finished();
+    ui.wifi_connect_tasks.reap_finished();
 
     // #94: pull in async Wi-Fi scan results and refresh the list live.
     bool wifi_updated = false;
@@ -1297,13 +1366,23 @@ void poll_worker_cb(lv_timer_t *timer)
             g.wifi_scan_ready = false;
             g.wifi_list = std::move(g.wifi_scan_result);
             g.wifi_scan_result.clear();
+            const int scan_error = g.wifi_scan_result_error;
+            g.wifi_scan_result_error = 0;
             if (g.wifi_scan_status.available) {
                 g.wifi_status_connected = g.wifi_scan_status.connected;
                 g.wifi_connected = g.wifi_scan_status.connected;
                 g.wifi_status_ssid = g.wifi_scan_status.ssid;
                 g.wifi_status_ip = g.wifi_scan_status.ip;
             }
-            g.wifi_scanning = false;
+            g.wifi_scan_retrying = scan_error == 0 && g.wifi_list.empty() &&
+                                   !g.wifi_scan_final_empty;
+            g.wifi_scanning = g.wifi_scan_retrying;
+            switch (scan_error) {
+            case 0: g.wifi_scan_error.clear(); break;
+            case CP0_WIFI_ERROR_RADIO_OFF: g.wifi_scan_error = "Could not enable Wi-Fi radio. Press R."; break;
+            case CP0_WIFI_ERROR_TIMEOUT: g.wifi_scan_error = "Wi-Fi scan timed out. Press R."; break;
+            default: g.wifi_scan_error = "Network service unavailable. Press R."; break;
+            }
             wifi_updated = true;
         }
     }
@@ -1351,12 +1430,17 @@ void poll_worker_cb(lv_timer_t *timer)
         }
     } else if (g.screen == Screen::Applying && ui.config_status_label) {
         std::string message;
+        int step = 0;
         {
             std::lock_guard<std::mutex> lock(g.mutex);
             message = g.worker_message.empty() ? "Configuring..." : g.worker_message;
+            step = g.worker_step;
         }
-        if (strcmp(lv_label_get_text(ui.config_status_label), message.c_str()) != 0)
+        if (step != ui.rendered_apply_step) {
+            render();
+        } else if (strcmp(lv_label_get_text(ui.config_status_label), message.c_str()) != 0) {
             lv_label_set_text(ui.config_status_label, message.c_str());
+        }
     }
 }
 
@@ -1395,6 +1479,8 @@ void launch_wizard_register_event(void)
 bool launch_wizard_ui_setup(void)
 {
     cp0_keyboard_set_lvgl_keypad_intercept(0);
+    ui.input_context_scope = std::make_unique<Cp0KeyboardInputContextScope>(
+        launch_wizard::wizard_input_context(g));
     ui.cancel.store(false);
     ui.quit.store(false);
     ui.page = std::make_unique<AppPageRoot>();
@@ -1431,8 +1517,8 @@ void launch_wizard_ui_teardown(void)
         ++g.wifi_scan_generation;
     }
     cp0_lvgl_wake();
-    if (ui.wifi_scan_worker.joinable()) ui.wifi_scan_worker.join();
-    if (ui.wifi_connect_worker.joinable()) ui.wifi_connect_worker.join();
+    ui.wifi_scan_tasks.join_all();
+    ui.wifi_connect_tasks.join_all();
     if (ui.apply_worker.joinable()) ui.apply_worker.join();
     if (ui.reboot_worker.joinable()) ui.reboot_worker.join();
     if (ui.poll_timer) {
@@ -1442,4 +1528,5 @@ void launch_wizard_ui_teardown(void)
     ui.screen_obj = nullptr;
     ui.config_status_label = nullptr;
     ui.page.reset();
+    ui.input_context_scope.reset();
 }

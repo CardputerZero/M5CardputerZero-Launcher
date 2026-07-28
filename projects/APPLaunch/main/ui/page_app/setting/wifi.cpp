@@ -40,6 +40,18 @@ namespace {
 
 constexpr auto kWifiScanPeriod = std::chrono::seconds(8);
 
+const char *wifi_error_message(int result)
+{
+    switch (result) {
+    case CP0_WIFI_ERROR_RADIO_OFF: return "WiFi is off. Turn on Power to scan";
+    case CP0_WIFI_ERROR_AUTH: return "Incorrect password";
+    case CP0_WIFI_ERROR_NOT_FOUND: return "Network is no longer available";
+    case CP0_WIFI_ERROR_IP_CONFIG: return "Connected, but IP setup failed";
+    case CP0_WIFI_ERROR_TIMEOUT: return "Network operation timed out; retry";
+    default: return "Network service unavailable; retry";
+    }
+}
+
 } // namespace
 
 WiFi::~WiFi()
@@ -74,6 +86,7 @@ void WiFi::append(UISetupPage &p, std::vector<MenuItem> &menu)
 void WiFi::enter_hidden_wifi(UISetupPage &page)
 {
     stop_connection_failure_feedback();
+    if (!require_radio_enabled(page)) return;
     stop_scan();
     clear_password_view();
     ssid_model_.reset();
@@ -92,10 +105,36 @@ void WiFi::enter_scan(UISetupPage &page)
     clear_password_view();
     clear_ssid_view();
     ssid_model_.reset();
-    SetupPageAccess(page).set_view(SetupViewState::WIFI_LIST);
+    if (!require_radio_enabled(page)) return;
+    SetupPageAccess access(page);
+    access.set_view(SetupViewState::WIFI_LIST);
     refresh_list_status();
     start_scan(page);
     build_list(page);
+}
+
+bool WiFi::require_radio_enabled(UISetupPage &page)
+{
+    if (cp0_wifi_radio_enabled() != 0) return true;
+
+    stop_scan();
+    SetupPageAccess access(page);
+    access.set_view(SetupViewState::WIFI_POWER_WARNING);
+    if (!show_power_warning(page)) {
+        access.set_view(SetupViewState::SUB);
+        access.select_sub(0, 3);
+        access.build_sub_view();
+    }
+    return false;
+}
+
+void WiFi::handle_power_warning_key(UISetupPage &page, uint32_t key)
+{
+    if (key != KEY_ENTER && key != KEY_ESC && key != KEY_LEFT) return;
+    SetupPageAccess access(page);
+    access.set_view(SetupViewState::SUB);
+    access.select_sub(0, 3);
+    access.build_sub_view();
 }
 
 void WiFi::start_scan(UISetupPage &page)
@@ -106,7 +145,8 @@ void WiFi::start_scan(UISetupPage &page)
     state->page = &page;
     scan_state_ = state;
     list_view_model_.begin_scan();
-    scan_threads_.emplace_back([state] {
+    list_view_model_.clear_scan_error();
+    if (!scan_tasks_.start([state] {
         for (;;) {
             {
                 std::lock_guard<std::mutex> lock(state->mutex);
@@ -116,24 +156,34 @@ void WiFi::start_scan(UISetupPage &page)
 
             auto result = std::make_unique<ScanResult>();
             result->state = state;
-            result->count = cp0_wifi_scan(result->aps, CP0_WIFI_AP_MAX);
+            const bool radio_enabled = cp0_wifi_radio_enabled() != 0;
+            result->count = radio_enabled
+                ? cp0_wifi_scan(result->aps, CP0_WIFI_AP_MAX)
+                : CP0_WIFI_ERROR_RADIO_OFF;
 
             {
                 std::lock_guard<std::mutex> lock(state->mutex);
                 if (state->stop) break;
                 result->page = state->page;
             }
+            const bool failed = result->count < 0;
             ScanResult *raw = result.release();
             if (lv_async_call(scan_result_cb, raw) != LV_RESULT_OK)
                 delete raw;
 
             std::unique_lock<std::mutex> lock(state->mutex);
-            state->wake.wait_for(lock, kWifiScanPeriod, [&] {
-                return state->stop || state->requested;
-            });
+            if (failed)
+                state->wake.wait(lock, [&] { return state->stop || state->requested; });
+            else
+                state->wake.wait_for(lock, kWifiScanPeriod, [&] {
+                    return state->stop || state->requested;
+                });
             if (state->stop) break;
         }
-    });
+    })) {
+        stop_scan();
+        list_view_model_.fail_scan("Unable to start WiFi scan; retry");
+    }
 }
 
 void WiFi::stop_scan()
@@ -156,10 +206,8 @@ void WiFi::shutdown()
 {
     connection_operation_.shutdown();
     stop_scan();
-    for (auto &thread : scan_threads_) {
-        if (thread.joinable()) thread.join();
-    }
-    scan_threads_.clear();
+    scan_tasks_.join_all();
+    connection_tasks_.join_all();
 }
 
 void WiFi::request_scan()
@@ -188,6 +236,7 @@ void WiFi::scan_result_cb(void *user) noexcept
         }
         if (!owner || !result->page ||
             !SetupPageAccess(*result->page).is_view(SetupViewState::WIFI_LIST)) return;
+        owner->scan_tasks_.reap_finished();
         owner->apply_scan_result(*result->page, result->aps, result->count);
     } catch (...) {
     }
@@ -195,6 +244,12 @@ void WiFi::scan_result_cb(void *user) noexcept
 
 void WiFi::apply_scan_result(UISetupPage &page, const cp0_wifi_ap_t *aps, int count)
 {
+    if (count < 0) {
+        list_view_model_.fail_scan(wifi_error_message(count));
+        refresh_list_status();
+        build_list(page);
+        return;
+    }
     std::vector<SetupWifiAccessPoint> access_points;
     const int safe_count = std::clamp(count, 0, CP0_WIFI_AP_MAX);
     access_points.reserve(static_cast<std::size_t>(safe_count));
@@ -289,7 +344,7 @@ void WiFi::try_connect(UISetupPage &page, int idx)
         }
     } else {
         ssid_model_.reset();
-        password_model_.begin(ap.ssid);
+        password_model_.begin(ap.ssid, ap.security);
         if (!password_view_.show(page, password_model_.ssid())) {
             password_model_.reset();
             start_scan(page);
@@ -304,7 +359,7 @@ bool WiFi::start_connection(UISetupPage &page, std::string ssid,
     AsyncOperationLifecycle::Token token = connection_operation_.begin();
     if (!token) return false;
     try {
-        std::thread([token, page = &page, ssid = std::move(ssid),
+        if (!connection_tasks_.start([token, page = &page, ssid = std::move(ssid),
                      password = std::move(password), origin]() mutable {
             const char *password_arg = password.empty() ? nullptr : password.c_str();
             const bool hidden = origin == ConnectionOrigin::HIDDEN_PASSWORD_ENTRY;
@@ -326,7 +381,10 @@ bool WiFi::start_connection(UISetupPage &page, std::string ssid,
                 queued->token.complete();
                 delete queued;
             }
-        }).detach();
+        })) {
+            connection_operation_.abort(token);
+            return false;
+        }
     } catch (...) {
         connection_operation_.abort(token);
         return false;
@@ -341,11 +399,12 @@ void WiFi::connection_result_cb(void *user) noexcept
     try {
         SetupPageAccess access(*result->page);
         WiFi &wifi = access.wifi();
+        wifi.connection_tasks_.reap_finished();
         if (result->origin == ConnectionOrigin::HIDDEN_PASSWORD_ENTRY) {
             if (!access.is_view(SetupViewState::WIFI_SSID)) return;
             if (result->result != 0) {
                 wifi.ssid_view_.set_hint(
-                    "Failed! Check SSID/password and retry.", 0xFF4444);
+                    wifi_error_message(result->result), 0xFF4444);
                 wifi.password_model_.clear_password();
                 wifi.ssid_view_.update_password(wifi.password_model_.password());
                 return;
@@ -358,7 +417,7 @@ void WiFi::connection_result_cb(void *user) noexcept
             if (!access.is_view(SetupViewState::WIFI_PW)) return;
             if (result->result != 0) {
                 wifi.password_view_.set_hint(
-                    "Failed! Wrong password? Try again.", 0xFF4444);
+                    wifi_error_message(result->result), 0xFF4444);
                 wifi.password_model_.clear_password();
                 wifi.password_view_.update_password(
                     wifi.password_model_.password());
@@ -372,13 +431,13 @@ void WiFi::connection_result_cb(void *user) noexcept
             if (!access.is_view(SetupViewState::WIFI_LIST)) return;
             if (result->result != 0) {
                 if (result->origin == ConnectionOrigin::SAVED_PROFILE) {
-                    wifi.password_model_.begin(result->ssid);
+                    wifi.password_model_.begin(result->ssid, "WPA");
                     if (wifi.password_view_.show(
                             *result->page, wifi.password_model_.ssid()))
                         return;
                     wifi.password_model_.reset();
                 } else {
-                    wifi.show_error(*result->page, "Connection failed");
+                    wifi.show_error(*result->page, wifi_error_message(result->result));
                     wifi.start_connection_failure_feedback(*result->page);
                     return;
                 }
@@ -536,7 +595,7 @@ void WiFi::handle_pw_key(UISetupPage &page, uint32_t key)
     }
     if (key == KEY_ENTER) {
         if (!password_model_.can_submit()) {
-            password_view_.set_hint("Password required");
+            password_view_.set_hint(password_model_.validation_error().c_str(), 0xFF4444);
             return;
         }
         password_view_.set_hint("Connecting...");

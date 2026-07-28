@@ -6,6 +6,7 @@
 #include "../cp0_osinfo_contract.hpp"
 #include "../cp0_signal_registration.hpp"
 #include "../cp0_sync_signal.hpp"
+#include "../cp0_update_job.hpp"
 
 #include <arpa/inet.h>
 #include <cerrno>
@@ -17,6 +18,7 @@
 #include <functional>
 #include <ifaddrs.h>
 #include <list>
+#include <iterator>
 #include <memory>
 #include <random>
 #include <net/if.h>
@@ -88,6 +90,29 @@ public:
 
     void api_call(arg_t arg, callback_t callback)
     {
+        const std::string command = arg.empty() ? std::string() : arg.front();
+        if (command == "AptUpdateStart" || command == "UpdateLauncherStart") {
+            const std::string id = jobs_.start([] {
+                return cp0::update::Result{-ENOTSUP, "unsupported"};
+            });
+            cp0::callback::invoke(callback, 0, id);
+            return;
+        }
+        if (command == "UpdateJobStatus") {
+            const auto id = arg.size() > 1 ? *std::next(arg.begin()) : std::string();
+            std::string status;
+            cp0::callback::invoke(callback, jobs_.status(id, status) ? 0 : -1, status);
+            return;
+        }
+        if (command == "UpdateJobCancel") {
+            const auto id = arg.size() > 1 ? *std::next(arg.begin()) : std::string();
+            cp0::callback::invoke(callback, jobs_.cancel(id) ? 0 : -1, {});
+            return;
+        }
+        if (command == "UpdateLauncherState") {
+            cp0::callback::invoke(callback, -ENOTSUP, {});
+            return;
+        }
         const cp0::osinfo::Result result = cp0::osinfo::dispatch(arg, operations_);
         cp0::callback::invoke(callback, result.code, result.payload);
     }
@@ -106,6 +131,7 @@ public:
 
 private:
     cp0::osinfo::Operations operations_;
+    cp0::update::Jobs jobs_;
 
     static uint32_t random_u32() noexcept
     {

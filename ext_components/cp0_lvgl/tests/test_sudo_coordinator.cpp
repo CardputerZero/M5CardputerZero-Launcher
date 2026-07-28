@@ -96,6 +96,23 @@ int main()
     }
     {
         Coordinator c;
+        assert(has(c.enqueue(request(1), 0), ActionType::SHOW_PROMPT, 1));
+        auto queued = request(2);
+        queued->queue_timeout_ms = 10;
+        assert(c.enqueue(queued, 0).empty());
+        assert(c.tick(9, {}).empty());
+        auto timed = c.tick(10, {});
+        assert(has(timed, ActionType::CALL_COMPLETE, 2));
+        for (const auto &action : timed) {
+            if (action.type == ActionType::CALL_COMPLETE && action.request->id == 2) {
+                assert(action.result == CP0_SUDO_RESULT_TIMED_OUT);
+                assert(action.exit_code == -ETIMEDOUT);
+            }
+        }
+        assert(c.state(1) == State::PROMPT);
+    }
+    {
+        Coordinator c;
         c.enqueue(request(1), 0);
         assert(has(c.submit_password(1), ActionType::START_WORKER, 1));
         std::vector<Action> actions;

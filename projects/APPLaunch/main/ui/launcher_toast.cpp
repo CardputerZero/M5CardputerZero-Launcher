@@ -99,6 +99,12 @@ void LauncherToast::show(const char *text) noexcept
     }
 }
 
+void LauncherToast::show_persistent(const char *text) noexcept
+{
+    show(text);
+    if (hide_timer_) lv_timer_pause(hide_timer_);
+}
+
 void LauncherToast::hide()
 {
     if (container_)

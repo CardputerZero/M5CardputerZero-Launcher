@@ -19,7 +19,8 @@ public:
 
     void open_chat(const FontManager *fonts);
     void open_text(const FontManager *fonts, const std::string &placeholder,
-                   const std::string &initial_text, InputMode mode);
+                   const std::string &initial_text, InputMode mode,
+                   bool secret = false);
     void close();
 
     bool is_open() const;
@@ -34,6 +35,7 @@ public:
     void move_right();
     void move_up();
     void move_down();
+    void toggle_secret_visibility();
 
 private:
     static void dialog_deleted(lv_event_t *event);
@@ -45,6 +47,8 @@ private:
     lv_obj_t *textarea_ = nullptr;
     lv_style_t cursor_style_{};
     bool cursor_style_initialized_ = false;
+    bool secret_ = false;
+    bool secret_revealed_ = false;
     InputMode mode_ = InputMode::Chat;
 };
 

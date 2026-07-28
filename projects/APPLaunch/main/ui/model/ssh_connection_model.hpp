@@ -9,6 +9,8 @@ class SshConnectionModel
 {
 public:
     enum class Field : size_t { HOST = 0, PORT = 1, USER = 2 };
+    enum class Error { NONE, EMPTY_HOST, INVALID_HOST, INVALID_PORT, INVALID_USER };
+    struct Validation { Error error; Field field; const char *message; };
     static constexpr size_t FIELD_COUNT = 3;
 
     SshConnectionModel();
@@ -23,7 +25,9 @@ public:
     bool erase_last();
 
     bool valid() const;
+    Validation validate() const;
     std::list<std::string> arguments() const;
+    bool set_values(std::string host, std::string port, std::string user);
 
 private:
     static constexpr size_t MAX_FIELD_BYTES = 128;

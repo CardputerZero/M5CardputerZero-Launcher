@@ -46,6 +46,12 @@ std::string runtime_fallback_font_path()
 {
     const char *env_path = std::getenv("ZCLAW_FALLBACK_FONT");
     const std::vector<std::string> candidates = {
+        cp0_file_path("share/font/DejaVuSans.ttf"),
+        "./APPLaunch/share/font/DejaVuSans.ttf",
+        "../APPLaunch/share/font/DejaVuSans.ttf",
+        "./dist/APPLaunch/share/font/DejaVuSans.ttf",
+        "../dist/APPLaunch/share/font/DejaVuSans.ttf",
+        "/usr/share/APPLaunch/share/font/DejaVuSans.ttf",
         cp0_file_path("NotoEmoji-Regular.ttf"),
         cp0_file_path("Symbola.ttf"),
         "/usr/share/fonts/truetype/noto/NotoEmoji-Regular.ttf",

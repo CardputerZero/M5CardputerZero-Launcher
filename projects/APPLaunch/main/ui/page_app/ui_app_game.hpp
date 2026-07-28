@@ -8,6 +8,8 @@
 #include "../launcher_ui_app_page.hpp"
 #include "../model/snake_game_model.hpp"
 #include "../model/page_timer_lifecycle.hpp"
+#include "../model/game_input_action.hpp"
+#include "cp0_keyboard_input_context.hpp"
 
 // ============================================================
 //  Snake Game  UIGamePage
@@ -67,6 +69,7 @@ class UIGamePage : public AppPageRoot
     // ---- Game data ----
     SnakeGameModel model_;
     GameState state_ = STATE_READY;
+    Cp0KeyboardInputContextScope input_context_scope_{KBD_INPUT_CONTEXT_GAME};
 
 public:
     UIGamePage();
@@ -111,11 +114,11 @@ private:
     void event_handler(lv_event_t *e);
 
     // ---- READY state keys ----
-    void handle_ready_key(uint32_t key);
+    void handle_ready_key(GameInputAction action);
 
     // ---- PLAYING state keys ----
-    void handle_playing_key(uint32_t key);
+    void handle_playing_key(GameInputAction action);
 
     // ---- GAME_OVER state keys ----
-    void handle_gameover_key(uint32_t key);
+    void handle_gameover_key(GameInputAction action);
 };

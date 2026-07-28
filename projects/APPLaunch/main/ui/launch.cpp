@@ -45,6 +45,7 @@ void Launch::bind_ui()
     refresh_home_carousel();
 
     app_directory_watcher_.start([this] { applications_reload(); });
+    esc_ui_watchdog_.start();
     esc_hold_hint_controller().set_force_home_callback(esc_force_home_cb, this);
 }
 
@@ -64,9 +65,11 @@ void Launch::lv_go_back_home(void *arg) noexcept
         if (auto page = self->launch_page_.lock()) page->show_home_screen();
         lv_refr_now(nullptr);
         self->app_Page.reset();
+        self->esc_ui_watchdog_.disarm();
         SLOGI("[HOME] lv_go_back_home done, on launcher home");
     } catch (...) {
         self->app_Page.reset();
+        self->esc_ui_watchdog_.disarm();
     }
 }
 
@@ -80,7 +83,9 @@ void Launch::go_back_home()
 
 bool Launch::begin_page_launch()
 {
-    return page_lifecycle_.begin_app();
+    if (!page_lifecycle_.begin_app()) return false;
+    esc_ui_watchdog_.arm();
+    return true;
 }
 
 void Launch::launch_Exec_in_terminal(const std::string &exec, bool sysplause)
@@ -107,15 +112,20 @@ void Launch::launch_Exec(const std::string &exec, bool keep_root)
     ui_screensaver_set_foreground(0);
     LVGL_RUN_FLAGE = 0;
     if (indev) lv_indev_set_group(indev, nullptr);
-    lv_timer_enable(false);
     lv_refr_now(disp);
-
-    int ret = -1;
-    cp0_signal_process_api({"ExecBlocking", exec,
-                            std::to_string(reinterpret_cast<uintptr_t>(&LVGL_HOME_KEY_FLAG)),
-                            keep_root ? "1" : "0"},
-                           [&](int code, std::string) { ret = code; });
-    SLOGI("App %s exited with code %d", exec.c_str(), ret);
+    // External apps own the framebuffer exclusively. Keep process supervision
+    // active in the backend, but stop every Launcher timer/flush until the
+    // child exits; drawing an LVGL toast here would overwrite the child UI.
+    lv_timer_enable(false);
+    int result = -1;
+    try {
+        cp0_signal_process_api(
+            {"ExecBlocking", exec, keep_root ? "1" : "0"},
+            [&](int code, std::string) { result = code; });
+    } catch (...) {
+        result = -1;
+    }
+    SLOGI("External app exited with code %d", result);
 
     lv_timer_enable(true);
     if (indev) lv_indev_set_group(indev, UILaunchPage::home_input_group());
@@ -201,6 +211,7 @@ Launch::~Launch()
 {
     launcher_app_registry_clear_changed_callback(app_registry_changed_cb, this);
     esc_hold_hint_controller().set_force_home_callback(nullptr, nullptr);
+    esc_ui_watchdog_.shutdown();
     app_directory_watcher_.stop();
     page_lifecycle_.stop();
     lv_async_call_cancel(lv_go_back_home, this);

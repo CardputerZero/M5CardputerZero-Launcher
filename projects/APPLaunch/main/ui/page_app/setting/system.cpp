@@ -236,9 +236,10 @@ void Update::append(UISetupPage &page, std::vector<MenuItem> &menu)
     MenuItem item;
     item.label = "Update";
     item.sub_items = {
-        {"Check System", false, false, []() { Update::check_system_update(); }},
-        {"Update Launcher", false, false, []() { Update::update_launcher(); }},
+        {"Check System", false, false, [page_ptr]() { Update::check_system_update(*page_ptr); }},
+        {"Update Launcher", false, false, [page_ptr]() { Update::update_launcher(*page_ptr); }},
         {"Version: --", false, false, nullptr},
+        {"Build: --", false, false, nullptr},
     };
     item.on_enter = [page_ptr]() { Update::refresh_version_info(*page_ptr); };
     menu.push_back(item);
@@ -247,20 +248,89 @@ void Update::append(UISetupPage &page, std::vector<MenuItem> &menu)
 void Update::refresh_version_info(UISetupPage &page)
 {
     MenuItem *item = SetupPageAccess(page).find_menu("Update");
-    if (item && item->sub_items.size() >= 3)
-        item->sub_items[2].label = system_page::version_label(LAUNCHER_GIT_COMMIT);
+    if (item && item->sub_items.size() >= 4) {
+        cp0_signal_osinfo_api({"UpdateLauncherState"}, [&](int code, std::string state) {
+            if (code == 0 && state.rfind("failed:", 0) == 0)
+                item->sub_items[1].label = "Update " + state.substr(7);
+            else if (code == 0 && state.rfind("succeeded:", 0) == 0)
+                item->sub_items[1].label = "Launcher is up to date";
+            else if (code == 0 && !state.empty())
+                item->sub_items[1].label = "Updating: " + state;
+        });
+        item->sub_items[2].label = system_page::version_label(LAUNCHER_VERSION);
+        item->sub_items[3].label = system_page::build_label(
+            LAUNCHER_BUILD_DATE, LAUNCHER_CHANNEL, LAUNCHER_GIT_COMMIT);
+    }
 }
 
-void Update::check_system_update()
+void Update::check_system_update(UISetupPage &page)
 {
-    cp0_signal_osinfo_api(
-        {system_page::update_request(system_page::UpdateAction::CheckSystem)}, nullptr);
+    page.start_update_job("AptUpdateStart", 0);
 }
 
-void Update::update_launcher()
+void Update::update_launcher(UISetupPage &page)
 {
-    cp0_signal_osinfo_api(
-        {system_page::update_request(system_page::UpdateAction::UpdateLauncher)}, nullptr);
+    page.start_update_job("UpdateLauncherStart", 1);
 }
 
 } // namespace setting
+
+void UISetupPage::stop_update_timer(bool cancel_job)
+{
+    if (update_timer_) lv_timer_delete(update_timer_);
+    update_timer_ = nullptr;
+    if (cancel_job && !update_job_id_.empty())
+        cp0_signal_osinfo_api({"UpdateJobCancel", update_job_id_}, nullptr);
+    update_job_id_.clear();
+    update_item_index_ = -1;
+}
+
+void UISetupPage::start_update_job(const char *command, int item_index)
+{
+    if (update_timer_ || !command) return;
+    MenuItem *menu = setting::SetupPageAccess(*this).find_menu("Update");
+    if (!menu || item_index < 0 || item_index >= static_cast<int>(menu->sub_items.size())) return;
+    menu->sub_items[item_index].label = item_index == 0 ? "Checking System..." : "Updating Launcher...";
+    build_sub_view();
+    cp0_signal_osinfo_api({command}, [&](int code, std::string id) {
+        if (code == 0 && !id.empty()) update_job_id_ = std::move(id);
+    });
+    if (update_job_id_.empty()) {
+        menu->sub_items[item_index].label = "Update start failed";
+        build_sub_view();
+        return;
+    }
+    update_item_index_ = item_index;
+    update_timer_ = lv_timer_create(update_timer_cb, 500, this);
+    if (!update_timer_) {
+        menu->sub_items[item_index].label = "Status unavailable";
+        stop_update_timer();
+        build_sub_view();
+    }
+}
+
+void UISetupPage::update_timer_cb(lv_timer_t *timer) noexcept
+{
+    auto *page = timer ? static_cast<UISetupPage *>(lv_timer_get_user_data(timer)) : nullptr;
+    if (!page || !page->lifecycle_.active()) return;
+    try {
+        std::string state;
+        int code = -1;
+        cp0_signal_osinfo_api({"UpdateJobStatus", page->update_job_id_},
+            [&](int result, std::string payload) { code = result; state = std::move(payload); });
+        if (code == 0 && state == "running") return;
+        MenuItem *menu = setting::SetupPageAccess(*page).find_menu("Update");
+        if (menu && page->update_item_index_ >= 0 &&
+            page->update_item_index_ < static_cast<int>(menu->sub_items.size())) {
+            menu->sub_items[page->update_item_index_].label =
+                code == 0 && state == "succeeded:submitted" ? "Update submitted; restarting" :
+                (code == 0 && state.rfind("succeeded:", 0) == 0 ? "Update succeeded" :
+                (state.rfind("failed:", 0) == 0 ? "Update " + state.substr(7) :
+                                                  "Update status failed"));
+        }
+        page->stop_update_timer(false);
+        if (page->view_state_ == ViewState::SUB) page->build_sub_view();
+    } catch (...) {
+        page->stop_update_timer();
+    }
+}

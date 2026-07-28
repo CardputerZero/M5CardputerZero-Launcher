@@ -93,8 +93,8 @@ const char *hal_path_store_sync_cmd(void) { return ""; }
 const char *hal_path_images_dir(void) { return "/images"; }
 const char *hal_path_audio_dir(void) { return "/audio"; }
 
-int hal_process_exec_blocking(const char *exec_path, volatile int *home_key_flag, int keep_root)
-{ (void)exec_path; (void)home_key_flag; (void)keep_root; return -1; }
+int hal_process_exec_blocking(const char *exec_path, int keep_root)
+{ (void)exec_path; (void)keep_root; return -1; }
 hal_pid_t hal_process_spawn(const char *exec_path, int keep_root)
 { (void)exec_path; (void)keep_root; return -1; }
 void hal_process_stop(hal_pid_t pid) { (void)pid; }

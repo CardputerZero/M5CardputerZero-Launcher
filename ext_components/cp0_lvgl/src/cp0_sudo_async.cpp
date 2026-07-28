@@ -486,10 +486,17 @@ void run_worker(std::shared_ptr<Request> request, std::string password)
         std::string execution_input = std::move(password);
         execution_input.push_back('\n');
         secure_clear(password);
-        if (std::system("sudo -k") != 0) {
+        auto invalidation = cp0_runner::run(cp0_sudo::invalidation_command(),
+            nullptr, nullptr, &request->cancel_requested, request->auth_timeout_ms,
+            kMaxCapturedOutputBytes,
+            identity.uid, identity.gid, identity.name, identity.home, identity.shell);
+        if (invalidation.exit_code != 0) {
             secure_clear(validation_input);
             secure_clear(execution_input);
-            complete_worker(request, CP0_SUDO_RESULT_EXEC_FAILED, -EPERM);
+            result = invalidation.exit_code == -ECANCELED ? CP0_SUDO_RESULT_CANCELLED :
+                     invalidation.exit_code == -ETIMEDOUT ? CP0_SUDO_RESULT_TIMED_OUT :
+                     CP0_SUDO_RESULT_EXEC_FAILED;
+            complete_worker(request, result, invalidation.exit_code);
             return;
         }
         auto validation = cp0_runner::run(cp0_sudo::validation_command(),
@@ -580,6 +587,12 @@ void execute_actions(std::vector<Action> actions)
                     [request = action.request] { request->cancel_requested.store(true); },
                     [request = action.request, password]() mutable {
                         run_worker(std::move(request), std::move(password->value));
+                    },
+                    [request = action.request] {
+                        invoke_worker_completion(request,
+                            CP0_SUDO_RESULT_EXEC_FAILED, -EIO);
+                        g_coordinator.worker_complete(request->id,
+                            CP0_SUDO_RESULT_EXEC_FAILED, -EIO);
                     })) {
                 invoke_worker_completion(action.request,
                     CP0_SUDO_RESULT_EXEC_FAILED, -EAGAIN);

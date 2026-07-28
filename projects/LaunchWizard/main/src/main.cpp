@@ -35,7 +35,12 @@ int main(int argc, char *argv[])
 
     if (!force && !launch_wizard_should_run()) {
         printf("LaunchWizard: first-boot desktop is not active, starting APPLaunch\n");
-        return launch_wizard_finish_configured_system();
+        const int handoff_result = launch_wizard_finish_configured_system();
+        if (handoff_result == 0) return 0;
+
+        fprintf(stderr,
+                "LaunchWizard: APPLaunch handoff failed; keeping the wizard visible\n");
+        return lvgl_main();
     }
 
     return lvgl_main();

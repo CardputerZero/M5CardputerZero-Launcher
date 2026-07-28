@@ -34,6 +34,7 @@ private:
     std::string error_suffix_;
     Entries entries_;
     mutable std::mutex mutex_;
+    std::mutex mutation_mutex_;
 
     std::string get_string(const std::string &key, const std::string &fallback) const;
     int get_integer(const std::string &key, int fallback) const;

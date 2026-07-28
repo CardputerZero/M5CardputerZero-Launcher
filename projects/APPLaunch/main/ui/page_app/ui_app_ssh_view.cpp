@@ -52,7 +52,7 @@ void UISSHPage::create_ui()
         rollback();
         return;
     }
-    lv_label_set_text(hint, "OK:Connect  ESC:Back");
+    lv_label_set_text(hint, "OK:Connect  Tab:Save  ESC:Back");
     lv_obj_set_align(hint, LV_ALIGN_RIGHT_MID);
     lv_obj_set_x(hint, -4);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x7EA8D8), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -147,11 +147,15 @@ bool UISSHPage::build_input_fields()
         lv_obj_delete(candidate);
         return false;
     }
-    lv_label_set_text(hint, "UP/DN:field  Type to edit  OK:Connect  ESC:Back");
+    lv_label_set_text(hint, status_message_.empty()
+        ? "UP/DN:field  Type  OK:Connect  Tab:Save"
+        : status_message_.c_str());
     lv_obj_set_pos(hint, 10, 113);
     lv_obj_set_width(hint, 300);
     lv_label_set_long_mode(hint, LV_LABEL_LONG_CLIP);
-    lv_obj_set_style_text_color(hint, lv_color_hex(0x555555), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_color(hint, lv_color_hex(status_message_.empty() ? 0x777777 :
+                                                   (status_error_ ? 0xFF6B6B : 0x69AD80)),
+                                LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_10, LV_PART_MAIN | LV_STATE_DEFAULT);
     build.hint_completed();
     if (!build.ready()) {

@@ -13,10 +13,13 @@ class CliService {
 public:
     using Command = std::vector<std::string>;
     using CommandRunner = std::function<CommandResult(const Command &command)>;
+    using SecretCommandRunner =
+        std::function<CommandResult(const Command &command, const std::string &secret)>;
     using Sleeper = std::function<void(unsigned int seconds)>;
 
     CliService();
-    CliService(CommandRunner command_runner, Sleeper sleeper);
+    CliService(CommandRunner command_runner, Sleeper sleeper,
+               SecretCommandRunner secret_command_runner = {});
 
     bool apply_config(UiConfig *config, const ProviderConfig &provider,
                       std::string *error) const;
@@ -30,6 +33,7 @@ private:
     bool ensure_agent(const std::string &alias, std::string *error) const;
 
     CommandRunner command_runner_;
+    SecretCommandRunner secret_command_runner_;
     Sleeper sleeper_;
 };
 

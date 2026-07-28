@@ -45,7 +45,10 @@ void UISetupPage::on_event(lv_event_t *event)
     auto *item = static_cast<key_item *>(lv_event_get_param(event));
     if (!item) return;
     cur_elm_ = item;
-    uint32_t key = remap_fzxc(item->key_code);
+    const bool text_input = view_state_ == ViewState::WIFI_PW ||
+                            view_state_ == ViewState::WIFI_SSID ||
+                            view_state_ == ViewState::BT_ALIAS;
+    uint32_t key = text_input ? item->key_code : remap_fzxc(item->key_code);
 
     if (developer_.status_active()) {
         if (released) developer_.handle_status_key(*this, key);
@@ -103,6 +106,9 @@ void UISetupPage::on_event(lv_event_t *event)
     case ViewState::WIFI_FORGET_CONFIRM:
         if (released) wifi_.handle_forget_key(*this, key);
         break;
+    case ViewState::WIFI_POWER_WARNING:
+        if (released) wifi_.handle_power_warning_key(*this, key);
+        break;
     case ViewState::BT_LIST:
         if (pressed && (key == KEY_UP || key == KEY_DOWN))
             bluetooth_.handle_list_key(*this, key);
@@ -111,6 +117,9 @@ void UISetupPage::on_event(lv_event_t *event)
         break;
     case ViewState::BT_ALIAS:
         if (released) bluetooth_.handle_alias_key(*this, key);
+        break;
+    case ViewState::BT_POWER_WARNING:
+        if (released) bluetooth_.handle_power_warning_key(*this, key);
         break;
     case ViewState::SOUNDCARD_CARDS:
         if (pressed && (key == KEY_UP || key == KEY_DOWN))
@@ -145,6 +154,9 @@ void UISetupPage::on_root_deleted()
     cancel_scroll_animations();
     lifecycle_.root_deleted();
     stop_power_timer();
+    stop_update_timer();
+    stop_volume_preview_timer();
+    speaker_.cancel_preview(*this);
     wifi_.shutdown();
     info_.stop_timer();
     bluetooth_.shutdown();
@@ -255,16 +267,21 @@ void UISetupPage::handle_value_key(uint32_t key)
     case KEY_UP:
         if (model_.move_value(-1)) {
             build_value_view();
+            if (val_title_ == "Volume" && speaker_.preview_value(*this))
+                schedule_volume_preview();
         }
         break;
     case KEY_DOWN:
         if (model_.move_value(1)) {
             build_value_view();
+            if (val_title_ == "Volume" && speaker_.preview_value(*this))
+                schedule_volume_preview();
         }
         break;
     case KEY_ENTER:
     case KEY_RIGHT:
-        apply_value_selection();
+        stop_volume_preview_timer();
+        if (apply_value_selection() && val_title_ == "Volume") play_enter();
         if (val_title_ == "Reboot?" || val_title_ == "Shutdown?" || val_title_ == "Run Setup?") {
             lv_obj_t *container = ui_obj_["list_cont"];
             lv_obj_clean(container);
@@ -282,6 +299,8 @@ void UISetupPage::handle_value_key(uint32_t key)
         break;
     case KEY_ESC:
     case KEY_LEFT:
+        stop_volume_preview_timer();
+        if (val_title_ == "Volume") speaker_.cancel_preview(*this);
         confirm_controller_.cancel();
         model_.leave_to_sub();
         transition_back_level();

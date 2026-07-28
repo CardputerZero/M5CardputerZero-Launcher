@@ -131,6 +131,9 @@ jobs:
         rm -rf build dist
         export CardputerZero=y
         export CONFIG_REPO_AUTOMATION=y
+        export APPLAUNCH_VERSION="${{ steps.version.outputs.version }}"
+        export APPLAUNCH_CHANNEL=prerelease
+        export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
         scons -j$(nproc)
 
     - name: Build AppStore (cross-compile aarch64)
@@ -190,6 +193,10 @@ jobs:
         mkdir -p artifacts
         cp projects/APPLaunch/dist/M5CardputerZero-APPLaunch artifacts/
         cp projects/APPLaunch/tools/*.deb artifacts/
+        package="$(find projects/APPLaunch/tools -maxdepth 1 -type f -name 'applaunch_*_arm64.deb' -print)"
+        test "$(printf '%s\n' "${package}" | sed '/^$/d' | wc -l)" -eq 1
+        cp "${package}" artifacts/applaunch_arm64.deb
+        (cd artifacts && sha256sum applaunch_arm64.deb > applaunch_arm64.deb.sha256)
 
     - uses: actions/upload-artifact@v4
       with:
@@ -198,7 +205,7 @@ jobs:
 
   prerelease:
     needs: build
-    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/ci/')
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -217,4 +224,16 @@ jobs:
         generate_release_notes: true
         files: |
           artifacts/*.deb
+          artifacts/*.sha256
           artifacts/M5CardputerZero-APPLaunch
+
+    - name: Publish launcher update channel
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: launcher-latest
+        name: "APPLauncher Update Channel"
+        prerelease: true
+        overwrite_files: true
+        files: |
+          artifacts/applaunch_arm64.deb
+          artifacts/applaunch_arm64.deb.sha256

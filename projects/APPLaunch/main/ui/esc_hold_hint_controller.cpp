@@ -7,6 +7,7 @@
 #include "esc_hold_hint_controller.h"
 
 #include "cp0_lvgl_app.h"
+#include "cp0_esc_state.h"
 #include "input_keys.h"
 #include "keyboard_input.h"
 #include "launcher_toast.h"
@@ -71,10 +72,10 @@ void EscHoldHintController::poll(lv_timer_t *timer)
 {
     if (!esc_hold_timer_is_current(timer, poll_timer_)) return;
     const EscHoldPollDecision decision = model_.poll(
-        lv_tick_get(), LVGL_HOME_KEY_FLAG != 0, force_home_callback_ != nullptr);
+        lv_tick_get(), cp0_esc_state_read() != 0, force_home_callback_ != nullptr);
     if (decision.hide_hint) launcher_toast().hide();
     if (decision.show_hint)
-        launcher_toast().show("Hold ESC 3s to return home");
+        launcher_toast().show_persistent("Hold ESC 3s to return home");
     if (decision.force_home) {
         ForceHomeCallback callback = force_home_callback_;
         void *user_data = force_home_user_data_;

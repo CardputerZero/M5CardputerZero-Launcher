@@ -1,15 +1,26 @@
 #pragma once
 
+#include "keyboard_input.h"
+
 #include <functional>
 #include <string>
 #include <vector>
 
 enum class SetupViewState {
     MAIN, SUB, VALUE_SELECT, HELP, WIFI_LIST, WIFI_SSID, WIFI_PW, WIFI_FORGET_CONFIRM,
-    BT_LIST, BT_ALIAS,
+    WIFI_POWER_WARNING,
+    BT_LIST, BT_ALIAS, BT_POWER_WARNING,
     SOUNDCARD_CARDS, SOUNDCARD_CONTROLS, SOUNDCARD_DETAIL,
     USB_GUIDE, ADB_PAIR, ADB_AUTHORIZATIONS,
 };
+
+constexpr cp0_keyboard_input_context_t setup_input_context(SetupViewState view)
+{
+    return view == SetupViewState::WIFI_SSID || view == SetupViewState::WIFI_PW ||
+                   view == SetupViewState::BT_ALIAS
+               ? KBD_INPUT_CONTEXT_TEXT
+               : KBD_INPUT_CONTEXT_NAVIGATION;
+}
 
 class SetupConfirmController
 {
@@ -75,6 +86,7 @@ public:
     bool move_main(int direction, int item_count);
     void enter_sub(int item_count, int center_row = DEFAULT_CENTER_ROW);
     bool move_sub(int direction, int item_count);
+    void select_sub(int index, int item_count);
     void enter_value(std::string title, std::vector<std::string> options, int selected_index);
     bool enter_help();
     bool leave_help();

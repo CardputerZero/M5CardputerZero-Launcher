@@ -188,4 +188,45 @@ void Bluetooth::show_action(UISetupPage &page, const char *message, uint32_t col
     lv_refr_now(nullptr);
 }
 
+bool Bluetooth::show_power_warning(UISetupPage &page)
+{
+    SetupPageAccess access(page);
+    lv_obj_t *container = access.content_container();
+    if (!container) return false;
+    lv_obj_clean(container);
+
+    lv_obj_t *dialog = lv_obj_create(container);
+    if (!dialog) return false;
+    lv_obj_set_size(dialog, 280, 92);
+    lv_obj_center(dialog);
+    lv_obj_set_style_radius(dialog, 4, LV_PART_MAIN);
+    lv_obj_set_style_border_width(dialog, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(dialog, lv_color_hex(0xFFAA00), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dialog, lv_color_hex(0x171717), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(dialog, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(dialog, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
+
+    auto create_dialog_label = [dialog](const char *text, int x, int y,
+                                        uint32_t color, const lv_font_t *font) {
+        lv_obj_t *label = lv_label_create(dialog);
+        if (!label) return static_cast<lv_obj_t *>(nullptr);
+        lv_label_set_text(label, text);
+        lv_obj_set_pos(label, x, y);
+        lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
+        lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
+        return label;
+    };
+    if (!create_dialog_label("Bluetooth power is off", 12, 10, 0xFFAA00,
+                             &lv_font_montserrat_14) ||
+        !create_dialog_label("Turn on Power before continuing.", 12, 36, 0xCCCCCC,
+                             &lv_font_montserrat_12) ||
+        !create_dialog_label("OK", 246, 68, 0x58A6FF, &lv_font_montserrat_12)) {
+        lv_obj_clean(container);
+        return false;
+    }
+    lv_refr_now(nullptr);
+    return true;
+}
+
 } // namespace setting

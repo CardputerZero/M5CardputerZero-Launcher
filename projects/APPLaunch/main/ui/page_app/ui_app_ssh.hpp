@@ -10,6 +10,7 @@
 #include "../model/ssh_connection_model.hpp"
 #include "../model/ssh_view_build_contract.hpp"
 #include <memory>
+#include <string>
 
 class UISTPage;
 
@@ -41,6 +42,8 @@ private:
     bool terminal_return_pending_ = false;
     setting::AsyncOperationLifecycle restore_operation_;
     setting::AsyncOperationLifecycle::Token restore_token_;
+    std::string status_message_;
+    bool status_error_ = false;
 
     // ==================== UI construction (input view) ====================
     void create_ui();
@@ -50,6 +53,9 @@ private:
 
     // ==================== connect via SSH ====================
     void do_connect();
+    void save_profile();
+    void load_profile();
+    void set_status(std::string message, bool error);
 
     void restore_input_view();
 

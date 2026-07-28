@@ -96,7 +96,8 @@ void UILaunchPage::stop_startup_presentation()
     // replacing the home screen with the boot logo or GIF.
     startup_gif_done_ = true;
     stop_startup_delay();
-    stop_startup_sound_timer();
+    // Audio readiness is independent of the splash lifetime. Keep its bounded
+    // retry alive after home appears; the destructor still owns and stops it.
     release_startup_screen(startup_logo_scr_);
     release_startup_screen(startup_gif_);
 }

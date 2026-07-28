@@ -261,26 +261,45 @@ void Speaker::enter_volume_adjust(UISetupPage &page)
     if (!setup_values::volume_value_valid(vol_val_))
         vol_val_ = read_config_int_strict("volume", 100);
     vol_val_ = std::clamp(vol_val_, 0, 100);
+    preview_active_ = true;
     access.enter_value("Volume", {"100%", "75%", "50%", "25%", "0%"},
         setup_values::volume_index(vol_val_));
 }
 
-void Speaker::apply_value(UISetupPage &page)
+bool Speaker::preview_value(UISetupPage &page)
 {
     SetupPageAccess access(page);
-    if (access.value_title() != "Volume") return;
+    if (!preview_active_ || access.value_title() != "Volume") return false;
+    const int requested = setup_values::volume_percent(access.value_selection());
+    return access.audio_volume_write(requested) == requested;
+}
+
+void Speaker::cancel_preview(UISetupPage &page)
+{
+    if (!preview_active_) return;
+    SetupPageAccess(page).audio_volume_write(vol_val_);
+    preview_active_ = false;
+}
+
+bool Speaker::apply_value(UISetupPage &page)
+{
+    SetupPageAccess access(page);
+    if (access.value_title() != "Volume") return false;
     const int requested = setup_values::volume_percent(access.value_selection());
     const int previous_config = std::clamp(
         read_config_int_strict("volume", vol_val_), 0, 100);
     const int applied = access.audio_volume_write(requested);
-    if (!setup_values::volume_value_valid(applied)) return;
+    if (!setup_values::volume_value_valid(applied)) return false;
     if (!write_config_int_checked("volume", applied) || !save_config_checked()) {
         write_config_int_checked("volume", previous_config);
         save_config_checked();
         access.audio_volume_write(vol_val_);
-        return;
+        preview_active_ = false;
+        return false;
     }
     vol_val_ = applied;
+    preview_active_ = false;
+    return true;
 }
 
 void Camera::append(UISetupPage &p, std::vector<MenuItem> &menu)

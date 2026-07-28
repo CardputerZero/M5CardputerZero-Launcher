@@ -32,6 +32,7 @@ int main()
     assert(built.request->user == &user);
     assert(built.request->auth_timeout_ms == 1200);
     assert(built.request->exec_timeout_ms == 3400);
+    assert(built.request->queue_timeout_ms == cp0_sudo::kDefaultQueueTimeoutMs);
     assert(!built.request->use_login_shell);
 
     auto shell = factory.create_shell("printf ok", CP0_SUDO_CALLBACK_LVGL,
@@ -40,8 +41,14 @@ int main()
     assert(shell.request->id == 42);
     assert(shell.request->argv == std::vector<std::string>{"printf ok"});
     assert(shell.request->use_login_shell);
-    assert(shell.request->auth_timeout_ms == 0);
-    assert(shell.request->exec_timeout_ms == 0);
+    assert(shell.request->auth_timeout_ms == cp0_sudo::kDefaultAuthTimeoutMs);
+    assert(shell.request->exec_timeout_ms == cp0_sudo::kDefaultExecTimeoutMs);
+    assert(shell.request->queue_timeout_ms == cp0_sudo::kDefaultQueueTimeoutMs);
+
+    auto defaults = factory.create_argv(argv, CP0_SUDO_CALLBACK_LVGL,
+        nullptr, nullptr, nullptr, 0, 0);
+    assert(defaults.request->auth_timeout_ms == cp0_sudo::kDefaultAuthTimeoutMs);
+    assert(defaults.request->exec_timeout_ms == cp0_sudo::kDefaultExecTimeoutMs);
 
     const char *empty_argv[] = {"", nullptr};
     assert(factory.create_argv(nullptr, CP0_SUDO_CALLBACK_LVGL, nullptr,
@@ -59,5 +66,5 @@ int main()
 
     auto next = factory.create_shell("true", CP0_SUDO_CALLBACK_LVGL,
         nullptr, nullptr, nullptr);
-    assert(next.request->id == 43);
+    assert(next.request->id == 44);
 }

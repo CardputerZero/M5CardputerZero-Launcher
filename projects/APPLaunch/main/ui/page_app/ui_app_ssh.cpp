@@ -12,6 +12,7 @@
 UISSHPage::UISSHPage() : AppPage()
 {
     set_page_title("SSH");
+    load_profile();
     create_ui();
     if (root_screen_ && form_container_) event_handler_init();
 }
@@ -30,8 +31,12 @@ UISSHPage::~UISSHPage()
 
 void UISSHPage::do_connect()
 {
+    const auto validation = model_.validate();
+    if (validation.error != SshConnectionModel::Error::NONE) {
+        set_status(validation.message, true);
+        return;
+    }
     const auto arguments = model_.arguments();
-    if (arguments.empty()) return;
     SLOGI("[SSH] Launching structured ssh request");
 
     restore_operation_.abort(restore_token_);
@@ -43,11 +48,13 @@ void UISSHPage::do_connect()
         terminal_page_ = std::make_shared<UISTPage>();
     } catch (...) {
         restore_operation_.abort(restore_token_);
+        set_status("Unable to create SSH terminal", true);
         return;
     }
     if (!terminal_page_ || !terminal_page_->screen()) {
         terminal_page_.reset();
         restore_operation_.abort(restore_token_);
+        set_status("Unable to create SSH screen", true);
         return;
     }
     terminal_page_->navigate_home = [page = this, token = restore_token_]() {
@@ -88,6 +95,7 @@ void UISSHPage::do_connect()
         terminal_page_->navigate_home = nullptr;
         terminal_page_.reset();
         restore_operation_.abort(restore_token_);
+        set_status("Unable to start SSH", true);
         return;
     }
 
@@ -97,6 +105,45 @@ void UISSHPage::do_connect()
     if (lv_indev_t *input = lv_indev_get_next(nullptr)) {
         lv_indev_set_group(input, terminal_page_->input_group());
     }
+}
+
+void UISSHPage::set_status(std::string message, bool error)
+{
+    SshConnectionModel previous = model_;
+    status_message_ = std::move(message);
+    status_error_ = error;
+    rebuild_or_restore(std::move(previous));
+}
+
+void UISSHPage::load_profile()
+{
+    std::string host = "192.168.1.1", port = "22", user = "pi";
+    auto read = [](const char *key, std::string &value) {
+        cp0_signal_config_api({"GetStr", key, value},
+            [&](int code, std::string data) { if (code == 0) value = std::move(data); });
+    };
+    read("ssh_host", host);
+    read("ssh_port", port);
+    read("ssh_user", user);
+    if (!model_.set_values(std::move(host), std::move(port), std::move(user)))
+        status_message_ = "Saved SSH profile is invalid";
+}
+
+void UISSHPage::save_profile()
+{
+    const auto validation = model_.validate();
+    if (validation.error != SshConnectionModel::Error::NONE) {
+        set_status(validation.message, true);
+        return;
+    }
+    bool ok = false;
+    cp0_signal_config_api(
+        {"SetManyAndSave",
+         "ssh_host", model_.value(0),
+         "ssh_port", model_.value(1),
+         "ssh_user", model_.value(2)},
+        [&](int code, std::string) { ok = code == 0; });
+    set_status(ok ? "Profile saved" : "Unable to save profile", !ok);
 }
 
 void UISSHPage::restore_input_view()
@@ -164,6 +211,9 @@ void UISSHPage::event_handler(lv_event_t *event)
     }
     case KEY_ENTER:
         do_connect();
+        break;
+    case KEY_TAB:
+        save_profile();
         break;
     case KEY_ESC:
         if (navigate_home) navigate_home();

@@ -241,6 +241,43 @@ bool WiFi::show_error(UISetupPage &page, const char *message)
     return true;
 }
 
+bool WiFi::show_power_warning(UISetupPage &page)
+{
+    SetupPageAccess access(page);
+    lv_obj_t *container = access.content_container();
+    lv_obj_t *view = begin_view(container);
+    if (!view) return false;
+
+    lv_obj_t *dialog = lv_obj_create(view);
+    if (!dialog) {
+        lv_obj_delete(view);
+        return false;
+    }
+    lv_obj_set_size(dialog, 280, 92);
+    lv_obj_center(dialog);
+    lv_obj_set_style_radius(dialog, 4, LV_PART_MAIN);
+    lv_obj_set_style_border_width(dialog, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(dialog, lv_color_hex(0xFFAA00), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dialog, lv_color_hex(0x171717), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(dialog, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(dialog, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title = create_label(dialog, "WiFi power is off", 12, 10, 0xFFAA00,
+                                   &lv_font_montserrat_14);
+    lv_obj_t *message = create_label(dialog, "Turn on Power before scanning.", 12, 36,
+                                     0xCCCCCC, &lv_font_montserrat_12);
+    lv_obj_t *hint = create_label(dialog, "OK", 246, 68, 0x58A6FF,
+                                  &lv_font_montserrat_12);
+    if (!title || !message || !hint) {
+        lv_obj_delete(view);
+        return false;
+    }
+    commit_view(container, view);
+    lv_refr_now(nullptr);
+    return true;
+}
+
 bool WiFi::show_forget_confirmation(UISetupPage &page, const std::string &ssid)
 {
     SetupPageAccess access(page);

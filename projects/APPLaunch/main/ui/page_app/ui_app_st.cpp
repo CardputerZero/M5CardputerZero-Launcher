@@ -84,11 +84,12 @@ int UISTPage::clamp(int value, int low, int high)
     return value;
 }
 
-char UISTPage::printable(uint32_t codepoint)
+std::string UISTPage::printable(uint32_t codepoint)
 {
-    if (codepoint < 32 || codepoint == 127) return ' ';
-    if (codepoint > 126) return '?';
-    return static_cast<char>(codepoint);
+    if (codepoint < 32 || codepoint == 127) return " ";
+    std::string output;
+    terminal_utf8_append(output, codepoint);
+    return output;
 }
 
 lv_color_t UISTPage::palette(uint32_t color)

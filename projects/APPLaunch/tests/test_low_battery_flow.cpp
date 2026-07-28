@@ -19,8 +19,9 @@ int main()
     assert(flow.seconds_until_shutdown(1000) == 15);
     flow.update(true, 0, false, 4000);
     assert(flow.seconds_until_shutdown(4000) == 12);
-    assert(!flow.confirm_shutdown(true, false, 15999));
-    assert(flow.confirm_shutdown(true, false, 16000));
+    assert(!flow.take_shutdown_due(15999));
+    assert(flow.take_shutdown_due(16000));
+    assert(!flow.take_shutdown_due(16001));
 
     flow.update(true, 0, true, 18000);
     assert(flow.warning() == LowBatteryWarning::None);
@@ -29,6 +30,6 @@ int main()
     assert(flow.warning() == LowBatteryWarning::None);
 
     flow.update(true, 0, false, UINT32_MAX - 5000u);
-    assert(!flow.confirm_shutdown(true, false, 4999));
-    assert(flow.confirm_shutdown(true, false, 9999));
+    assert(!flow.take_shutdown_due(4999));
+    assert(flow.take_shutdown_due(9999));
 }

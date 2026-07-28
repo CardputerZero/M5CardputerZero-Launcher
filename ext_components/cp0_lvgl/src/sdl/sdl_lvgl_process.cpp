@@ -33,19 +33,15 @@ public:
         try {
         const std::string command = args.empty() ? "" : args.front();
         if (command == "ExecBlocking") {
-            uintptr_t pointer = 0;
             bool keep_root = false;
             const auto *executable = cp0_process_api_contract::argument_at(args, 1);
-            const auto *pointer_text = cp0_process_api_contract::argument_at(args, 2);
-            const auto *keep_root_text = cp0_process_api_contract::argument_at(args, 3);
-            if (!cp0_process_api_contract::has_exact_arguments(args, 4) || !executable ||
-                executable->empty() || !pointer_text || !keep_root_text ||
-                !cp0_process_api_contract::parse_pointer(*pointer_text, pointer) ||
+            const auto *keep_root_text = cp0_process_api_contract::argument_at(args, 2);
+            if (!cp0_process_api_contract::has_exact_arguments(args, 3) || !executable ||
+                executable->empty() || !keep_root_text ||
                 !cp0_process_api_contract::parse_bool(*keep_root_text, keep_root))
                 return invalid(callback);
             (void)keep_root;
-            report(callback, sdl_external_app_runner::run(
-                                 executable->c_str(), reinterpret_cast<volatile int *>(pointer)), "");
+            report(callback, sdl_external_app_runner::run(executable->c_str()), "");
         } else if (command == "Spawn") {
             bool keep_root = false;
             const auto *executable = cp0_process_api_contract::argument_at(args, 1);
@@ -185,13 +181,11 @@ extern "C" void init_process(void)
         });
 }
 
-extern "C" int cp0_process_exec_blocking(const char *exec_path, volatile int *home_key_flag,
-                                           int keep_root)
+extern "C" int cp0_process_exec_blocking(const char *exec_path, int keep_root)
 {
     return cp0_process_api_contract::invoke_c_api([&] {
         return ProcessSystem::api_simple(
-            {"ExecBlocking", exec_path ? exec_path : "",
-             std::to_string(reinterpret_cast<uintptr_t>(home_key_flag)), std::to_string(keep_root)});
+            {"ExecBlocking", exec_path ? exec_path : "", std::to_string(keep_root)});
     });
 }
 
@@ -303,10 +297,9 @@ extern "C" void cp0_system_reboot(void)
         [] { ProcessSystem::api_simple({"Reboot"}); });
 }
 
-extern "C" int hal_process_exec_blocking(const char *exec_path, volatile int *home_key_flag,
-                                           int keep_root)
+extern "C" int hal_process_exec_blocking(const char *exec_path, int keep_root)
 {
-    return cp0_process_exec_blocking(exec_path, home_key_flag, keep_root);
+    return cp0_process_exec_blocking(exec_path, keep_root);
 }
 
 extern "C" hal_pid_t hal_process_spawn(const char *exec_path, int keep_root)

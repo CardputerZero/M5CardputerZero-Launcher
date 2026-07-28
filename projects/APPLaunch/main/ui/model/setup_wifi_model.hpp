@@ -73,8 +73,15 @@ public:
     void cancel_scan() { model_.cancel_scan(); }
     void apply_scan(std::vector<SetupWifiAccessPoint> access_points)
     {
+        scan_error_.clear();
         model_.apply_scan(std::move(access_points));
     }
+    void fail_scan(std::string message)
+    {
+        model_.apply_scan({});
+        scan_error_ = std::move(message);
+    }
+    void clear_scan_error() { scan_error_.clear(); }
     void set_status(SetupWifiStatus status) { model_.set_status(std::move(status)); }
     bool move_selection(int delta) { return model_.move_selection(delta); }
     SetupWifiListSnapshot snapshot() const;
@@ -87,6 +94,7 @@ public:
 
 private:
     SetupWifiListModel model_;
+    std::string scan_error_;
 };
 
 template <typename CallbackTimer, typename ActiveTimer, typename Token>
@@ -111,13 +119,14 @@ public:
 
     ~SetupWifiPasswordModel();
 
-    void begin(std::string ssid);
+    void begin(std::string ssid, std::string security = {});
     void reset();
     bool append(const std::string &text);
     bool erase_last();
     void clear_password();
 
-    bool can_submit() const { return !ssid_.empty() && !password_.empty(); }
+    bool can_submit() const;
+    std::string validation_error() const;
     const std::string &ssid() const { return ssid_; }
     const std::string &password() const { return password_; }
     std::string masked_display() const;
@@ -125,6 +134,7 @@ public:
 private:
     void secure_clear_password();
     std::string ssid_;
+    std::string security_;
     std::string password_;
 };
 

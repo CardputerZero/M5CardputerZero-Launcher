@@ -9,9 +9,20 @@
 
 namespace launch_wizard {
 
+struct WifiScanResult {
+    std::vector<WifiNetwork> networks;
+    int error = 0;
+};
+
+struct ProgressEvent {
+    int step;
+    int total;
+    std::string label;
+};
+
 class WizardService {
 public:
-    static std::vector<WifiNetwork> scan_wifi();
+    static WifiScanResult scan_wifi();
     static WifiConnectionStatus read_wifi_status();
     static std::string connect_wifi(const std::string &ssid,
                                     const std::string &password,
@@ -20,7 +31,8 @@ public:
     static std::string set_manual_time(const std::string &date,
                                        const std::string &time);
     static std::string apply(const WizardModel &model,
-                             const std::function<bool(const std::string &)> &progress);
+                             const std::function<void(const ProgressEvent &)> &progress,
+                             const std::function<bool()> &cancelled = {});
     static std::string reboot();
     static bool should_run();
     static int finish_configured_system();

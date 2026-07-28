@@ -6,6 +6,7 @@
 
 #define APP_PAGE_IMPLEMENTATION_UNIT
 #include "ui_app_st.hpp"
+#include "cp0_esc_state.h"
 #include "../model/st_key_encoder.hpp"
 
 #include <cstdlib>
@@ -202,13 +203,13 @@ void UISTPage::cursor_cb()
 void UISTPage::handle_home_hold_exit()
 {
     if (home_hold_status_ == 0) {
-        if (LVGL_HOME_KEY_FLAG) {
+        if (cp0_esc_state_read()) {
             home_hold_status_ = 1;
             home_hold_start_ = std::chrono::steady_clock::now();
         }
         return;
     }
-    if (!LVGL_HOME_KEY_FLAG) {
+    if (!cp0_esc_state_read()) {
         home_hold_status_ = 0;
         return;
     }

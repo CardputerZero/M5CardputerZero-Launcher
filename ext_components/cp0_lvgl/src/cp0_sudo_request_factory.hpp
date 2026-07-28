@@ -8,6 +8,10 @@
 
 namespace cp0_sudo {
 
+constexpr int kDefaultAuthTimeoutMs = 60 * 1000;
+constexpr int kDefaultExecTimeoutMs = 5 * 60 * 1000;
+constexpr int kDefaultQueueTimeoutMs = 2 * 60 * 1000;
+
 struct RequestBuildResult {
     int error = 0;
     std::shared_ptr<Request> request;

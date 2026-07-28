@@ -5,12 +5,12 @@
 #include "../../model/setup_wifi_model.hpp"
 
 #include "cp0_lvgl_app.h"
+#include "cp0_bounded_task_registry.hpp"
 #include <lvgl.h>
 
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <thread>
 #include <vector>
 
 class UISetupPage;
@@ -109,9 +109,11 @@ public:
     void try_connect(UISetupPage &page, int index);
     bool show_connecting(UISetupPage &page, const char *ssid);
     bool show_error(UISetupPage &page, const char *message);
+    bool show_power_warning(UISetupPage &page);
     bool show_forget_confirmation(UISetupPage &page, const std::string &ssid);
     void forget_selected(UISetupPage &page);
     void handle_forget_key(UISetupPage &page, uint32_t key);
+    void handle_power_warning_key(UISetupPage &page, uint32_t key);
     void handle_pw_key(UISetupPage &page, uint32_t key);
     void handle_ssid_key(UISetupPage &page, uint32_t key);
     void shutdown();
@@ -128,6 +130,7 @@ private:
     struct ScanState;
     struct ScanResult;
     struct ConnectionResult;
+    bool require_radio_enabled(UISetupPage &page);
     void start_scan(UISetupPage &page);
     void stop_scan();
     void request_scan();
@@ -158,7 +161,8 @@ private:
     std::string forget_ssid_;
     bool forget_active_ = false;
     std::shared_ptr<ScanState> scan_state_;
-    std::vector<std::thread> scan_threads_;
+    Cp0BoundedTaskRegistry scan_tasks_;
+    Cp0BoundedTaskRegistry connection_tasks_;
     AsyncOperationLifecycle connection_operation_;
 };
 

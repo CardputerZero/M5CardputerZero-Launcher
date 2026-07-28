@@ -10,9 +10,9 @@
  * Global shortcut dispatcher and transient on-screen hints.
  *
  * Behavior:
- *   (a) ESC held continuously for >= 1.5s -> show
- *       "Hold ESC 3s to return home" for ~1.5s. Short taps (released
- *       before 1.5s) show nothing, so a quick "back" press inside
+ *   (a) ESC held continuously for >= 0.5s -> show
+ *       "Hold ESC 3s to return home". Short taps (released
+ *       before 0.5s) show nothing, so a quick "back" press inside
  *       an app no longer flashes the return-home toast.
  *   (b) Single press of SHIFT (Aa / KEY_LEFTSHIFT) or SYM (physical
  *       "SYM" key on the M5 CardputerZero; currently best-effort mapped)
@@ -37,6 +37,8 @@
 #include "launcher_toast.h"
 #include "esc_hold_hint_controller.h"
 #include "model/global_hint_policy.hpp"
+
+#include <atomic>
 
 #include "input_keys.h"
 
@@ -64,6 +66,20 @@ static int ensure_user_dir(const std::string &dir)
 }
 
 namespace ui_global_hint {
+
+namespace {
+std::atomic<bool> g_external_esc_hint_visible{false};
+}
+
+bool external_esc_hint_visible() noexcept
+{
+    return g_external_esc_hint_visible.load(std::memory_order_acquire);
+}
+
+void reset_external_esc_hint() noexcept
+{
+    g_external_esc_hint_visible.store(false, std::memory_order_release);
+}
 
 void shutdown()
 {
@@ -149,4 +165,10 @@ void on_key(const struct key_item *elm) noexcept
 extern "C" void ui_global_hint_on_key(const struct key_item *elm) noexcept
 {
     ui_global_hint::on_key(elm);
+}
+
+extern "C" void ui_external_esc_hint(int visible) noexcept
+{
+    ui_global_hint::g_external_esc_hint_visible.store(
+        visible != 0, std::memory_order_release);
 }

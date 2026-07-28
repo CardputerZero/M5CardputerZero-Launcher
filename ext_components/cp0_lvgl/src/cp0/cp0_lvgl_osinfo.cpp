@@ -6,6 +6,9 @@
 #include "../cp0_osinfo_contract.hpp"
 #include "../cp0_signal_registration.hpp"
 #include "../cp0_sync_signal.hpp"
+#include "../cp0_update_job.hpp"
+#include "../cp0_launcher_updater.hpp"
+#include "cp0_process_commands.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -13,7 +16,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <fstream>
 #include <list>
+#include <iterator>
 #include <memory>
 #include <random>
 #include <pwd.h>
@@ -48,6 +53,33 @@ public:
 
     void api_call(arg_t arg, callback_t callback)
     {
+        const std::string command = arg.empty() ? std::string() : arg.front();
+        if (command == "AptUpdateStart" || command == "UpdateLauncherStart") {
+            const bool launcher = command == "UpdateLauncherStart";
+            const std::string id = jobs_.start([launcher](const std::atomic<bool> &cancel) {
+                return launcher ? update_launcher(cancel) : apt_update(cancel);
+            });
+            cp0::callback::invoke(callback, 0, id);
+            return;
+        }
+        if (command == "UpdateJobStatus") {
+            const auto id = arg.size() > 1 ? *std::next(arg.begin()) : std::string();
+            std::string status;
+            cp0::callback::invoke(callback, jobs_.status(id, status) ? 0 : -1, status);
+            return;
+        }
+        if (command == "UpdateJobCancel") {
+            const auto id = arg.size() > 1 ? *std::next(arg.begin()) : std::string();
+            cp0::callback::invoke(callback, jobs_.cancel(id) ? 0 : -1, {});
+            return;
+        }
+        if (command == "UpdateLauncherState") {
+            std::ifstream input("/var/lib/applaunch-updater/status");
+            std::string status;
+            std::getline(input, status);
+            cp0::callback::invoke(callback, input.bad() || status.empty() ? -1 : 0, status);
+            return;
+        }
         const cp0::osinfo::Result result = cp0::osinfo::dispatch(arg, operations_);
         cp0::callback::invoke(callback, result.code, result.payload);
     }
@@ -66,6 +98,47 @@ public:
 
 private:
     cp0::osinfo::Operations operations_;
+    cp0::update::Jobs jobs_;
+
+    static cp0::update::Result apt_update(const std::atomic<bool> &cancel)
+    {
+        std::string output;
+        const int code = cp0_process_commands::capture_argv_with_timeout(
+            {"systemctl", "start", "applaunch-apt-update.service"},
+            output, 300000, &cancel);
+        if (code == -ECANCELED) {
+            std::string ignored;
+            cp0_process_commands::capture_argv_with_timeout(
+                {"systemctl", "stop", "applaunch-apt-update.service"},
+                ignored, 30000, nullptr);
+        }
+        return {code, code == 0 ? "completed" : (code == -ECANCELED ? "cancelled" : "apt-update")};
+    }
+
+    static cp0::update::Result update_launcher(const std::atomic<bool> &cancel)
+    {
+        auto timeout_for = [](const std::vector<std::string> &arguments) {
+            if (!arguments.empty() && arguments.front() == "wget") return 120000;
+            if (!arguments.empty() && arguments.front() == "dpkg") return 300000;
+            return 30000;
+        };
+        auto argv = [&cancel](const std::vector<std::string> &arguments) {
+            std::string ignored;
+            const int timeout = !arguments.empty() && arguments.front() == "wget"
+                                    ? 120000
+                                    : (!arguments.empty() && arguments.front() == "dpkg"
+                                           ? 300000
+                                           : 30000);
+            return cp0_process_commands::capture_argv_with_timeout(
+                arguments, ignored, timeout, &cancel);
+        };
+        auto capture = [timeout_for, &cancel](const std::vector<std::string> &arguments,
+                                     std::string &output) {
+            return cp0_process_commands::capture_argv_with_timeout(
+                arguments, output, timeout_for(arguments), &cancel);
+        };
+        return cp0::update::launcher(argv, capture);
+    }
 
     static uint32_t random_u32() noexcept
     {
@@ -186,21 +259,12 @@ private:
 
     static int apt_update_background()
     {
-        const char *argv[] = {"apt", "update", nullptr};
-        return cp0_process_run_argv(argv, 1);
+        return -ENOTSUP;
     }
 
     static int update_launcher_background()
     {
-        const char *argv[] = {
-            "sh", "-c",
-            "cd /usr/share/APPLaunch && "
-            "wget -q https://github.com/CardputerZero/M5CardputerZero-Launcher/releases/latest/download/applaunch_*.deb -O /tmp/launcher_update.deb 2>/dev/null && "
-            "dpkg -i /tmp/launcher_update.deb >/dev/null 2>&1 && "
-            "systemctl restart APPLaunch",
-            nullptr
-        };
-        return cp0_process_run_argv(argv, 1);
+        return -ENOTSUP;
     }
 
 public:

@@ -90,8 +90,15 @@ void UISTPage::create_ui()
         }
     }
 
-    mono_font_ = launcher_fonts().get_mono("LiberationMono-Regular.ttf", 11,
-                                           LV_FREETYPE_FONT_STYLE_NORMAL);
+    lv_font_t *primary = launcher_fonts().get_mono(
+        "LiberationMono-Regular.ttf", 11, LV_FREETYPE_FONT_STYLE_NORMAL);
+    lv_font_t *cjk = launcher_fonts().get(
+        "AlibabaPuHuiTi-3-55-Regular.ttf", 11, LV_FREETYPE_FONT_STYLE_NORMAL);
+    lv_font_t *symbols = launcher_fonts().get(
+        "DejaVuSans.ttf", 11, LV_FREETYPE_FONT_STYLE_NORMAL);
+    if (cjk && symbols && cjk != symbols) cjk->fallback = symbols;
+    if (primary && cjk && primary != cjk) primary->fallback = cjk;
+    mono_font_ = primary;
     cursor_label_ = lv_label_create(term_canvas_);
     if (!cursor_label_) return;
     lv_obj_add_event_cb(cursor_label_, static_renderer_delete_cb, LV_EVENT_DELETE, this);
@@ -312,8 +319,9 @@ bool UISTPage::meaningful_cell(const Glyph &glyph) const
     uint32_t foreground = DEFAULT_FG;
     uint32_t background = DEFAULT_BG;
     effective_colors(glyph, &foreground, &background);
-    char character = glyph.attr & ATTR_INVISIBLE ? ' ' : printable(glyph.u);
-    return character != ' ' || foreground != DEFAULT_FG || background != DEFAULT_BG;
+    const std::string character = glyph.attr & ATTR_INVISIBLE ? " " : printable(glyph.u);
+    return (!glyph.continuation && character != " ") ||
+           foreground != DEFAULT_FG || background != DEFAULT_BG;
 }
 
 lv_obj_t *UISTPage::create_segment_label()
@@ -353,23 +361,47 @@ std::vector<UISTPage::SegmentData> UISTPage::build_row_segments(int row)
 
     SegmentData current;
     bool has_current = false;
+    auto flush = [&]() {
+        if (has_current) result.push_back(current);
+        current = SegmentData{};
+        has_current = false;
+    };
     for (int column = 0; column <= last_column; ++column) {
         const Glyph &glyph = line[static_cast<size_t>(first_column + column)];
         uint32_t foreground = DEFAULT_FG;
         uint32_t background = DEFAULT_BG;
         effective_colors(glyph, &foreground, &background);
-        char character = glyph.attr & ATTR_INVISIBLE ? ' ' : printable(glyph.u);
-        if (!has_current || current.fg != foreground || current.bg != background) {
-            if (has_current) result.push_back(current);
+        if (glyph.continuation && column > 0 &&
+            !line[static_cast<size_t>(first_column + column - 1)].continuation)
+            continue;
+        std::string character = glyph.attr & ATTR_INVISIBLE ? " " : printable(glyph.u);
+        if (!(glyph.attr & ATTR_INVISIBLE))
+            for (uint8_t index = 0; index < glyph.combining_count; ++index)
+                terminal_utf8_append(character, glyph.combining[index]);
+        const int columns = glyph.continuation ? 1 : std::max<int>(1, glyph.columns);
+        const bool isolated = glyph.u > 0x7f || glyph.combining_count != 0 || columns != 1;
+        if (isolated) {
+            flush();
             current = SegmentData{};
+            current.x = column;
+            current.columns = columns;
+            current.fg = foreground;
+            current.bg = background;
+            current.text = std::move(character);
+            result.push_back(current);
+            continue;
+        }
+        if (!has_current || current.fg != foreground || current.bg != background) {
+            flush();
             current.x = column;
             current.fg = foreground;
             current.bg = background;
             has_current = true;
         }
-        current.text.push_back(character);
+        current.text += character;
+        ++current.columns;
     }
-    if (has_current) result.push_back(current);
+    flush();
     return result;
 }
 
@@ -384,7 +416,7 @@ void UISTPage::render_row(int row)
         RenderSegment &current = rendered[index];
         if (!current.label) current.label = create_segment_label();
         if (!current.label) continue;
-        int width = static_cast<int>(wanted.text.size()) * CHAR_W;
+        int width = wanted.columns * CHAR_W;
         bool changed = current.hidden || current.x != wanted.x || current.width != width ||
                        current.fg != wanted.fg || current.bg != wanted.bg ||
                        current.text != wanted.text;
@@ -458,11 +490,16 @@ void UISTPage::update_cursor()
     uint32_t foreground = DEFAULT_FG;
     uint32_t background = DEFAULT_BG;
     effective_colors(glyph, &foreground, &background);
-    char text[2] = {glyph.attr & ATTR_INVISIBLE ? ' ' : printable(glyph.u), '\0'};
-    lv_label_set_text(cursor_label_, text);
+    std::string text = glyph.attr & ATTR_INVISIBLE || glyph.continuation
+        ? " " : printable(glyph.u);
+    if (!(glyph.attr & ATTR_INVISIBLE) && !glyph.continuation)
+        for (uint8_t index = 0; index < glyph.combining_count; ++index)
+            terminal_utf8_append(text, glyph.combining[index]);
+    lv_label_set_text(cursor_label_, text.c_str());
     lv_obj_set_style_text_color(cursor_label_, palette(background), 0);
     lv_obj_set_style_bg_color(cursor_label_, palette(foreground), 0);
     lv_obj_set_pos(cursor_label_, x * CHAR_W, y * CHAR_H);
+    lv_obj_set_size(cursor_label_, std::max<int>(1, glyph.columns) * CHAR_W, CHAR_H);
     lv_obj_move_foreground(cursor_label_);
 }
 

@@ -213,8 +213,7 @@ void launch_Exec(const std::string &exec, bool keep_root = false)
     lv_timer_enable(false);
     lv_refr_now(disp);
 
-    int ret = cp0_process_exec_blocking(exec.c_str(), &LVGL_HOME_KEY_FLAG,
-                                        keep_root ? 1 : 0);
+    int ret = cp0_process_exec_blocking(exec.c_str(), keep_root ? 1 : 0);
 
     lv_timer_enable(true);
     if (indev)

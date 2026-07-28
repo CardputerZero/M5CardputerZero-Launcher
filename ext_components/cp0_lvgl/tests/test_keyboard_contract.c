@@ -1,6 +1,8 @@
 #include "cp0_keyboard_key_contract.h"
+#include "cp0_keyboard_navigation_contract.h"
 #include "cp0_keyboard_queue.h"
 #include "cp0_keyboard_text.h"
+#include "cp0_esc_state.h"
 
 #include "input_keys.h"
 
@@ -10,7 +12,6 @@
 
 struct keyboard_queue_t keyboard_queue;
 pthread_mutex_t keyboard_mutex = PTHREAD_MUTEX_INITIALIZER;
-volatile int LVGL_HOME_KEY_FLAG;
 volatile int LVGL_RUN_FLAGE = 1;
 volatile uint32_t LV_EVENT_KEYBOARD;
 
@@ -55,17 +56,37 @@ int main(void)
     assert(strcmp(cp0_keyboard_control_utf8(KEY_KPENTER), "\r") == 0);
     assert(cp0_keyboard_control_utf8(KEY_A) == NULL);
 
+    assert(cp0_keyboard_semantic_key(KEY_F, KBD_INPUT_CONTEXT_NAVIGATION) == KEY_UP);
+    assert(cp0_keyboard_semantic_key(KEY_X, KBD_INPUT_CONTEXT_NAVIGATION) == KEY_DOWN);
+    assert(cp0_keyboard_semantic_key(KEY_Z, KBD_INPUT_CONTEXT_NAVIGATION) == KEY_LEFT);
+    assert(cp0_keyboard_semantic_key(KEY_C, KBD_INPUT_CONTEXT_NAVIGATION) == KEY_RIGHT);
+    assert(cp0_keyboard_semantic_key(KEY_F, KBD_INPUT_CONTEXT_TEXT) == KEY_F);
+    assert(cp0_keyboard_semantic_key(KEY_X, KBD_INPUT_CONTEXT_TEXT) == KEY_X);
+    assert(cp0_keyboard_repeat_delay_ms(KEY_F, KBD_INPUT_CONTEXT_NAVIGATION) ==
+           CP0_KEYBOARD_NAV_REPEAT_DELAY_MS);
+    assert(cp0_keyboard_repeat_delay_ms(KEY_UP, KBD_INPUT_CONTEXT_NAVIGATION) ==
+           CP0_KEYBOARD_NAV_REPEAT_DELAY_MS);
+    assert(cp0_keyboard_repeat_delay_ms(KEY_F, KBD_INPUT_CONTEXT_TEXT) ==
+           CP0_KEYBOARD_TEXT_REPEAT_DELAY_MS);
+    assert(cp0_keyboard_repeat_delay_ms(KEY_A, KBD_INPUT_CONTEXT_NAVIGATION) ==
+           CP0_KEYBOARD_TEXT_REPEAT_DELAY_MS);
+
     cp0_keyboard_queue_init();
     cp0_keyboard_queue_init();
     struct key_item source = {0};
     source.key_code = KEY_ESC;
     source.key_state = KBD_KEY_PRESSED;
+    source.mods = KBD_MOD_FN;
+    source.semantic_key = cp0_keyboard_semantic_key(KEY_Z, KBD_INPUT_CONTEXT_NAVIGATION);
+    source.input_context = KBD_INPUT_CONTEXT_NAVIGATION;
     strcpy(source.utf8, "\x1b");
     assert(cp0_keyboard_queue_push(&source) == 0);
-    assert(LVGL_HOME_KEY_FLAG == KBD_KEY_PRESSED);
+    assert(cp0_esc_state_read() == KBD_KEY_PRESSED);
     assert(cp0_keyboard_queue_has_data());
     struct key_item *item = cp0_keyboard_queue_pop();
     assert(item && item != &source && item->key_code == KEY_ESC);
+    assert(item->mods & KBD_MOD_FN);
+    assert(item->semantic_key == KEY_LEFT);
     free(item);
     assert(!cp0_keyboard_queue_has_data());
 

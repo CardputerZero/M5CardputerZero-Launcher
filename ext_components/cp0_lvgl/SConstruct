@@ -28,7 +28,6 @@ if "CONFIG_CP0_LVGL_COMPONENT_ENABLED" in os.environ or "CONFIG_SIGSLOT_COMPONEN
         'CAMERA': 'camera',
         'CONFIG': 'config',
         'FILESYSTEM': 'filesystem',
-        'IMU': 'imu',
         'LORA': 'lara',
         'OSINFO': 'osinfo',
         'PROCESS': 'process',
@@ -83,7 +82,7 @@ if "CONFIG_CP0_LVGL_COMPONENT_ENABLED" in os.environ or "CONFIG_SIGSLOT_COMPONEN
             if 'zmq' not in REQUIREMENTS:
                 REQUIREMENTS += ['zmq']
 
-    source_selected_services = {'AUDIO', 'CAMERA', 'IMU', 'LORA'}
+    source_selected_services = {'AUDIO', 'CAMERA', 'LORA'}
     for source in platform_srcs:
         source_name = str(source).lower()
         disabled = any(token in source_name and not service_enabled(name)

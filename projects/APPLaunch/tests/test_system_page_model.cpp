@@ -31,11 +31,13 @@ int main()
     assert(account.username == "--");
     assert(account.hostname == "--");
 
-    assert(version_label("abc123") == "Version: abc123");
+    assert(version_label("1.2.3") == "Version: 1.2.3");
     assert(version_label("") == "Version: --");
-    assert(std::string(update_request(UpdateAction::CheckSystem)) == "AptUpdateBackground");
+    assert(build_label("2026-07-28", "stable", "abc123") ==
+           "Build: 2026-07-28 stable (abc123)");
+    assert(std::string(update_request(UpdateAction::CheckSystem)) == "AptUpdateStart");
     assert(std::string(update_request(UpdateAction::UpdateLauncher)) ==
-           "UpdateLauncherBackground");
+           "UpdateLauncherStart");
 
     assert(extport_toggle_value(false, true, true));
     assert(!extport_toggle_value(true, false, true));

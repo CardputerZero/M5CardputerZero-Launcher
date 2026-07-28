@@ -49,6 +49,7 @@ void Bluetooth::append(UISetupPage &p, std::vector<MenuItem> &menu)
 }
 void Bluetooth::enter_devices(UISetupPage &page)
 {
+    if (!require_power_enabled(page)) return;
     stop_scan_timer();
     stop_failure_feedback();
     action_operation_.abort(action_token_);
@@ -61,6 +62,7 @@ void Bluetooth::enter_devices(UISetupPage &page)
 
 void Bluetooth::enter_alias(UISetupPage &page)
 {
+    if (!require_power_enabled(page)) return;
     stop_scan_timer();
     stop_failure_feedback();
     action_operation_.abort(action_token_);
@@ -83,6 +85,7 @@ void Bluetooth::handle_alias_key(UISetupPage &page, uint32_t key)
         return;
     }
     if (key == KEY_ENTER || key == KEY_RIGHT) {
+        if (!require_power_enabled(page)) return;
         std::string alias = model_.sanitized_alias();
         if (alias_hint_lbl_) {
             lv_label_set_text(alias_hint_lbl_, "Setting alias...");
@@ -116,12 +119,44 @@ void Bluetooth::handle_alias_key(UISetupPage &page, uint32_t key)
 
 void Bluetooth::enter_scan(UISetupPage &page)
 {
+    if (!require_power_enabled(page)) return;
     stop_failure_feedback();
     action_operation_.abort(action_token_);
     action_busy_ = false;
     model_.set_list_mode(BluetoothListMode::SCAN);
     SetupPageAccess(page).set_view(SetupViewState::BT_LIST);
     start_scan_timer(page);
+}
+
+bool Bluetooth::require_power_enabled(UISetupPage &page)
+{
+    if (get_status().powered != 0) return true;
+
+    stop_scan_timer();
+    stop_failure_feedback();
+    action_operation_.abort(action_token_);
+    action_busy_ = false;
+    alias_input_lbl_ = nullptr;
+    alias_hint_lbl_ = nullptr;
+    refresh_status(page);
+
+    SetupPageAccess access(page);
+    access.set_view(SetupViewState::BT_POWER_WARNING);
+    if (!show_power_warning(page)) {
+        access.set_view(SetupViewState::SUB);
+        access.select_sub(0, 6);
+        access.build_sub_view();
+    }
+    return false;
+}
+
+void Bluetooth::handle_power_warning_key(UISetupPage &page, uint32_t key)
+{
+    if (key != KEY_ENTER && key != KEY_ESC && key != KEY_LEFT) return;
+    SetupPageAccess access(page);
+    access.set_view(SetupViewState::SUB);
+    access.select_sub(0, 6);
+    access.build_sub_view();
 }
 
 void Bluetooth::rebuild_rows()
@@ -137,6 +172,7 @@ void Bluetooth::rebuild_rows()
 
 void Bluetooth::activate_selected(UISetupPage &page)
 {
+    if (!require_power_enabled(page)) return;
     const bool operation_active = action_busy_ && action_operation_.active();
     if (!bluetooth_action_entry_allowed(action_busy_, operation_active)) return;
     if (action_busy_) action_busy_ = false;
@@ -227,6 +263,7 @@ void Bluetooth::activate_selected(UISetupPage &page)
 
 void Bluetooth::remove_selected(UISetupPage &page)
 {
+    if (!require_power_enabled(page)) return;
     int dev_index = model_.selected_device_index();
     if (dev_index < 0)
         return;

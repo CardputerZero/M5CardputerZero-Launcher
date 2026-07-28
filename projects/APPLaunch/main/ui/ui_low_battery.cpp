@@ -185,6 +185,10 @@ void timer_cb(lv_timer_t *timer) noexcept
     try {
     if (timer != warning_timer) return;
     const uint32_t now = lv_tick_get();
+    if (flow.take_shutdown_due(now)) {
+        cp0_system_shutdown();
+        return;
+    }
     if (static_cast<uint32_t>(now - battery_refresh_tick) >= kBatteryRefreshMs) {
         battery_refresh_tick = now;
         const cp0_battery_info_t info = cp0_battery_read();
@@ -197,14 +201,6 @@ void timer_cb(lv_timer_t *timer) noexcept
         const lv_opa_t opacity = lv_obj_get_style_bg_opa(tint, LV_PART_MAIN);
         lv_obj_set_style_bg_opa(tint, opacity == LV_OPA_20 ? LV_OPA_50 : LV_OPA_20, 0);
     }
-    if (!flow.shutdown_due(now))
-        return;
-
-    const cp0_battery_info_t confirmation = cp0_battery_read();
-    flow.update(confirmation.valid != 0, confirmation.soc, (confirmation.flags & 1) != 0, now);
-    render(now, true);
-    if (flow.confirm_shutdown(confirmation.valid != 0, (confirmation.flags & 1) != 0, now))
-        cp0_system_shutdown();
     } catch (...) {
         if (overlay)
             lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);

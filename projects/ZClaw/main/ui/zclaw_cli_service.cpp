@@ -25,16 +25,24 @@ CliService::Command zeroclaw_command(std::initializer_list<const char *> argumen
 }  // namespace
 
 CliService::CliService()
-    : CliService([](const Command &command) {
-                     ProcessExecutor executor;
-                     return executor.run(command);
-                 },
-                 [](unsigned int seconds) { ::sleep(seconds); })
+    : CliService(
+          [](const Command &command) {
+              ProcessExecutor executor;
+              return executor.run(command);
+          },
+          [](unsigned int seconds) { ::sleep(seconds); },
+          [](const Command &command, const std::string &secret) {
+              ProcessExecutor executor;
+              return executor.run_with_secret_input(command, secret);
+          })
 {
 }
 
-CliService::CliService(CommandRunner command_runner, Sleeper sleeper)
-    : command_runner_(std::move(command_runner)), sleeper_(std::move(sleeper))
+CliService::CliService(CommandRunner command_runner, Sleeper sleeper,
+                       SecretCommandRunner secret_command_runner)
+    : command_runner_(std::move(command_runner)),
+      secret_command_runner_(std::move(secret_command_runner)),
+      sleeper_(std::move(sleeper))
 {
 }
 
@@ -115,10 +123,38 @@ std::string CliService::generate_pairing_code() const
 bool CliService::config_set(const std::string &path, const std::string &value,
                             std::string *error) const
 {
-    Command command = zeroclaw_command({"config", "set", "--no-interactive"});
+    const bool secret = path.size() >= 8 &&
+                        path.compare(path.size() - 8, 8, ".api_key") == 0;
+    if (secret && value.empty())
+        return true;
+    if (secret && value.find_first_of("\r\n") != std::string::npos) {
+        if (error)
+            *error = "API key contains an invalid line break.";
+        return false;
+    }
+    Command command = zeroclaw_command({"config", "set"});
+    if (!secret)
+        command.push_back("--no-interactive");
     command.push_back(path);
-    command.push_back(value);
-    const CommandResult result = command_runner_(command);
+    CommandResult result;
+    if (secret) {
+        if (!secret_command_runner_) {
+            if (error)
+                *error = "Secure API key input is unavailable.";
+            return false;
+        }
+        result = secret_command_runner_(command, value);
+        if (!value.empty()) {
+            std::size_t offset = 0;
+            while ((offset = result.output.find(value, offset)) != std::string::npos) {
+                result.output.replace(offset, value.size(), "[redacted]");
+                offset += 10;
+            }
+        }
+    } else {
+        command.push_back(value);
+        result = command_runner_(command);
+    }
     if (result.ok())
         return true;
     if (error)

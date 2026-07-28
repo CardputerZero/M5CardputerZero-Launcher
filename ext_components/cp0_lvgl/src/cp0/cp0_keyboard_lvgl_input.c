@@ -107,7 +107,10 @@ static void keypad_read(lv_indev_t *indev, lv_indev_data_t *data)
                 ui_global_hint_on_key(item);
 
             if (!intercept) {
-                data->key = lvgl_key_from_evdev((uint16_t)item->key_code);
+                const uint32_t semantic_key = item->semantic_key
+                                                  ? item->semantic_key
+                                                  : item->key_code;
+                data->key = lvgl_key_from_evdev((uint16_t)semantic_key);
                 if (data->key)
                     data->state = (lv_indev_state_t)item->key_state;
             }

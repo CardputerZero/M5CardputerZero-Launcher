@@ -4,6 +4,12 @@
 
 int main()
 {
+    assert(setup_input_context(SetupViewState::MAIN) == KBD_INPUT_CONTEXT_NAVIGATION);
+    assert(setup_input_context(SetupViewState::WIFI_LIST) == KBD_INPUT_CONTEXT_NAVIGATION);
+    assert(setup_input_context(SetupViewState::WIFI_PW) == KBD_INPUT_CONTEXT_TEXT);
+    assert(setup_input_context(SetupViewState::WIFI_SSID) == KBD_INPUT_CONTEXT_TEXT);
+    assert(setup_input_context(SetupViewState::BT_ALIAS) == KBD_INPUT_CONTEXT_TEXT);
+
     int root = 0;
     int stale_root = 0;
     static_assert(noexcept(setup_root_callback_allowed(&root, &root)));
@@ -83,8 +89,12 @@ int main()
 
     assert(model.move_main(-1, 5));
     assert(model.move_main(-1, 5));
-    assert(!model.move_main(-1, 5));
+    assert(model.move_main(-1, 5));
+    assert(model.selected_index == 4);
+    assert(model.move_main(1, 5));
     assert(model.selected_index == 0);
+    assert(!model.move_main(1, 1));
+    assert(!model.move_main(1, 0));
 
     model.enter_sub(8);
     assert(model.view == SetupViewState::SUB);
@@ -94,7 +104,14 @@ int main()
 
     model.enter_sub(2);
     assert(model.sub_selected_index == 1);
-    assert(!model.move_sub(1, 2));
+    assert(model.move_sub(1, 2));
+    assert(model.sub_selected_index == 0);
+    assert(model.move_sub(-1, 2));
+    assert(model.sub_selected_index == 1);
+    model.select_sub(0, 2);
+    assert(model.sub_selected_index == 0);
+    model.select_sub(99, 2);
+    assert(model.sub_selected_index == 1);
     model.leave_to_main();
     assert(model.view == SetupViewState::MAIN);
 

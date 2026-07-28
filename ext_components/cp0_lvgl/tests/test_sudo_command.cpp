@@ -7,6 +7,11 @@
 
 int main()
 {
+    const auto invalidation = cp0_sudo::invalidation_command();
+    assert((invalidation == std::vector<std::string>{
+        "/usr/bin/sudo", "-k",
+    }));
+
     const auto validation = cp0_sudo::validation_command();
     assert((validation == std::vector<std::string>{
         "/usr/bin/sudo", "-S", "-v",

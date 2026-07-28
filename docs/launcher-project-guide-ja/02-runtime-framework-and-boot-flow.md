@@ -65,7 +65,7 @@ int main(void)
 2. default display が存在することを確認した後、APPLaunch の setup callback を呼びます。
 3. setup が `LV_EVENT_KEYBOARD` を登録し、`launcher_ui::init()` と `ui_screensaver_init()` を実行します。
 4. runner が最初の invalidate/refresh を行い、`lv_timer_handler()` を駆動します。timer がない場合は semaphore、ある場合は期限付き wait を使います。
-5. 終了時は teardown 後に sudo/RPC/camera/IMU/audio/PTY/input/WiFi/LoRa/battery/LVGL を順序どおり停止します。
+5. 終了時は teardown 後に sudo/RPC/camera/audio/PTY/input/WiFi/LoRa/battery/LVGL を順序どおり停止します。
 
 ### 3.2 First-Frame Refresh
 

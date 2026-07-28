@@ -1,4 +1,5 @@
 #include "cp0_lvgl_app.h"
+#include "cp0_esc_state.h"
 #include "keyboard_input.h"
 #include "lvgl/lvgl.h"
 
@@ -97,7 +98,6 @@
 
 struct keyboard_queue_t keyboard_queue;
 pthread_mutex_t keyboard_mutex = PTHREAD_MUTEX_INITIALIZER;
-volatile int LVGL_HOME_KEY_FLAG = 0;
 volatile int LVGL_RUN_FLAGE = 1;
 volatile uint32_t LV_EVENT_KEYBOARD = 0;
 
@@ -336,7 +336,7 @@ void enqueue_key(const key_item *event)
     *elm = *event;
     elm->flage = 0;
 
-    if (elm->key_code == KEY_ESC) LVGL_HOME_KEY_FLAG = elm->key_state;
+    if (elm->key_code == KEY_ESC) cp0_esc_state_write(elm->key_state);
 
     if (LVGL_RUN_FLAGE) {
         pthread_mutex_lock(&keyboard_mutex);
@@ -551,7 +551,7 @@ int cp0_network_list(cp0_netif_info_t *entries, int max_entries, int *out_count)
     return 0;
 }
 
-int cp0_process_exec_blocking(const char *, volatile int *, int) { return -1; }
+int cp0_process_exec_blocking(const char *, int) { return -1; }
 cp0_pid_t cp0_process_spawn(const char *, int) { return -1; }
 void cp0_process_stop(cp0_pid_t) {}
 int cp0_process_check_lock(const char *, int *holder_pid)
@@ -605,15 +605,6 @@ int cp0_time_set(const char *) { return -1; }
 int cp0_time_ntp_get(void) { return 0; }
 int cp0_time_ntp_set(int) { return -1; }
 int cp0_bq27220_calibrate(int) { return -1; }
-int cp0_compass_calibrate(void) { return -1; }
-int cp0_compass_read(cp0_compass_read_cb_t callback, void *user)
-{
-    cp0_compass_info_t info{};
-    copy_cstr(info.status, sizeof(info.status), "Web emulator");
-    if (callback) callback(0, &info, user);
-    return 0;
-}
-
 cp0_battery_info_t cp0_battery_read(void)
 {
     cp0_battery_info_t info{};

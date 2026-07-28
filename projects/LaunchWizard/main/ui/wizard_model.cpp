@@ -3,6 +3,7 @@
 #include <arpa/inet.h>
 #include <cctype>
 #include <cstdlib>
+#include <algorithm>
 
 namespace launch_wizard {
 
@@ -66,6 +67,71 @@ bool validate_wifi_ssid(const std::string &ssid, std::string &error)
         }
     }
     return true;
+}
+
+WifiSecurity classify_wifi_security(const std::string &security)
+{
+    std::string normalized = security;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                   [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+    if (normalized.empty() || normalized == "--" || normalized == "OPEN" ||
+        normalized == "NONE")
+        return WifiSecurity::Open;
+    if (normalized.find("802.1X") != std::string::npos ||
+        normalized.find("8021X") != std::string::npos ||
+        normalized.find("EAP") != std::string::npos ||
+        normalized.find("ENTERPRISE") != std::string::npos)
+        return WifiSecurity::Enterprise;
+    if (normalized.find("WPA") != std::string::npos ||
+        normalized.find("SAE") != std::string::npos ||
+        normalized.find("PSK") != std::string::npos)
+        return WifiSecurity::Personal;
+    if (normalized == "UNKNOWN")
+        return WifiSecurity::Unknown;
+    return WifiSecurity::Unsupported;
+}
+
+WifiScanDecision WifiScanRetryPolicy::observe(int error, std::size_t network_count)
+{
+    ++attempts_;
+    if (error != 0) return WifiScanDecision::Error;
+    if (network_count != 0) return WifiScanDecision::Results;
+    return attempts_ < kWifiMaxAutomaticScans ? WifiScanDecision::Retry
+                                               : WifiScanDecision::Empty;
+}
+
+bool validate_wifi_credentials(const std::string &ssid,
+                               const std::string &security,
+                               const std::string &password,
+                               bool hidden,
+                               std::string &error)
+{
+    if (!validate_wifi_ssid(ssid, error)) return false;
+    WifiSecurity kind = hidden ? WifiSecurity::Unknown : classify_wifi_security(security);
+    if (kind == WifiSecurity::Enterprise) {
+        error = "Enterprise Wi-Fi is not supported";
+        return false;
+    }
+    if (kind == WifiSecurity::Unsupported) {
+        error = "Unsupported Wi-Fi security";
+        return false;
+    }
+    if (kind == WifiSecurity::Open || (kind == WifiSecurity::Unknown && password.empty())) {
+        if (!password.empty()) {
+            error = "Open Wi-Fi does not use a password";
+            return false;
+        }
+        return true;
+    }
+    if (password.size() >= 8 && password.size() <= 63)
+        return true;
+    if (password.size() == 64 &&
+        std::all_of(password.begin(), password.end(), [](unsigned char ch) {
+            return std::isxdigit(ch) != 0;
+        }))
+        return true;
+    error = "WPA password must be 8-63 chars or 64 hex";
+    return false;
 }
 
 bool valid_ipv4(const std::string &value)

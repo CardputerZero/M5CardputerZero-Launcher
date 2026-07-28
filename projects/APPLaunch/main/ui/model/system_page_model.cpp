@@ -29,18 +29,26 @@ AccountInfo parse_account_info(const std::string &payload)
     return {next_field(lines), next_field(lines)};
 }
 
-std::string version_label(const std::string &commit)
+std::string version_label(const std::string &version)
 {
-    return "Version: " + (commit.empty() ? std::string("--") : commit);
+    return "Version: " + (version.empty() ? std::string("--") : version);
+}
+
+std::string build_label(const std::string &date, const std::string &channel,
+                        const std::string &commit)
+{
+    return "Build: " + (date.empty() ? std::string("--") : date) + " " +
+           (channel.empty() ? std::string("unknown") : channel) + " (" +
+           (commit.empty() ? std::string("unknown") : commit) + ")";
 }
 
 const char *update_request(UpdateAction action)
 {
     switch (action) {
     case UpdateAction::CheckSystem:
-        return "AptUpdateBackground";
+        return "AptUpdateStart";
     case UpdateAction::UpdateLauncher:
-        return "UpdateLauncherBackground";
+        return "UpdateLauncherStart";
     }
     return "";
 }

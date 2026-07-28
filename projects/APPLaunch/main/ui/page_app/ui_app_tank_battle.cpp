@@ -41,7 +41,7 @@ void UITankBattlePage::detach_ui_callbacks()
 {
     std::vector<lv_obj_t *> objects = {background_, arena_, status_label_, player_obj_,
                                       game_msg_panel_, game_msg_label_};
-    objects.insert(objects.end(), enemy_objs_.begin(), enemy_objs_.end());
+    for (const TankVisual &visual : enemy_tanks_) objects.push_back(visual.root);
     objects.insert(objects.end(), bullet_objs_.begin(), bullet_objs_.end());
     for (lv_obj_t *object : objects)
         if (object)
@@ -64,21 +64,23 @@ void UITankBattlePage::owned_obj_delete_cb(lv_event_t *event) noexcept
         }
         if (self->player_obj_ == deleted) {
             self->player_obj_ = nullptr;
+            self->player_tank_ = {};
             self->tick_timer_.stop();
         }
         if (self->status_label_ == deleted) {
             self->status_label_ = nullptr;
             self->ui_obj_.erase("status");
         }
-        for (lv_obj_t *&object : self->enemy_objs_)
-            if (object == deleted) object = nullptr;
+        for (TankVisual &visual : self->enemy_tanks_)
+            if (visual.root == deleted) visual = {};
         for (lv_obj_t *&object : self->bullet_objs_)
             if (object == deleted) object = nullptr;
         if (self->arena_ == deleted) {
             self->tick_timer_.stop();
             self->arena_ = nullptr;
             self->player_obj_ = nullptr;
-            self->enemy_objs_.clear();
+            self->player_tank_ = {};
+            self->enemy_tanks_.clear();
             self->bullet_objs_.clear();
             self->game_msg_panel_ = nullptr;
             self->game_msg_label_ = nullptr;
@@ -90,7 +92,8 @@ void UITankBattlePage::owned_obj_delete_cb(lv_event_t *event) noexcept
             self->arena_ = nullptr;
             self->status_label_ = nullptr;
             self->player_obj_ = nullptr;
-            self->enemy_objs_.clear();
+            self->player_tank_ = {};
+            self->enemy_tanks_.clear();
             self->bullet_objs_.clear();
             self->game_msg_panel_ = nullptr;
             self->game_msg_label_ = nullptr;
@@ -121,7 +124,8 @@ void UITankBattlePage::event_handler(lv_event_t *e)
         lv_event_get_target(e) == lv_event_get_current_target(e)) {
         tick_timer_.stop();
         player_obj_ = nullptr;
-        enemy_objs_.clear();
+        player_tank_ = {};
+        enemy_tanks_.clear();
         bullet_objs_.clear();
         game_msg_panel_ = nullptr;
         game_msg_label_ = nullptr;
@@ -129,8 +133,9 @@ void UITankBattlePage::event_handler(lv_event_t *e)
     }
     if (!launcher_ui::events::is_key_pressed(e) && !launcher_ui::events::is_key_released(e)) return;
 
-    uint32_t key = launcher_ui::events::keyboard_key(e);
-    if (key == KEY_ESC) {
+    const GameInputAction action =
+        game_input_action(launcher_ui::events::keyboard_item(e));
+    if (action == GameInputAction::CANCEL) {
         tick_timer_.stop();
         if (navigate_home) navigate_home();
         return;
@@ -138,27 +143,28 @@ void UITankBattlePage::event_handler(lv_event_t *e)
     if (!launcher_ui::events::is_key_pressed(e)) return;
 
     if (model_.game_over()) {
-        if (key == KEY_FIRE) {
+        if (action == GameInputAction::FIRE ||
+            action == GameInputAction::CONFIRM) {
             init_game_state();
             sync_scene();
         }
         return;
     }
 
-    switch (key) {
-    case KEY_MOVE_UP:
+    switch (action) {
+    case GameInputAction::UP:
         model_.move_player(TankDirection::UP);
         break;
-    case KEY_MOVE_DOWN:
+    case GameInputAction::DOWN:
         model_.move_player(TankDirection::DOWN);
         break;
-    case KEY_MOVE_LEFT:
+    case GameInputAction::LEFT:
         model_.move_player(TankDirection::LEFT);
         break;
-    case KEY_MOVE_RIGHT:
+    case GameInputAction::RIGHT:
         model_.move_player(TankDirection::RIGHT);
         break;
-    case KEY_FIRE:
+    case GameInputAction::FIRE:
         model_.player_fire();
         break;
     default:
@@ -203,15 +209,18 @@ void UITankBattlePage::sync_scene()
     const auto &bullets = model_.bullets();
     if (player_obj_) {
         place_grid_obj(player_obj_, player.x, player.y, CELL - 2, CELL - 2);
+        sync_tank_visual(player_tank_, player.direction, 0x35D07F);
         player.alive ? lv_obj_clear_flag(player_obj_, LV_OBJ_FLAG_HIDDEN)
                      : lv_obj_add_flag(player_obj_, LV_OBJ_FLAG_HIDDEN);
     }
 
-    for (size_t i = 0; i < enemy_objs_.size() && i < enemies.size(); ++i) {
-        lv_obj_t *obj = enemy_objs_[i];
+    for (size_t i = 0; i < enemy_tanks_.size() && i < enemies.size(); ++i) {
+        TankVisual &visual = enemy_tanks_[i];
+        lv_obj_t *obj = visual.root;
         if (!obj) continue;
         if (enemies[i].alive) {
             place_grid_obj(obj, enemies[i].x, enemies[i].y, CELL - 2, CELL - 2);
+            sync_tank_visual(visual, enemies[i].direction, 0xE65045);
             lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);

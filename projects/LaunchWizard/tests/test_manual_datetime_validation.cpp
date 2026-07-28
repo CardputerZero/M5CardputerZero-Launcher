@@ -4,6 +4,10 @@
 #include <string>
 
 bool test_wizard_model();
+bool test_service_handoff();
+bool test_command_runner();
+bool test_account_migration();
+bool test_apply_checkpoint();
 
 int main()
 {
@@ -34,5 +38,9 @@ int main()
     passed &= expect(false, "0000-01-01", "00:00");
 
     passed &= test_wizard_model();
+    passed &= test_service_handoff();
+    passed &= test_command_runner();
+    passed &= test_account_migration();
+    passed &= test_apply_checkpoint();
     return passed ? 0 : 1;
 }

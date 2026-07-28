@@ -2,6 +2,6 @@
 
 namespace sdl_external_app_runner {
 
-int run(const char *command, volatile int *home_key_flag);
+int run(const char *command);
 
 } // namespace sdl_external_app_runner

@@ -103,6 +103,12 @@ int SetupPageAccess::gpio_get(const char *name) const
 void SetupPageAccess::set_view(SetupViewState view)
 {
     page_.model_.view = view;
+    page_.input_context_scope_.update(setup_input_context(view));
+}
+
+void SetupPageAccess::select_sub(int index, int item_count)
+{
+    page_.model_.select_sub(index, item_count);
 }
 
 bool SetupPageAccess::enter_help() { return page_.model_.enter_help(); }

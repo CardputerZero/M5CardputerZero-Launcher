@@ -95,7 +95,7 @@ home active
   -> restore foreground state
 ```
 
-The home-key flag address and root-retention flag are passed to the shared process service. Process execution details therefore belong to `cp0_lvgl`; APPLaunch owns only UI suspension and restoration.
+The root-retention flag is passed to the shared process service. ESC state is exchanged through the atomic `cp0_esc_state_*` C ABI rather than a shared variable address. Process execution details therefore belong to `cp0_lvgl`; APPLaunch owns only UI suspension and restoration.
 
 ## 8. Adding an Entry
 

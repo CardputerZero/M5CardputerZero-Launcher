@@ -54,7 +54,7 @@ static bool is_menu_next_key(uint32_t key)
 UILoraPage::UILoraPage()
     : AppPage()
 {
-    set_page_title("LORA");
+    set_page_title("LoRa");
     create_ui();
     if (!ui_ready()) {
         if (page_root_) lv_obj_delete(page_root_);

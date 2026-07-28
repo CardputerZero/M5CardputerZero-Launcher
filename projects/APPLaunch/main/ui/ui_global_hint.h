@@ -24,6 +24,8 @@ struct key_item;
 namespace ui_global_hint {
 void on_key(const struct key_item *elm) noexcept;
 void shutdown();
+bool external_esc_hint_visible() noexcept;
+void reset_external_esc_hint() noexcept;
 }
 
 extern "C" {

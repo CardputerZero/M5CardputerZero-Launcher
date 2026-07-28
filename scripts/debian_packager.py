@@ -32,6 +32,8 @@ DEFAULT_ARCHITECTURE = "arm64"
 INSTALL_PARENT = PurePosixPath("usr/share")
 SERVICE_PATH = PurePosixPath("usr/lib/systemd/user")
 SYSTEM_SERVICE_PATH = PurePosixPath("usr/lib/systemd/system")
+POLKIT_RULES_PATH = PurePosixPath("usr/share/polkit-1/rules.d")
+LIBEXEC_PATH = PurePosixPath("usr/libexec")
 
 OPTIONAL_BINARIES = (
     "M5CardputerZero-AppStore",
@@ -209,10 +211,10 @@ systemd_is_running() {{
 }}
 
 if command -v systemctl >/dev/null 2>&1 && [ -f "$SERVICE_FILE" ]; then
-    systemctl daemon-reload || true
-    systemctl enable "$SERVICE_NAME" || true
+    systemctl daemon-reload
+    systemctl enable "$SERVICE_NAME"
     if systemd_is_running; then
-        systemctl restart "$SERVICE_NAME" || systemctl start "$SERVICE_NAME" || true
+        systemctl restart "$SERVICE_NAME" || systemctl start "$SERVICE_NAME"
     else
         echo "{config.app_name}: systemd is not running; enabled system service for first boot" >&2
     fi
@@ -244,16 +246,16 @@ user_systemctl() {{
 }}
 
 if command -v systemctl >/dev/null 2>&1 && [ -f "$SERVICE_FILE" ]; then
-    systemctl --global enable "$SERVICE_NAME" || true
+    systemctl --global enable "$SERVICE_NAME"
     if systemd_is_running && [ -n "$APP_USER" ]; then
         if command -v loginctl >/dev/null 2>&1; then
             loginctl enable-linger "$APP_USER" || true
         fi
-        systemctl daemon-reload || true
-        systemctl start "user@$APP_UID.service" || true
-        user_systemctl daemon-reload || true
-        user_systemctl enable "$SERVICE_NAME" || true
-        user_systemctl restart "$SERVICE_NAME" || user_systemctl start "$SERVICE_NAME" || true
+        systemctl daemon-reload
+        systemctl start "user@$APP_UID.service"
+        user_systemctl daemon-reload
+        user_systemctl enable "$SERVICE_NAME"
+        user_systemctl restart "$SERVICE_NAME" || user_systemctl start "$SERVICE_NAME"
     else
         echo "{config.app_name}: systemd is not running; enabled user service globally for first boot" >&2
         if [ -z "$APP_USER" ]; then
@@ -280,17 +282,17 @@ systemd_is_running() {{
     [ -d /run/systemd/system ] && [ "$(ps -p 1 -o comm= 2>/dev/null)" = "systemd" ]
 }}
 
-if command -v systemctl >/dev/null 2>&1 && [ -f "$SERVICE_FILE" ]; then
-    if systemd_is_running; then
-        systemctl stop "$SERVICE_NAME" || true
-    fi
-    case "$1" in
-        remove|deconfigure)
+case "$1" in
+    remove|deconfigure)
+        if command -v systemctl >/dev/null 2>&1 && [ -f "$SERVICE_FILE" ]; then
+            if systemd_is_running; then
+                systemctl stop "$SERVICE_NAME" || true
+            fi
             systemctl disable "$SERVICE_NAME" || true
-            ;;
-    esac
-fi
-rm -rf /var/cache/{config.app_name}
+        fi
+        rm -rf /var/cache/{config.app_name}
+        ;;
+esac
 exit 0
 """
     return f"""#!/bin/sh
@@ -311,19 +313,249 @@ user_systemctl() {{
         systemctl --user "$@"
 }}
 
-if command -v systemctl >/dev/null 2>&1 && [ -f "$SERVICE_FILE" ]; then
-    if systemd_is_running && [ -n "$APP_USER" ]; then
-        user_systemctl stop "$SERVICE_NAME" || true
-        user_systemctl disable "$SERVICE_NAME" || true
-    fi
-    case "$1" in
-        remove|deconfigure)
+case "$1" in
+    remove|deconfigure)
+        if command -v systemctl >/dev/null 2>&1 && [ -f "$SERVICE_FILE" ]; then
+            if systemd_is_running && [ -n "$APP_USER" ]; then
+                user_systemctl stop "$SERVICE_NAME" || true
+                user_systemctl disable "$SERVICE_NAME" || true
+            fi
             systemctl --global disable "$SERVICE_NAME" || true
+        fi
+        rm -rf /var/cache/{config.app_name}
+        ;;
+esac
+exit 0
+"""
+
+
+def _updater_service_text() -> str:
+    return """[Unit]
+Description=APPLaunch trusted package updater
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/applaunch-updater
+TimeoutStartSec=10min
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+"""
+
+
+def _apt_update_service_text() -> str:
+    return """[Unit]
+Description=APPLaunch trusted package index refresh
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/apt update
+TimeoutStartSec=5min
+Nice=10
+"""
+
+
+def _updater_polkit_text() -> str:
+    return """// Permit a local interactive session to start only the fixed updater unit.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.systemd1.manage-units" &&
+        (action.lookup("unit") == "applaunch-updater.service" ||
+         action.lookup("unit") == "applaunch-apt-update.service") &&
+        (action.lookup("verb") == "start" ||
+         (action.lookup("verb") == "stop" &&
+          action.lookup("unit") == "applaunch-apt-update.service")) &&
+        subject.local && subject.active) {
+        return polkit.Result.YES;
+    }
+});
+"""
+
+
+def _updater_script_text() -> str:
+    return r"""#!/bin/sh
+set -eu
+
+# dpkg replaces this package's files during the transaction.  Re-exec from a
+# private runtime copy so replacing /usr/libexec/applaunch-updater cannot alter
+# the script that is currently coordinating install and rollback.
+if [ "${APPLAUNCH_UPDATER_REEXEC:-0}" != 1 ]; then
+    self_dir=$(mktemp -d /run/applaunch-updater.XXXXXX)
+    install -m 0700 "$0" "$self_dir/updater"
+    exec env APPLAUNCH_UPDATER_REEXEC=1 APPLAUNCH_UPDATER_SELF_DIR="$self_dir" \
+        "$self_dir/updater"
+fi
+SELF_DIR=${APPLAUNCH_UPDATER_SELF_DIR:-}
+
+PACKAGE_NAME=${APPLAUNCH_UPDATE_PACKAGE_NAME:-applaunch}
+ARCHITECTURE=${APPLAUNCH_UPDATE_ARCHITECTURE:-arm64}
+RELEASE_ROOT=${APPLAUNCH_UPDATE_RELEASE_ROOT:-https://github.com/CardputerZero/launcher/releases/download}
+RELEASE_URL=${APPLAUNCH_UPDATE_RELEASE_URL:-$RELEASE_ROOT/launcher-latest}
+STATE_DIR=${APPLAUNCH_UPDATE_STATE_DIR:-/var/lib/applaunch-updater}
+CACHE_DIR=${APPLAUNCH_UPDATE_CACHE_DIR:-/var/cache/APPLaunch/updates}
+STATUS_FILE=$STATE_DIR/status
+APP_UID=${APPLAUNCH_UPDATE_UID:-1000}
+APP_EXECUTABLE=${APPLAUNCH_UPDATE_EXECUTABLE:-/usr/bin/M5CardputerZero-APPLaunch}
+PROC_ROOT=${APPLAUNCH_UPDATE_PROC_ROOT:-/proc}
+
+mkdir -p "$STATE_DIR" "$CACHE_DIR"
+chmod 0755 "$STATE_DIR"
+chmod 0700 "$CACHE_DIR"
+exec 9>"$STATE_DIR/lock"
+flock -n 9 || exit 0
+
+tmp_dir=$(mktemp -d "$STATE_DIR/run.XXXXXX")
+package=$tmp_dir/applaunch_arm64.deb
+checksum=$tmp_dir/applaunch_arm64.deb.sha256
+phase=starting
+cleanup() { rm -rf "$tmp_dir"; [ -z "$SELF_DIR" ] || rm -rf "$SELF_DIR"; }
+trap cleanup EXIT
+status() {
+    printf '%s\n' "$1" >"$STATUS_FILE.tmp"
+    chmod 0644 "$STATUS_FILE.tmp"
+    mv -f "$STATUS_FILE.tmp" "$STATUS_FILE"
+}
+fail() { status "failed:$1"; exit 1; }
+trap 'status "failed:interrupted:$phase"; exit 1' HUP INT TERM
+
+APP_USER=$(getent passwd "$APP_UID" | cut -d: -f1 || true)
+user_systemctl() {
+    runuser -u "$APP_USER" -- env \
+        XDG_RUNTIME_DIR="/run/user/$APP_UID" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$APP_UID/bus" \
+        systemctl --user "$@"
+}
+recover_service() {
+    [ -n "$APP_USER" ] || return 0
+    systemctl start "user@$APP_UID.service" >/dev/null 2>&1 || true
+    user_systemctl daemon-reload >/dev/null 2>&1 || true
+    user_systemctl restart APPLaunch.service >/dev/null 2>&1 || \
+        user_systemctl start APPLaunch.service >/dev/null 2>&1 || true
+}
+service_healthy() {
+    [ -n "$APP_USER" ] || return 1
+    checks=${APPLAUNCH_UPDATE_HEALTH_CHECKS:-3}
+    delay=${APPLAUNCH_UPDATE_HEALTH_DELAY:-1}
+    attempt=1
+    while [ "$attempt" -le "$checks" ]; do
+        user_systemctl is-active --quiet APPLaunch.service || return 1
+        main_pid=$(user_systemctl show APPLaunch.service --property=MainPID --value 2>/dev/null || true)
+        case "$main_pid" in
+            ''|*[!0-9]*|0) return 1 ;;
+        esac
+        running_executable=$(readlink "$PROC_ROOT/$main_pid/exe" 2>/dev/null || true)
+        [ "$running_executable" = "$APP_EXECUTABLE" ] || return 1
+        [ "$attempt" -eq "$checks" ] || sleep "$delay"
+        attempt=$((attempt + 1))
+    done
+}
+package_healthy() {
+    expected_version=$1
+    package_status=$(dpkg-query -W -f='${db:Status-Status}' "$PACKAGE_NAME" 2>/dev/null || true)
+    active_version=$(dpkg-query -W -f='${Version}' "$PACKAGE_NAME" 2>/dev/null || true)
+    [ "$package_status" = installed ] && [ "$active_version" = "$expected_version" ]
+}
+dpkg_healthy() {
+    [ -z "$(dpkg --audit 2>/dev/null || true)" ]
+}
+rollback_and_fail() {
+    reason=$1
+    status "recovering:$reason"
+    dpkg --configure -a >/dev/null 2>&1 || true
+    if ! dpkg -i "$rollback" >/dev/null 2>&1; then
+        recover_service
+        fail "$reason:rollback-install"
+    fi
+    dpkg --configure -a >/dev/null 2>&1 || fail "$reason:rollback-configure"
+    recover_service
+    package_healthy "$installed" || fail "$reason:rollback-package-health"
+    dpkg_healthy || fail "$reason:rollback-audit"
+    service_healthy || fail "$reason:rollback-service-health"
+    fail "$reason"
+}
+
+previous_status=$(sed -n '1p' "$STATUS_FILE" 2>/dev/null || true)
+phase=downloading
+status downloading
+wget -q --https-only --timeout=30 --tries=3 "$RELEASE_URL/applaunch_arm64.deb" -O "$package" || fail download-package
+wget -q --https-only --timeout=30 --tries=3 "$RELEASE_URL/applaunch_arm64.deb.sha256" -O "$checksum" || fail download-checksum
+expected=$(awk 'NF && $1 ~ /^[0-9a-fA-F]{64}$/ { print tolower($1); exit }' "$checksum")
+[ ${#expected} -eq 64 ] || fail checksum-manifest
+actual=$(sha256sum "$package" | awk '{print $1}')
+[ "$actual" = "$expected" ] || fail checksum
+
+[ "$(dpkg-deb -f "$package" Package)" = "$PACKAGE_NAME" ] || fail package-name
+[ "$(dpkg-deb -f "$package" Architecture)" = "$ARCHITECTURE" ] || fail architecture
+candidate=$(dpkg-deb -f "$package" Version)
+installed=$(dpkg-query -W -f='${Version}' "$PACKAGE_NAME" 2>/dev/null) || fail installed-version
+audit=$(dpkg --audit 2>/dev/null || true)
+if [ -n "$audit" ]; then
+    phase=repairing
+    status repairing
+    dpkg --configure -a >/dev/null 2>&1 || fail repair
+    installed=$(dpkg-query -W -f='${Version}' "$PACKAGE_NAME" 2>/dev/null) || fail installed-version
+fi
+if [ "$candidate" = "$installed" ]; then
+    case "$previous_status" in
+        installing|repairing|recovering:*)
+            package_healthy "$candidate" || fail interrupted-package-health
+            recover_service
+            service_healthy || fail interrupted-service-health
+            install -m 0600 "$package" "$CACHE_DIR/installed.deb"
+            status "succeeded:$candidate"
+            exit 0
             ;;
     esac
 fi
-rm -rf /var/cache/{config.app_name}
-exit 0
+dpkg --compare-versions "$candidate" gt "$installed" || fail version-not-newer
+
+# Retain the last trusted package so a later upgrade can roll back after a
+# failed install or service health check.
+rollback=
+if [ -f "$CACHE_DIR/installed.deb" ] &&
+   [ "$(dpkg-deb -f "$CACHE_DIR/installed.deb" Package 2>/dev/null || true)" = "$PACKAGE_NAME" ] &&
+   [ "$(dpkg-deb -f "$CACHE_DIR/installed.deb" Version 2>/dev/null || true)" = "$installed" ]; then
+    cp "$CACHE_DIR/installed.deb" "$tmp_dir/rollback.deb"
+    rollback=$tmp_dir/rollback.deb
+fi
+if [ -z "$rollback" ]; then
+    upstream=${installed%%-*}
+    old_name="${PACKAGE_NAME}_${installed}_${ARCHITECTURE}.deb"
+    old_url="$RELEASE_ROOT/launcher-v$upstream/$old_name"
+    old_checksum_url="$RELEASE_ROOT/launcher-v$upstream/applaunch_arm64.deb.sha256"
+    if wget -q --https-only --timeout=30 --tries=3 "$old_url" -O "$tmp_dir/rollback.deb" &&
+       wget -q --https-only --timeout=30 --tries=3 "$old_checksum_url" -O "$tmp_dir/rollback.sha256"; then
+        rollback_expected=$(awk 'NF && $1 ~ /^[0-9a-fA-F]{64}$/ { print tolower($1); exit }' "$tmp_dir/rollback.sha256")
+        rollback_actual=$(sha256sum "$tmp_dir/rollback.deb" | awk '{print $1}')
+        if [ ${#rollback_expected} -eq 64 ] && [ "$rollback_actual" = "$rollback_expected" ] &&
+           [ "$(dpkg-deb -f "$tmp_dir/rollback.deb" Package 2>/dev/null || true)" = "$PACKAGE_NAME" ] &&
+           [ "$(dpkg-deb -f "$tmp_dir/rollback.deb" Architecture 2>/dev/null || true)" = "$ARCHITECTURE" ] &&
+           [ "$(dpkg-deb -f "$tmp_dir/rollback.deb" Version 2>/dev/null || true)" = "$installed" ]; then
+            rollback=$tmp_dir/rollback.deb
+        fi
+    fi
+fi
+[ -n "$rollback" ] || fail rollback-unavailable
+
+phase=installing
+status installing
+if ! dpkg -i "$package"; then
+    rollback_and_fail install
+fi
+
+package_healthy "$candidate" || rollback_and_fail package-health
+
+phase=restarting
+recover_service
+service_healthy || rollback_and_fail service-health
+dpkg_healthy || rollback_and_fail dpkg-audit
+
+install -m 0600 "$package" "$CACHE_DIR/installed.deb"
+phase=complete
+status "succeeded:$candidate"
 """
 
 
@@ -442,6 +674,23 @@ def prepare_package_tree(
         paths.package_root / Path(*config.service_path.parts) / f"{config.app_name}.service",
         _service_text(config),
     )
+    if config.app_name == APP_NAME and config.package_name == PACKAGE_NAME:
+        _write_text(
+            paths.package_root / Path(*SYSTEM_SERVICE_PATH.parts) / "applaunch-updater.service",
+            _updater_service_text(),
+        )
+        _write_text(
+            paths.package_root / Path(*SYSTEM_SERVICE_PATH.parts) / "applaunch-apt-update.service",
+            _apt_update_service_text(),
+        )
+        _write_text(
+            paths.package_root / Path(*POLKIT_RULES_PATH.parts) / "60-applaunch-updater.rules",
+            _updater_polkit_text(),
+        )
+        _write_text(
+            paths.package_root / Path(*LIBEXEC_PATH.parts) / "applaunch-updater",
+            _updater_script_text(), mode=0o755,
+        )
 
     print(f"Staged package tree: {paths.package_root}")
     print(f"  binary: {binary}")

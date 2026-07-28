@@ -268,7 +268,6 @@ void init_settings(void);
 void init_osinfo(void);
 void init_bq27220(void);
 void init_battery(void);
-void init_imu(void);
 void init_lvgl_saved_settings(void);
 void init_camera(void);
 void init_input(void);
@@ -294,7 +293,6 @@ static void emu_init_cp0_runtime()
     init_wifi();
     init_settings();
     init_bq27220();
-    init_imu();
     init_battery();
     init_camera();
     init_lvgl_saved_settings();

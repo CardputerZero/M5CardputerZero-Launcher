@@ -1,4 +1,8 @@
 #include "wizard_service.h"
+#include "account_migration.h"
+#include "apply_checkpoint.h"
+#include "command_runner.h"
+#include "service_handoff.h"
 
 #include "global_config.h"
 #include "cp0_lvgl_app.h"
@@ -8,15 +12,17 @@
 #include <errno.h>
 #include <glob.h>
 #include <grp.h>
+#include <fcntl.h>
 #include <pwd.h>
 #include <shadow.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/wait.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 #include <chrono>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -33,11 +39,15 @@ namespace launch_wizard {
 
 constexpr uid_t kDefaultUserUid = 1000;
 constexpr const char *kFirstBootWizardUser = "rpi-first-boot-wizard";
-
-struct CommandResult {
-    int code = 0;
-    std::string output;
-};
+#if LAUNCH_WIZARD_DRY_RUN
+constexpr const char *kAccountJournalDir = "/tmp/LaunchWizard-dry-run";
+constexpr const char *kAccountJournalPath =
+    "/tmp/LaunchWizard-dry-run/account-migration.state";
+#else
+constexpr const char *kAccountJournalDir = "/var/lib/LaunchWizard";
+constexpr const char *kAccountJournalPath =
+    "/var/lib/LaunchWizard/account-migration.state";
+#endif
 
 void print_command(const std::vector<std::string> &args, const std::string *stdin_text)
 {
@@ -69,89 +79,18 @@ void print_command(const std::vector<std::string> &args, const std::string *stdi
     fflush(stdout);
 }
 
-CommandResult run_command(const std::vector<std::string> &args, const std::string *stdin_text = nullptr)
+thread_local std::function<bool()> command_cancelled;
+
+CommandResult run_command(const std::vector<std::string> &args,
+                          const std::string *stdin_text = nullptr)
 {
-    CommandResult result;
 #if LAUNCH_WIZARD_DRY_RUN
     print_command(args, stdin_text);
-    return result;
+    return {};
 #else
-    int out_pipe[2] = {-1, -1};
-    int in_pipe[2] = {-1, -1};
-
-    if (pipe(out_pipe) != 0) {
-        result.code = 127;
-        result.output = strerror(errno);
-        return result;
-    }
-    if (stdin_text && pipe(in_pipe) != 0) {
-        close(out_pipe[0]);
-        close(out_pipe[1]);
-        result.code = 127;
-        result.output = strerror(errno);
-        return result;
-    }
-
-    pid_t pid = fork();
-    if (pid == 0) {
-        if (stdin_text) {
-            dup2(in_pipe[0], STDIN_FILENO);
-            close(in_pipe[0]);
-            close(in_pipe[1]);
-        }
-        dup2(out_pipe[1], STDOUT_FILENO);
-        dup2(out_pipe[1], STDERR_FILENO);
-        close(out_pipe[0]);
-        close(out_pipe[1]);
-
-        std::vector<char *> argv;
-        argv.reserve(args.size() + 1);
-        for (const std::string &arg : args)
-            argv.push_back(const_cast<char *>(arg.c_str()));
-        argv.push_back(nullptr);
-        execvp(argv[0], argv.data());
-        _exit(127);
-    }
-
-    close(out_pipe[1]);
-    if (stdin_text) {
-        close(in_pipe[0]);
-        const char *data = stdin_text->c_str();
-        size_t left = stdin_text->size();
-        while (left > 0) {
-            ssize_t written = write(in_pipe[1], data, left);
-            if (written <= 0)
-                break;
-            data += written;
-            left -= static_cast<size_t>(written);
-        }
-        close(in_pipe[1]);
-    }
-
-    char buffer[256];
-    ssize_t read_count = 0;
-    while ((read_count = read(out_pipe[0], buffer, sizeof(buffer))) > 0) {
-        if (result.output.size() < 4096)
-            result.output.append(buffer, static_cast<size_t>(read_count));
-    }
-    close(out_pipe[0]);
-
-    int status = 0;
-    if (waitpid(pid, &status, 0) < 0) {
-        result.code = 127;
-        result.output = strerror(errno);
-    } else if (WIFEXITED(status)) {
-        result.code = WEXITSTATUS(status);
-    } else if (WIFSIGNALED(status)) {
-        result.code = 128 + WTERMSIG(status);
-    } else {
-        result.code = 127;
-    }
-
-    while (!result.output.empty() &&
-           (result.output.back() == '\n' || result.output.back() == '\r'))
-        result.output.pop_back();
-    return result;
+    CommandOptions options;
+    options.cancelled = command_cancelled;
+    return run_command_process(args, stdin_text, options);
 #endif
 }
 
@@ -386,6 +325,140 @@ bool set_user_password(const std::string &user, const std::string &password, std
     return false;
 }
 
+bool file_has_identity(const char *path, const std::string &user, char separator = ':')
+{
+    std::ifstream input(path);
+    std::string line;
+    const std::string prefix = user + separator;
+    while (std::getline(input, line))
+        if (line.rfind(prefix, 0) == 0)
+            return true;
+    return false;
+}
+
+bool account_user_is(const std::string &user)
+{
+    const passwd *entry = getpwnam(user.c_str());
+    return entry && entry->pw_uid == kDefaultUserUid;
+}
+
+bool account_home_is(const AccountMigrationRecord &state)
+{
+    const passwd *entry = getpwnam(state.target_user.c_str());
+    struct stat info {};
+    const std::string home = "/home/" + state.target_user;
+    if (!entry || entry->pw_uid != kDefaultUserUid ||
+        std::string(entry->pw_dir ? entry->pw_dir : "") != home ||
+        stat(home.c_str(), &info) != 0 || !S_ISDIR(info.st_mode))
+        return false;
+    if (state.source_user == state.target_user) return true;
+    struct stat old_info {};
+    return stat(("/home/" + state.source_user).c_str(), &old_info) != 0 && errno == ENOENT;
+}
+
+bool account_group_is(const std::string &group)
+{
+    const passwd *user = getpwnam(group.c_str());
+    const ::group *entry = getgrnam(group.c_str());
+    return user && entry && user->pw_gid == entry->gr_gid;
+}
+
+bool identity_migrated(const char *path, const AccountMigrationRecord &state,
+                       char separator = ':')
+{
+    return file_has_identity(path, state.target_user, separator) &&
+           (state.source_user == state.target_user ||
+            !file_has_identity(path, state.source_user, separator));
+}
+
+std::string serialize_account_record(const AccountMigrationRecord &record)
+{
+    return "version=1\nsource=" + record.source_user +
+           "\ntarget=" + record.target_user +
+           "\nstage=" + std::to_string(static_cast<int>(record.stage)) +
+           "\nrename_group=" + (record.rename_group ? "1" : "0") +
+           "\nupdate_subuid=" + (record.update_subuid ? "1" : "0") +
+           "\nupdate_subgid=" + (record.update_subgid ? "1" : "0") +
+           "\nupdate_sudoers=" + (record.update_sudoers ? "1" : "0") + "\n";
+}
+
+bool parse_account_record(AccountMigrationRecord &record)
+{
+    std::ifstream input(kAccountJournalPath);
+    if (!input) return false;
+    std::string version, source, target, stage, rename_group;
+    std::string update_subuid, update_subgid, update_sudoers;
+    if (!std::getline(input, version) || !std::getline(input, source) ||
+        !std::getline(input, target) || !std::getline(input, stage) ||
+        !std::getline(input, rename_group) || !std::getline(input, update_subuid) ||
+        !std::getline(input, update_subgid) || !std::getline(input, update_sudoers))
+        return false;
+    if (version != "version=1" || source.rfind("source=", 0) != 0 ||
+        target.rfind("target=", 0) != 0 || stage.rfind("stage=", 0) != 0 ||
+        rename_group.rfind("rename_group=", 0) != 0 ||
+        update_subuid.rfind("update_subuid=", 0) != 0 ||
+        update_subgid.rfind("update_subgid=", 0) != 0 ||
+        update_sudoers.rfind("update_sudoers=", 0) != 0)
+        return false;
+    char *end = nullptr;
+    const long stage_value = strtol(stage.c_str() + 6, &end, 10);
+    if (!end || *end || stage_value < 0 ||
+        stage_value > static_cast<long>(AccountMigrationStage::Complete))
+        return false;
+    record.source_user = source.substr(7);
+    record.target_user = target.substr(7);
+    record.stage = static_cast<AccountMigrationStage>(stage_value);
+    record.rename_group = rename_group == "rename_group=1";
+    record.update_subuid = update_subuid == "update_subuid=1";
+    record.update_subgid = update_subgid == "update_subgid=1";
+    record.update_sudoers = update_sudoers == "update_sudoers=1";
+    return !record.source_user.empty() && !record.target_user.empty();
+}
+
+bool save_account_record(const AccountMigrationRecord &record, std::string &error)
+{
+    if (!command_ok({"install", "-d", "-m", "0700", kAccountJournalDir}, error))
+        return false;
+    const std::string temporary = std::string(kAccountJournalPath) + ".tmp." +
+                                  std::to_string(static_cast<long long>(getpid()));
+    const int fd = open(temporary.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
+    if (fd < 0) {
+        error = std::string("cannot create account checkpoint: ") + strerror(errno);
+        return false;
+    }
+    const std::string data = serialize_account_record(record);
+    size_t offset = 0;
+    while (offset < data.size()) {
+        const ssize_t count = write(fd, data.data() + offset, data.size() - offset);
+        if (count > 0) { offset += static_cast<size_t>(count); continue; }
+        if (count < 0 && errno == EINTR) continue;
+        error = std::string("cannot write account checkpoint: ") + strerror(errno);
+        close(fd);
+        unlink(temporary.c_str());
+        return false;
+    }
+    if (fsync(fd) != 0 || close(fd) != 0 ||
+        rename(temporary.c_str(), kAccountJournalPath) != 0) {
+        error = std::string("cannot commit account checkpoint: ") + strerror(errno);
+        unlink(temporary.c_str());
+        return false;
+    }
+    const int dir_fd = open(kAccountJournalDir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (dir_fd >= 0) { (void)fsync(dir_fd); close(dir_fd); }
+    return true;
+}
+
+bool clear_account_record(std::string &error)
+{
+    if (unlink(kAccountJournalPath) != 0 && errno != ENOENT) {
+        error = std::string("cannot remove account checkpoint: ") + strerror(errno);
+        return false;
+    }
+    const int dir_fd = open(kAccountJournalDir, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (dir_fd >= 0) { (void)fsync(dir_fd); close(dir_fd); }
+    return true;
+}
+
 // Provision the owner account. pi-gen always pre-creates the UID 1000 user
 // (default "pi", --disabled-login). Mirroring the official userconf tool we
 // rename that existing user to the chosen name and set its password instead of
@@ -394,78 +467,171 @@ bool set_user_password(const std::string &user, const std::string &password, std
 uid_t configure_account(const std::string &new_user, const std::string &password,
                         std::string &error)
 {
-    std::string old_user = current_first_user();
+#if LAUNCH_WIZARD_DRY_RUN
+    std::string input = new_user + ":" + password + "\n";
+    run_command({"chpasswd"}, &input);
+    error.clear();
+    return kDefaultUserUid;
+#else
+    AccountMigrationRecord record;
+    const bool journal_exists = access(kAccountJournalPath, F_OK) == 0;
+    if (journal_exists && !parse_account_record(record)) {
+        error = "Account migration checkpoint is damaged; recovery is required";
+        return 0;
+    }
+    if (journal_exists && record.target_user != new_user) {
+        error = "Finish account migration for " + record.target_user + " before changing username";
+        return 0;
+    }
 
-    if (old_user.empty()) {
+    std::string old_user = current_first_user();
+    if (!journal_exists && old_user.empty()) {
         // No pre-created first user (unusual image): create one at UID 1000.
         if (!create_user(new_user, error))
             return 0;
-    } else if (old_user != new_user) {
-        if (user_exists(new_user)) {
+        old_user = new_user;
+    }
+    if (!journal_exists) {
+        if (old_user != new_user && user_exists(new_user)) {
             error = "Target username already in use";
             return 0;
         }
-        // Rename the existing UID 1000 user/group (same steps as userconf).
-        if (!command_ok({"usermod", "-l", new_user, old_user}, error))
-            return 0;
-        run_command({"usermod", "-m", "-d", "/home/" + new_user, new_user});
-        std::string old_group = current_first_group();
-        if (!old_group.empty() && old_group == old_user)
-            run_command({"groupmod", "-n", new_user, old_group});
-        // Keep subuid/subgid and the nopasswd sudoers entry consistent.
-        run_command({"sed", "-i", "s/^" + old_user + ":/" + new_user + ":/",
-                     "/etc/subuid"});
-        run_command({"sed", "-i", "s/^" + old_user + ":/" + new_user + ":/",
-                     "/etc/subgid"});
-        run_command({"sed", "-i", "s/^" + old_user + " /" + new_user + " /",
-                     "/etc/sudoers.d/010_pi-nopasswd"});
+        record.source_user = old_user;
+        record.target_user = new_user;
+        record.rename_group = current_first_group() == old_user;
+        record.update_subuid = file_has_identity("/etc/subuid", old_user);
+        record.update_subgid = file_has_identity("/etc/subgid", old_user);
+        record.update_sudoers = file_has_identity(
+            "/etc/sudoers.d/010_pi-nopasswd", old_user, ' ');
     }
 
-    if (!set_user_password(new_user, password, error))
+    bool password_applied = false;
+    AccountMigrationOps ops;
+    ops.save = save_account_record;
+    ops.clear = clear_account_record;
+    ops.complete = [&](const AccountMigrationRecord &state, AccountMigrationStage stage) {
+        switch (stage) {
+        case AccountMigrationStage::RenameLogin:
+            return account_user_is(state.target_user);
+        case AccountMigrationStage::MoveHome:
+            return account_home_is(state);
+        case AccountMigrationStage::RenameGroup:
+            return !state.rename_group || account_group_is(state.target_user);
+        case AccountMigrationStage::UpdateSubuid:
+            return !state.update_subuid || identity_migrated("/etc/subuid", state);
+        case AccountMigrationStage::UpdateSubgid:
+            return !state.update_subgid || identity_migrated("/etc/subgid", state);
+        case AccountMigrationStage::UpdateSudoers:
+            if (!state.update_sudoers) return true;
+            if (!identity_migrated(
+                    "/etc/sudoers.d/010_pi-nopasswd", state, ' '))
+                return false;
+            return run_command(
+                {"visudo", "-cf", "/etc/sudoers.d/010_pi-nopasswd"}).code == 0;
+        case AccountMigrationStage::SetPassword:
+            return password_applied;
+        case AccountMigrationStage::Complete:
+            return true;
+        }
+        return false;
+    };
+    ops.execute = [&](const AccountMigrationRecord &state, AccountMigrationStage stage,
+                      std::string &step_error) {
+        switch (stage) {
+        case AccountMigrationStage::RenameLogin:
+            return command_ok({"usermod", "-l", state.target_user, state.source_user}, step_error);
+        case AccountMigrationStage::MoveHome:
+            return command_ok({"usermod", "-m", "-d", "/home/" + state.target_user,
+                               state.target_user}, step_error);
+        case AccountMigrationStage::RenameGroup:
+            return !state.rename_group || command_ok(
+                {"groupmod", "-n", state.target_user, state.source_user}, step_error);
+        case AccountMigrationStage::UpdateSubuid:
+            return !state.update_subuid || command_ok(
+                {"sed", "-i", "s/^" + state.source_user + ":/" + state.target_user + ":/",
+                 "/etc/subuid"}, step_error);
+        case AccountMigrationStage::UpdateSubgid:
+            return !state.update_subgid || command_ok(
+                {"sed", "-i", "s/^" + state.source_user + ":/" + state.target_user + ":/",
+                 "/etc/subgid"}, step_error);
+        case AccountMigrationStage::UpdateSudoers:
+            return !state.update_sudoers || command_ok(
+                {"sed", "-i", "s/^" + state.source_user + " /" + state.target_user + " /",
+                 "/etc/sudoers.d/010_pi-nopasswd"}, step_error);
+        case AccountMigrationStage::SetPassword:
+            password_applied = set_user_password(state.target_user, password, step_error);
+            return password_applied;
+        case AccountMigrationStage::Complete:
+            return true;
+        }
+        return false;
+    };
+    error = run_account_migration(record, ops);
+    if (!error.empty())
         return 0;
     return kDefaultUserUid;
+#endif
 }
 
-void disable_piwiz(const std::string &user)
+std::string disable_piwiz(const std::string &user)
 {
-    run_command({"pkill", "-x", "piwiz"});
-    run_command({"rm", "-f",
-                 "/etc/xdg/autostart/piwiz.desktop.dpkg-new",
-                 "/etc/xdg/autostart/piwiz.desktop.dpkg-dist",
-                 "/etc/xdg/autostart/piwiz.desktop.dpkg-old"});
-    run_command({"install", "-d", "-m", "0755", "/etc/xdg/autostart"});
+    std::string error;
+    CommandResult killed = run_command({"pkill", "-x", "piwiz"});
+    if (killed.code != 0 && killed.code != 1)
+        return killed.output.empty() ? "Failed to stop piwiz" : killed.output;
+    if (!command_ok({"rm", "-f",
+                     "/etc/xdg/autostart/piwiz.desktop.dpkg-new",
+                     "/etc/xdg/autostart/piwiz.desktop.dpkg-dist",
+                     "/etc/xdg/autostart/piwiz.desktop.dpkg-old"}, error) ||
+        !command_ok({"install", "-d", "-m", "0755", "/etc/xdg/autostart"}, error))
+        return error;
     const std::string hidden_entry =
         "[Desktop Entry]\n"
         "Type=Application\n"
         "Name=piwiz\n"
         "Hidden=true\n";
-    run_command({"tee", "/etc/xdg/autostart/piwiz.desktop"}, &hidden_entry);
-    run_command({"chmod", "0644", "/etc/xdg/autostart/piwiz.desktop"});
+    CommandResult written = run_command(
+        {"tee", "/etc/xdg/autostart/piwiz.desktop"}, &hidden_entry);
+    if (written.code != 0)
+        return written.output.empty() ? "Failed to disable piwiz autostart" : written.output;
+    if (!command_ok({"chmod", "0644", "/etc/xdg/autostart/piwiz.desktop"}, error))
+        return error;
 
     const std::string user_autostart = "/home/" + user + "/.config/autostart";
     const std::string user_piwiz = user_autostart + "/piwiz.desktop";
-    run_command({"install", "-d", "-m", "0755", "-o", user, "-g", user, user_autostart});
-    run_command({"tee", user_piwiz}, &hidden_entry);
-    run_command({"chown", user + ":" + user, user_piwiz});
-    run_command({"chmod", "0644", user_piwiz});
+    if (!command_ok({"install", "-d", "-m", "0755", "-o", user, "-g", user,
+                     user_autostart}, error))
+        return error;
+    written = run_command({"tee", user_piwiz}, &hidden_entry);
+    if (written.code != 0)
+        return written.output.empty() ? "Failed to disable user piwiz autostart" : written.output;
+    if (!command_ok({"chown", user + ":" + user, user_piwiz}, error) ||
+        !command_ok({"chmod", "0644", user_piwiz}, error))
+        return error;
+    return {};
 }
 
 std::string configure_desktop_startup(const std::string &user)
 {
     std::string warning;
 
-    disable_piwiz(user);
+    warning = disable_piwiz(user);
+    if (!warning.empty()) return warning;
 
-    run_command({"systemctl", "set-default", "graphical.target"});
+    if (!command_ok({"systemctl", "set-default", "graphical.target"}, warning))
+        return warning;
 
     CommandResult raspi_config = run_command({"raspi-config", "nonint", "do_boot_behaviour", "B4"});
     if (raspi_config.code != 0) {
         warning = "raspi-config desktop autologin failed";
         if (!raspi_config.output.empty())
             warning += ": " + raspi_config.output;
+        return warning;
     }
 
-    run_command({"install", "-d", "-m", "0755", "/etc/lightdm/lightdm.conf.d"});
+    if (!command_ok({"install", "-d", "-m", "0755", "/etc/lightdm/lightdm.conf.d"},
+                    warning))
+        return warning;
     const std::string lightdm_conf =
         "[Seat:*]\n"
         "autologin-user=" + user + "\n"
@@ -477,38 +643,23 @@ std::string configure_desktop_startup(const std::string &user)
         warning = "LightDM autologin config failed";
         if (!write_conf.output.empty())
             warning += ": " + write_conf.output;
+        return warning;
     }
-    run_command({"chmod", "0644", "/etc/lightdm/lightdm.conf.d/50-launchwizard-autologin.conf"});
-
-    run_command({"systemctl", "enable", "lightdm.service"});
+    if (!command_ok({"chmod", "0644",
+                     "/etc/lightdm/lightdm.conf.d/50-launchwizard-autologin.conf"}, warning) ||
+        !command_ok({"systemctl", "enable", "lightdm.service"}, warning))
+        return warning;
 
     return warning;
 }
 
-std::string enable_applaunch_service(const std::string &user, uid_t uid)
+std::string enable_applaunch_service(const std::string &user)
 {
-    std::string warning;
-    std::string uid_text = std::to_string(uid);
-    std::string runtime_dir = "XDG_RUNTIME_DIR=/run/user/" + uid_text;
-    std::string bus_address = "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/" + uid_text + "/bus";
-
-    run_command({"loginctl", "enable-linger", user});
-    run_command({"systemctl", "daemon-reload"});
-    run_command({"systemctl", "start", "user@" + uid_text + ".service"});
-    run_command({"runuser", "-u", user, "--", "env",
-                 runtime_dir, bus_address,
-                 "systemctl", "--user", "daemon-reload"});
-    CommandResult enabled = run_command({"runuser", "-u", user, "--", "env",
-                                         runtime_dir, bus_address,
-                                         "systemctl", "--user", "enable",
-                                         "APPLaunch.service"});
-    if (enabled.code != 0) {
-        warning = "APPLaunch service enable failed";
-        if (!enabled.output.empty()) warning += ": " + enabled.output;
-    }
-    // Do not start the UI during OOBE. The reboot starts the enabled user unit
-    // in the newly configured autologin session.
-    return warning;
+    return enable_applaunch_after_reboot(
+        user, [](const std::vector<std::string> &args) {
+            CommandResult result = run_command(args);
+            return HandoffCommandResult{result.code, result.output};
+        });
 }
 
 // ---------------------------------------------------------------------------
@@ -593,8 +744,19 @@ std::string WizardService::connect_wifi(const std::string &ssid, const std::stri
         const CommandResult result = run_command(args);
         if (result.code != 0)
             return result.output.empty() ? "Hidden Wi-Fi connect failed" : result.output;
-    } else if (cp0_wifi_connect(ssid.c_str(), password.empty() ? nullptr : password.c_str()) != 0) {
-        return "Wi-Fi connect failed";
+    } else {
+        const int connect_result = cp0_wifi_connect(
+            ssid.c_str(), password.empty() ? nullptr : password.c_str());
+        if (connect_result != 0) {
+            switch (connect_result) {
+            case CP0_WIFI_ERROR_AUTH: return "Incorrect Wi-Fi password";
+            case CP0_WIFI_ERROR_NOT_FOUND: return "Wi-Fi network is no longer available";
+            case CP0_WIFI_ERROR_IP_CONFIG: return "Wi-Fi connected but IP setup failed";
+            case CP0_WIFI_ERROR_RADIO_OFF: return "Wi-Fi radio is disabled";
+            case CP0_WIFI_ERROR_TIMEOUT: return "Wi-Fi connection timed out; retry";
+            default: return "Network service could not connect; retry";
+            }
+        }
     }
 
     // Hidden connections are created directly through nmcli, while
@@ -642,26 +804,33 @@ std::string apply_ethernet(const WizardModel &g)
     return up.code == 0 ? "" : (up.output.empty() ? "Ethernet activation failed" : up.output);
 }
 
-std::vector<WifiNetwork> WizardService::scan_wifi()
+WifiScanResult WizardService::scan_wifi()
 {
-    std::vector<WifiNetwork> networks;
+    WifiScanResult result;
 #if LAUNCH_WIZARD_DRY_RUN
-    networks.push_back({"Studio_2.4G", 90});
-    networks.push_back({"CardputerLab", 70});
-    networks.push_back({"Home-5G", 45});
+    result.networks.push_back({"Studio_2.4G", 90, "WPA2"});
+    result.networks.push_back({"CardputerLab", 70, ""});
+    result.networks.push_back({"Home-5G", 45, "WPA3"});
 #else
-    if (cp0_wifi_radio_set_enabled(1) != 0)
-        return networks;
+    if (cp0_wifi_radio_set_enabled(1) != 0) {
+        result.error = CP0_WIFI_ERROR_RADIO_OFF;
+        return result;
+    }
 
     cp0_wifi_ap_t access_points[CP0_WIFI_AP_MAX]{};
     const int count = cp0_wifi_scan(access_points, CP0_WIFI_AP_MAX);
+    if (count < 0) {
+        result.error = count;
+        return result;
+    }
     for (int index = 0; index < count && index < CP0_WIFI_AP_MAX; ++index) {
         const cp0_wifi_ap_t &access_point = access_points[index];
         if (access_point.ssid[0] != '\0')
-            networks.push_back({access_point.ssid, access_point.signal});
+            result.networks.push_back(
+                {access_point.ssid, access_point.signal, access_point.security});
     }
 #endif
-    return networks;
+    return result;
 }
 
 WifiConnectionStatus WizardService::read_wifi_status()
@@ -684,12 +853,13 @@ WifiConnectionStatus WizardService::read_wifi_status()
 // ---------------------------------------------------------------------------
 std::string WizardService::apply(
     const WizardModel &g,
-    const std::function<bool(const std::string &)> &progress)
+    const std::function<void(const ProgressEvent &)> &progress,
+    const std::function<bool()> &cancelled)
 {
     const std::string timezone = g.current_timezone().name;
     const std::string hostname = g.hostname;
     const std::string username = g.username;
-    const std::string password = g.password.empty() ? std::string("pi") : g.password;
+    const std::string password = g.password;
     const bool network_skipped = g.network_skipped;
     const std::string wifi_ssid = g.wifi_ssid;
     const std::string wifi_password = g.wifi_password;
@@ -701,68 +871,82 @@ std::string WizardService::apply(
         return "LaunchWizard must run as root";
 #endif
 
-    auto step = [&](const char *message) { return progress && !progress(message); };
-
-    if (step("Setting timezone...")) return "Configuration cancelled";
-    std::string error = apply_timezone(timezone);
-    if (!error.empty()) return "Timezone failed: " + error;
-    if (step("Setting date and time...")) return "Configuration cancelled";
-    error = set_manual_time(g.manual_date, g.manual_time);
-    if (!error.empty()) return "System time failed: " + error;
-    if (step("Setting hostname...")) return "Configuration cancelled";
-    error = apply_hostname(hostname);
-    if (!error.empty()) return "Hostname failed: " + error;
-
-    if (step("Configuring network...")) return "Configuration cancelled";
-    if (!network_skipped && g.use_ethernet) {
-        const std::string ethernet_error = apply_ethernet(g);
-        if (!ethernet_error.empty())
-            return ethernet_error;
-    } else if (!network_skipped && !g.wifi_connected && !wifi_ssid.empty()) {
-        std::string wifi_error = WizardService::connect_wifi(
-            wifi_ssid, wifi_password, nullptr, wifi_hidden);
-        if (!wifi_error.empty()) return wifi_error;
-    }
-
-    if (step("Configuring SSH...")) return "Configuration cancelled";
-    const std::string ssh_error = apply_ssh(ssh_enabled);
-    if (!ssh_error.empty()) return ssh_error;
-
-    // Provision the owner account by renaming/repurposing the pre-created
-    // UID 1000 user (pi-gen always ships one) and setting its password.
-    if (step("Configuring user account...")) return "Configuration cancelled";
-    error.clear();
-    uid_t uid = configure_account(username, password, error);
-    if (uid == 0)
-        return error;
-
-    if (step("Configuring desktop login...")) return "Configuration cancelled";
-    std::string desktop_warning = configure_desktop_startup(username);
-    if (!desktop_warning.empty()) return desktop_warning;
-    if (step("Enabling APPLaunch service...")) return "Configuration cancelled";
-    std::string service_warning = enable_applaunch_service(username, uid);
-    if (!service_warning.empty())
-        return service_warning;
-
-    if (step("Finalizing configuration...")) return "Configuration cancelled";
-    CommandResult disabled = run_command({"systemctl", "disable", "LaunchWizard.service"});
-    if (disabled.code != 0)
-        return disabled.output.empty() ? "Failed to disable LaunchWizard.service" : disabled.output;
-    static const char *marker_paths[] = {
-        "/var/lib/applaunch/run-oobe",
-        "/var/lib/LaunchWizard/run-oobe",
-    };
-    for (const char *path : marker_paths) {
-        if (remove(path) != 0 && errno != ENOENT)
-            return std::string("Failed to remove OOBE marker: ") + strerror(errno);
-    }
+    struct CancelScope {
+        ~CancelScope() { command_cancelled = {}; }
+    } cancel_scope;
+    command_cancelled = cancelled;
+    std::vector<ApplyStep> steps = {
+        {"Setting timezone...", [timezone] {
+            const std::string error = apply_timezone(timezone);
+            return error.empty() ? error : "Timezone failed: " + error;
+        }},
+        {"Setting date and time...", [&g] {
+            const std::string error = WizardService::set_manual_time(
+                g.manual_date, g.manual_time);
+            return error.empty() ? error : "System time failed: " + error;
+        }},
+        {"Setting hostname...", [hostname] {
+            const std::string error = apply_hostname(hostname);
+            return error.empty() ? error : "Hostname failed: " + error;
+        }},
+        {"Configuring network...", [&g, network_skipped, wifi_ssid,
+                                     wifi_password, wifi_hidden] {
+            if (!network_skipped && g.use_ethernet)
+                return apply_ethernet(g);
+            if (!network_skipped && !g.wifi_connected && !wifi_ssid.empty())
+                return WizardService::connect_wifi(
+                    wifi_ssid, wifi_password, nullptr, wifi_hidden);
+            return std::string{};
+        }},
+        {"Configuring SSH...", [ssh_enabled] {
+            return apply_ssh(ssh_enabled);
+        }},
+        // The account migration has its own sub-step journal. The outer
+        // checkpoint advances only after that migration is fully complete.
+        {"Configuring user account...", [username, password] {
+            std::string error;
+            return configure_account(username, password, error) == 0 ? error : std::string{};
+        }},
+        {"Configuring desktop login...", [username] {
+            return configure_desktop_startup(username);
+        }},
+        {"Enabling APPLaunch service...", [username] {
+            const struct passwd *account = getpwnam(username.c_str());
+            if (!account || account->pw_uid == 0)
+                return std::string("Configured user account is unavailable");
+            return enable_applaunch_service(username);
+        }},
+        {"Finalizing configuration...", [] {
+            CommandResult disabled = run_command(
+                {"systemctl", "disable", "LaunchWizard.service"});
+            if (disabled.code != 0)
+                return disabled.output.empty()
+                    ? std::string("Failed to disable LaunchWizard.service")
+                    : disabled.output;
+            static const char *marker_paths[] = {
+                "/var/lib/applaunch/run-oobe",
+                "/var/lib/LaunchWizard/run-oobe",
+            };
+            for (const char *path : marker_paths) {
+                if (remove(path) != 0 && errno != ENOENT)
+                    return std::string("Failed to remove OOBE marker: ") + strerror(errno);
+            }
 #if !LAUNCH_WIZARD_DRY_RUN
-    sync();
-    sync();
-    sync();
+            sync();
+            sync();
+            sync();
 #endif
+            return std::string{};
+        }},
+    };
 
-    return "";
+    const ApplyCheckpointStore checkpoint(default_apply_checkpoint_path());
+    return run_apply_steps(
+        wizard_configuration_fingerprint(g), steps, checkpoint,
+        [&progress](int step, int total, const std::string &label) {
+            if (progress) progress({step, total, label});
+        },
+        cancelled);
 }
 
 std::string WizardService::reboot()
@@ -815,13 +999,16 @@ int launch_wizard::WizardService::finish_configured_system()
         return 1;
     }
 
-    std::string service_warning = enable_applaunch_service(user, kDefaultUserUid);
+    std::string service_warning = handoff_to_applaunch(
+        user, kDefaultUserUid, [](const std::vector<std::string> &args) {
+            CommandResult result = run_command(args);
+            return HandoffCommandResult{result.code, result.output};
+        });
     if (!service_warning.empty()) {
         fprintf(stderr, "LaunchWizard: %s\n", service_warning.c_str());
         return 1;
     }
 
-    run_command({"systemctl", "disable", "--now", "LaunchWizard.service"});
     printf("LaunchWizard: started APPLaunch for %s and disabled LaunchWizard.service\n",
            user.c_str());
     fflush(stdout);

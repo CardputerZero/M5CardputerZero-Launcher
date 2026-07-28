@@ -19,6 +19,9 @@ std::shared_ptr<Request> RequestFactory::create(
     request->output_cb = output_cb;
     request->complete_cb = complete_cb;
     request->user = user;
+    request->auth_timeout_ms = kDefaultAuthTimeoutMs;
+    request->exec_timeout_ms = kDefaultExecTimeoutMs;
+    request->queue_timeout_ms = kDefaultQueueTimeoutMs;
     return request;
 }
 
@@ -31,8 +34,8 @@ RequestBuildResult RequestFactory::create_argv(
         return {-EINVAL, {}};
 
     auto request = create(callback_thread, output_cb, complete_cb, user);
-    request->auth_timeout_ms = auth_timeout_ms;
-    request->exec_timeout_ms = exec_timeout_ms;
+    if (auth_timeout_ms > 0) request->auth_timeout_ms = auth_timeout_ms;
+    if (exec_timeout_ms > 0) request->exec_timeout_ms = exec_timeout_ms;
     for (size_t i = 0; argv[i]; ++i) request->argv.emplace_back(argv[i]);
     return {0, std::move(request)};
 }

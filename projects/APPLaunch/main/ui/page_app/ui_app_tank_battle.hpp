@@ -10,6 +10,8 @@
 #include "../model/tank_battle_model.hpp"
 #include "../model/tank_battle_page_contract.hpp"
 #include "../model/page_timer_lifecycle.hpp"
+#include "../model/game_input_action.hpp"
+#include "cp0_keyboard_input_context.hpp"
 
 #include <cstdint>
 #include <string>
@@ -19,11 +21,14 @@
 class UITankBattlePage : public AppPageRoot
 {
 private:
-    static constexpr uint32_t KEY_MOVE_UP    = 33;
-    static constexpr uint32_t KEY_MOVE_DOWN  = 45;
-    static constexpr uint32_t KEY_MOVE_LEFT  = 44;
-    static constexpr uint32_t KEY_MOVE_RIGHT = 46;
-    static constexpr uint32_t KEY_FIRE       = 57;
+    struct TankVisual {
+        lv_obj_t *root = nullptr;
+        lv_obj_t *left_track = nullptr;
+        lv_obj_t *right_track = nullptr;
+        lv_obj_t *hull = nullptr;
+        lv_obj_t *turret = nullptr;
+        lv_obj_t *barrel = nullptr;
+    };
 
     static constexpr int SCREEN_W = 320;
     static constexpr int SCREEN_H = 170;
@@ -52,12 +57,14 @@ private:
     PageTimerLifecycle<lv_timer_t *> tick_timer_;
     bool tick_callback_enabled_ = false;
     TankBattleModel model_;
+    Cp0KeyboardInputContextScope input_context_scope_{KBD_INPUT_CONTEXT_GAME};
 
+    TankVisual player_tank_;
     lv_obj_t *player_obj_ = nullptr;
     lv_obj_t *background_ = nullptr;
     lv_obj_t *arena_ = nullptr;
     lv_obj_t *status_label_ = nullptr;
-    std::vector<lv_obj_t *> enemy_objs_;
+    std::vector<TankVisual> enemy_tanks_;
     std::vector<lv_obj_t *> bullet_objs_;
 
     lv_obj_t *game_msg_panel_ = nullptr;
@@ -69,6 +76,9 @@ private:
 private:
     void creat_UI();
     void create_game_message_panel(lv_obj_t *arena);
+    TankVisual create_tank_visual(lv_obj_t *arena, std::uint32_t armor_color);
+    void sync_tank_visual(TankVisual &visual, TankDirection direction,
+                          std::uint32_t armor_color);
 
 private:
     void event_handler_init();
