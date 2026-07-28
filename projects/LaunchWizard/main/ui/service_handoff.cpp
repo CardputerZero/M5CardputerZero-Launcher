@@ -12,12 +12,10 @@ std::string command_error(const char *step, const HandoffCommandResult &result)
 
 }  // namespace
 
-std::string enable_applaunch_after_reboot(const std::string &user,
-                                          const HandoffCommandRunner &run)
+std::string enable_applaunch_after_reboot(const HandoffCommandRunner &run)
 {
     const HandoffCommandResult result = run({
-        "runuser", "-u", user, "--", "env", "HOME=/home/" + user,
-        "systemctl", "--user", "enable", "--no-reload", "APPLaunch.service",
+        "systemctl", "--global", "enable", "APPLaunch.service",
     });
     return result.code == 0
         ? std::string()
