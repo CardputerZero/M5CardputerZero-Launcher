@@ -31,24 +31,22 @@ bool test_service_handoff()
 
     std::vector<std::string> calls;
     std::string error = enable_applaunch_after_reboot(
-        "cardputer", [&calls](const std::vector<std::string> &args) {
+        [&calls](const std::vector<std::string> &args) {
             calls.push_back(joined(args));
             return HandoffCommandResult{};
         });
     expect(error.empty(), "next-boot APPLaunch enable returned an error");
     expect(calls.size() == 1, "next-boot enable must execute exactly one command");
     if (calls.size() == 1) {
-        expect(calls[0].find("systemctl --user enable --no-reload APPLaunch.service") !=
-                   std::string::npos,
-               "next-boot enable did not enable APPLaunch.service offline");
-        expect(calls[0].find("--now") == std::string::npos &&
-                   calls[0].find(" start ") == std::string::npos,
+        expect(calls[0] == "systemctl --global enable APPLaunch.service",
+               "next-boot enable did not use global user-service configuration");
+        expect(calls[0].find("--now") == std::string::npos,
                "configuration phase attempted to start APPLaunch");
     }
 
     calls.clear();
     error = enable_applaunch_after_reboot(
-        "cardputer", [&calls](const std::vector<std::string> &args) {
+        [&calls](const std::vector<std::string> &args) {
             calls.push_back(joined(args));
             return HandoffCommandResult{1, "injected enable failure"};
         });

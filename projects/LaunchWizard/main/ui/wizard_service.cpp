@@ -653,10 +653,10 @@ std::string configure_desktop_startup(const std::string &user)
     return warning;
 }
 
-std::string enable_applaunch_service(const std::string &user)
+std::string enable_applaunch_service()
 {
     return enable_applaunch_after_reboot(
-        user, [](const std::vector<std::string> &args) {
+        [](const std::vector<std::string> &args) {
             CommandResult result = run_command(args);
             return HandoffCommandResult{result.code, result.output};
         });
@@ -705,20 +705,23 @@ std::string WizardService::set_manual_time(const std::string &date,
 
 std::string apply_ssh(bool enabled)
 {
-    std::string warning;
-    if (enabled) {
-        run_command({"systemctl", "unmask", "ssh.service"});
-        CommandResult ok = run_command({"systemctl", "enable", "--now", "ssh.service"});
-        if (ok.code != 0) {
-            CommandResult alt = run_command({"systemctl", "enable", "--now", "sshd.service"});
-            if (alt.code != 0)
-                warning = "SSH enable failed";
-        }
-    } else {
-        run_command({"systemctl", "disable", "--now", "ssh.service"});
-        run_command({"systemctl", "disable", "--now", "sshd.service"});
-    }
-    return warning;
+    CommandResult configured = run_command(
+        {"raspi-config", "nonint", "do_ssh", enabled ? "0" : "1"});
+    if (configured.code != 0)
+        return configured.output.empty()
+            ? std::string("Failed to configure SSH")
+            : std::string("Failed to configure SSH: ") + configured.output;
+
+    CommandResult state = run_command({
+        "systemctl", enabled ? "is-active" : "is-enabled", "--quiet", "ssh.service",
+    });
+    if (enabled && state.code != 0)
+        return state.output.empty()
+            ? std::string("SSH was enabled but did not become active")
+            : std::string("SSH was enabled but did not become active: ") + state.output;
+    if (!enabled && state.code == 0)
+        return "SSH remained enabled after it was disabled";
+    return {};
 }
 
 std::string WizardService::connect_wifi(const std::string &ssid, const std::string &password,
@@ -875,52 +878,62 @@ std::string WizardService::apply(
         ~CancelScope() { command_cancelled = {}; }
     } cancel_scope;
     command_cancelled = cancelled;
+    const auto best_effort = [](const char *label, std::function<std::string()> execute) {
+        return ApplyStep{label, [label, execute = std::move(execute)] {
+            const std::string error = execute();
+            if (!error.empty())
+                fprintf(stderr, "LaunchWizard: %s failed: %s; continuing setup\n",
+                        label, error.c_str());
+            return std::string{};
+        }};
+    };
     std::vector<ApplyStep> steps = {
-        {"Setting timezone...", [timezone] {
+        best_effort("Setting timezone...", [timezone] {
             const std::string error = apply_timezone(timezone);
             return error.empty() ? error : "Timezone failed: " + error;
-        }},
-        {"Setting date and time...", [&g] {
+        }),
+        best_effort("Setting date and time...", [&g] {
             const std::string error = WizardService::set_manual_time(
                 g.manual_date, g.manual_time);
             return error.empty() ? error : "System time failed: " + error;
-        }},
-        {"Setting hostname...", [hostname] {
+        }),
+        best_effort("Setting hostname...", [hostname] {
             const std::string error = apply_hostname(hostname);
             return error.empty() ? error : "Hostname failed: " + error;
-        }},
-        {"Configuring network...", [&g, network_skipped, wifi_ssid,
-                                     wifi_password, wifi_hidden] {
+        }),
+        best_effort("Configuring network...", [&g, network_skipped, wifi_ssid,
+                                                wifi_password, wifi_hidden] {
             if (!network_skipped && g.use_ethernet)
                 return apply_ethernet(g);
             if (!network_skipped && !g.wifi_connected && !wifi_ssid.empty())
                 return WizardService::connect_wifi(
                     wifi_ssid, wifi_password, nullptr, wifi_hidden);
             return std::string{};
-        }},
-        {"Configuring SSH...", [ssh_enabled] {
+        }),
+        best_effort("Configuring SSH...", [ssh_enabled] {
             return apply_ssh(ssh_enabled);
-        }},
+        }),
         // The account migration has its own sub-step journal. The outer
         // checkpoint advances only after that migration is fully complete.
-        {"Configuring user account...", [username, password] {
+        best_effort("Configuring user account...", [username, password] {
             std::string error;
             return configure_account(username, password, error) == 0 ? error : std::string{};
-        }},
-        {"Configuring desktop login...", [username] {
+        }),
+        best_effort("Configuring desktop login...", [username] {
             return configure_desktop_startup(username);
-        }},
-        {"Enabling APPLaunch service...", [username] {
+        }),
+        best_effort("Enabling APPLaunch service...", [username] {
             const struct passwd *account = getpwnam(username.c_str());
             if (!account || account->pw_uid == 0)
                 return std::string("Configured user account is unavailable");
-            return enable_applaunch_service(username);
-        }},
-        {"Finalizing configuration...", [] {
+            return enable_applaunch_service();
+        }),
+        best_effort("Finalizing configuration...", [] {
+            std::string first_error;
             CommandResult disabled = run_command(
                 {"systemctl", "disable", "LaunchWizard.service"});
             if (disabled.code != 0)
-                return disabled.output.empty()
+                first_error = disabled.output.empty()
                     ? std::string("Failed to disable LaunchWizard.service")
                     : disabled.output;
             static const char *marker_paths[] = {
@@ -928,16 +941,17 @@ std::string WizardService::apply(
                 "/var/lib/LaunchWizard/run-oobe",
             };
             for (const char *path : marker_paths) {
-                if (remove(path) != 0 && errno != ENOENT)
-                    return std::string("Failed to remove OOBE marker: ") + strerror(errno);
+                if (remove(path) != 0 && errno != ENOENT && first_error.empty())
+                    first_error = std::string("Failed to remove OOBE marker: ") +
+                                  strerror(errno);
             }
 #if !LAUNCH_WIZARD_DRY_RUN
             sync();
             sync();
             sync();
 #endif
-            return std::string{};
-        }},
+            return first_error;
+        }),
     };
 
     const ApplyCheckpointStore checkpoint(default_apply_checkpoint_path());
