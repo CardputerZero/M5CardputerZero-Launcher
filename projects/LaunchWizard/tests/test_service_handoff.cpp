@@ -31,21 +31,26 @@ bool test_service_handoff()
 
     std::vector<std::string> calls;
     std::string error = enable_applaunch_after_reboot(
+        "cardputer", 1000,
         [&calls](const std::vector<std::string> &args) {
             calls.push_back(joined(args));
             return HandoffCommandResult{};
         });
     expect(error.empty(), "next-boot APPLaunch enable returned an error");
-    expect(calls.size() == 1, "next-boot enable must execute exactly one command");
-    if (calls.size() == 1) {
-        expect(calls[0] == "systemctl --global enable APPLaunch.service",
-               "next-boot enable did not use global user-service configuration");
-        expect(calls[0].find("--now") == std::string::npos,
+    expect(calls.size() == 6, "next-boot enable did not run all user-scoped steps");
+    if (calls.size() == 6) {
+        expect(calls[0] == "systemctl --global disable APPLaunch.service",
+               "next-boot enable did not remove legacy global configuration");
+        expect(calls[5].find("systemctl --user enable APPLaunch.service") !=
+                   std::string::npos,
+               "next-boot enable was not scoped to the configured user");
+        expect(calls[5].find("--now") == std::string::npos,
                "configuration phase attempted to start APPLaunch");
     }
 
     calls.clear();
     error = enable_applaunch_after_reboot(
+        "cardputer", 1000,
         [&calls](const std::vector<std::string> &args) {
             calls.push_back(joined(args));
             return HandoffCommandResult{1, "injected enable failure"};
@@ -60,17 +65,19 @@ bool test_service_handoff()
             return HandoffCommandResult{};
         });
     expect(error.empty(), "successful handoff returned an error");
-    expect(calls.size() == 7, "successful handoff did not run all steps");
-    if (calls.size() == 7) {
-        expect(calls[4].find("enable --now APPLaunch.service") != std::string::npos,
+    expect(calls.size() == 8, "successful handoff did not run all steps");
+    if (calls.size() == 8) {
+        expect(calls[0] == "systemctl --global disable APPLaunch.service",
+               "handoff did not remove legacy global configuration");
+        expect(calls[5].find("enable --now APPLaunch.service") != std::string::npos,
                "APPLaunch was not started while being enabled");
-        expect(calls[5].find("is-active --quiet APPLaunch.service") != std::string::npos,
+        expect(calls[6].find("is-active --quiet APPLaunch.service") != std::string::npos,
                "APPLaunch active state was not verified");
-        expect(calls[6] == "systemctl disable --now LaunchWizard.service",
+        expect(calls[7] == "systemctl disable --now LaunchWizard.service",
                "LaunchWizard was not stopped last");
     }
 
-    for (size_t failed_step = 0; failed_step < 6; ++failed_step) {
+    for (size_t failed_step = 0; failed_step < 7; ++failed_step) {
         calls.clear();
         error = handoff_to_applaunch(
             "cardputer", 1000,
@@ -96,7 +103,7 @@ bool test_service_handoff()
     error = handoff_to_applaunch(
         "cardputer", 1000, [&calls](const std::vector<std::string> &args) {
             calls.push_back(joined(args));
-            if (calls.size() == 7)
+            if (calls.size() == 8)
                 return HandoffCommandResult{1, "disable failed"};
             return HandoffCommandResult{};
         });

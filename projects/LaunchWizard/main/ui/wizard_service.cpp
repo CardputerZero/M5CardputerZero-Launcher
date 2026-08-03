@@ -647,15 +647,16 @@ std::string configure_desktop_startup(const std::string &user)
     }
     if (!command_ok({"chmod", "0644",
                      "/etc/lightdm/lightdm.conf.d/50-launchwizard-autologin.conf"}, warning) ||
-        !command_ok({"systemctl", "enable", "lightdm.service"}, warning))
+        !command_ok({"systemctl", "disable", "lightdm.service"}, warning))
         return warning;
 
     return warning;
 }
 
-std::string enable_applaunch_service()
+std::string enable_applaunch_service(const std::string &user, unsigned int uid)
 {
     return enable_applaunch_after_reboot(
+        user, uid,
         [](const std::vector<std::string> &args) {
             CommandResult result = run_command(args);
             return HandoffCommandResult{result.code, result.output};
@@ -926,7 +927,7 @@ std::string WizardService::apply(
             const struct passwd *account = getpwnam(username.c_str());
             if (!account || account->pw_uid == 0)
                 return std::string("Configured user account is unavailable");
-            return enable_applaunch_service();
+            return enable_applaunch_service(username, account->pw_uid);
         }),
         best_effort("Finalizing configuration...", [] {
             std::string first_error;
