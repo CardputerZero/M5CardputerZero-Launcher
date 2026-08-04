@@ -233,7 +233,7 @@ jobs:
 
     - name: Lower ASLR entropy (Ubuntu 24.04 mmap_rnd_bits exceeds what ThreadSanitizer can map)
       run: |
-        bits=$(cat /proc/sys/vm/mmap_rnd_bits)
+        bits=$(sudo sysctl -n vm.mmap_rnd_bits 2>/dev/null || echo 0)
         if [ "$bits" -gt 28 ]; then
           sudo sysctl -w vm.mmap_rnd_bits=28
         fi
