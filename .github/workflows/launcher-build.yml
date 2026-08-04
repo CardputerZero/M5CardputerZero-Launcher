@@ -203,8 +203,46 @@ jobs:
         name: applaunch-arm64
         path: artifacts/
 
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Initialize submodules (SDK)
+      run: git submodule update --init --depth=1 SDK
+
+    - name: Install test dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxkbcommon-dev
+
+    - name: Pre-download eventpp headers (pinned to the revision scons resolves)
+      run: |
+        REF=c472fb22e71ead0e58ff7df89e12c66b0bdfb533
+        DEST=SDK/github_source/eventpp
+        if [ ! -d "$DEST" ]; then
+          for i in 1 2 3; do
+            curl -fsSL -o /tmp/eventpp.zip "https://github.com/wqking/eventpp/archive/${REF}.zip" && break
+            echo "retry $i..."; sleep 5
+          done
+          mkdir -p SDK/github_source
+          unzip -q /tmp/eventpp.zip -d /tmp/eventpp
+          mv "/tmp/eventpp/eventpp-${REF}" "$DEST"
+        fi
+        ls "$DEST/include/eventpp/callbacklist.h" && echo "eventpp ready"
+
+    - name: Lower ASLR entropy (Ubuntu 24.04 mmap_rnd_bits exceeds what ThreadSanitizer can map)
+      run: |
+        bits=$(cat /proc/sys/vm/mmap_rnd_bits)
+        if [ "$bits" -gt 28 ]; then
+          sudo sysctl -w vm.mmap_rnd_bits=28
+        fi
+
+    - name: Run cp0_lvgl unit tests
+      run: sh ext_components/cp0_lvgl/tests/run_tests.sh
+
   prerelease:
-    needs: build
+    needs: [build, unit-tests]
     if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
