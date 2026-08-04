@@ -5,7 +5,11 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <mutex>
+#include <thread>
 
 class Cp0SystemSoundPlayer::Impl
 {
@@ -14,17 +18,54 @@ public:
 
     Impl()
         : names{"Ding2.wav", "key_back.wav", "key_back.wav"}
+        , cleanup_thread(&Impl::cleanup_loop, this)
     {
-        load();
     }
 
     ~Impl()
     {
+        cleanup_stop.store(true);
+        cleanup_cv.notify_one();
+        if (cleanup_thread.joinable())
+            cleanup_thread.join();
+
         std::lock_guard<std::mutex> lock(mutex);
         unload();
-        if (initialized) {
-            ma_engine_uninit(&engine);
-            ma_context_uninit(&context);
+        uninitialize();
+    }
+
+    static void sound_end_callback(void *user_data, ma_sound *)
+    {
+        auto *self = static_cast<Impl *>(user_data);
+        self->cleanup_requested.store(true);
+        self->cleanup_cv.notify_one();
+    }
+
+    void cleanup_loop()
+    {
+        std::unique_lock<std::mutex> wait_lock(cleanup_wait_mutex);
+        while (!cleanup_stop.load()) {
+            cleanup_cv.wait(wait_lock, [this] {
+                return cleanup_stop.load() || cleanup_requested.load();
+            });
+            if (cleanup_stop.load())
+                break;
+
+            cleanup_requested.store(false);
+            wait_lock.unlock();
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            {
+                std::lock_guard<std::mutex> lock(mutex);
+                bool playing = false;
+                for (std::size_t i = 0; i < slots.size(); ++i)
+                    playing = playing ||
+                              (slots[i] && ma_sound_is_playing(&sounds[i]));
+                if (!playing) {
+                    unload();
+                    uninitialize();
+                }
+            }
+            wait_lock.lock();
         }
     }
 
@@ -61,11 +102,17 @@ public:
             if (path.empty())
                 continue;
             if (ma_sound_init_from_file(&engine, path.c_str(), MA_SOUND_FLAG_DECODE,
-                                        nullptr, nullptr, &sounds[i]) == MA_SUCCESS)
+                                        nullptr, nullptr, &sounds[i]) == MA_SUCCESS) {
+                ma_sound_set_end_callback(&sounds[i], sound_end_callback, this);
                 slots[i] = true;
+            }
         }
         loaded = std::any_of(slots.begin(), slots.end(), [](bool slot) { return slot; });
-        return loaded ? 0 : -3;
+        if (loaded)
+            return 0;
+
+        uninitialize();
+        return -3;
     }
 
     void unload()
@@ -77,6 +124,15 @@ public:
             }
         }
         loaded = false;
+    }
+
+    void uninitialize()
+    {
+        if (!initialized)
+            return;
+        ma_engine_uninit(&engine);
+        ma_context_uninit(&context);
+        initialized = false;
     }
 
     static std::string resolve_asset(const std::string &name)
@@ -98,6 +154,11 @@ public:
     bool loaded = false;
     bool enabled = true;
     mutable std::mutex mutex;
+    std::atomic<bool> cleanup_requested{false};
+    std::atomic<bool> cleanup_stop{false};
+    std::mutex cleanup_wait_mutex;
+    std::condition_variable cleanup_cv;
+    std::thread cleanup_thread;
 };
 
 Cp0SystemSoundPlayer::Cp0SystemSoundPlayer()
@@ -114,7 +175,8 @@ int Cp0SystemSoundPlayer::reload(const std::vector<std::string> &names)
         if (!names[i].empty())
             impl_->names[i] = names[i];
     impl_->unload();
-    return impl_->load();
+    impl_->uninitialize();
+    return 0;
 }
 
 bool Cp0SystemSoundPlayer::play_index(std::size_t index)
@@ -157,6 +219,10 @@ void Cp0SystemSoundPlayer::set_enabled(bool enabled)
 {
     std::lock_guard<std::mutex> lock(impl_->mutex);
     impl_->enabled = enabled;
+    if (!enabled) {
+        impl_->unload();
+        impl_->uninitialize();
+    }
 }
 
 bool Cp0SystemSoundPlayer::enabled() const

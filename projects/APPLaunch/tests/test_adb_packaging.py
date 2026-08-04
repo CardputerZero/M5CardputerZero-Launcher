@@ -13,9 +13,13 @@ sys.modules[spec.name] = packager
 spec.loader.exec_module(packager)
 
 postinst = packager._postinst_text(packager.PackageConfig())
+subprocess.run(["sh", "-n"], input=postinst, text=True, check=True)
 assert "/usr/share/APPLaunch/adb/cardputer-adb" in postinst
 assert '"$ADB_HELPER" migrate' in postinst
 assert 'user_systemctl restart "$SERVICE_NAME" || user_systemctl start "$SERVICE_NAME" || true' not in postinst
+assert 'systemctl --global enable "$SERVICE_NAME"' not in postinst
+assert 'systemctl --global disable "$SERVICE_NAME"' in postinst
+assert 'default.target.wants' in postinst
 
 system_postinst = packager._postinst_text(packager.PackageConfig(service_scope="system"))
 assert '"$ADB_HELPER" migrate' in system_postinst

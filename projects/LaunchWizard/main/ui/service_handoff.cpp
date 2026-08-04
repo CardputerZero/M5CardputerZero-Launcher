@@ -12,14 +12,32 @@ std::string command_error(const char *step, const HandoffCommandResult &result)
 
 }  // namespace
 
-std::string enable_applaunch_after_reboot(const HandoffCommandRunner &run)
+std::string enable_applaunch_after_reboot(const std::string &user,
+                                          unsigned int uid,
+                                          const HandoffCommandRunner &run)
 {
-    const HandoffCommandResult result = run({
-        "systemctl", "--global", "enable", "APPLaunch.service",
-    });
-    return result.code == 0
-        ? std::string()
-        : command_error("Failed to enable APPLaunch.service for next boot", result);
+    const std::string uid_text = std::to_string(uid);
+    const std::string runtime_dir = "XDG_RUNTIME_DIR=/run/user/" + uid_text;
+    const std::string bus_address =
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/" + uid_text + "/bus";
+    const std::vector<std::vector<std::string>> commands = {
+        {"systemctl", "--global", "disable", "APPLaunch.service"},
+        {"loginctl", "enable-linger", user},
+        {"systemctl", "daemon-reload"},
+        {"systemctl", "start", "user@" + uid_text + ".service"},
+        {"runuser", "-u", user, "--", "env", runtime_dir, bus_address,
+         "systemctl", "--user", "daemon-reload"},
+        {"runuser", "-u", user, "--", "env", runtime_dir, bus_address,
+         "systemctl", "--user", "enable", "APPLaunch.service"},
+    };
+    for (const auto &command : commands) {
+        const HandoffCommandResult result = run(command);
+        if (result.code != 0)
+            return command_error(
+                "Failed to enable APPLaunch.service for the configured user",
+                result);
+    }
+    return {};
 }
 
 std::string handoff_to_applaunch(const std::string &user, unsigned int uid,
@@ -41,6 +59,11 @@ std::string handoff_to_applaunch(const std::string &user, unsigned int uid,
     };
 
     std::string error = required(
+        "Failed to remove global APPLaunch enablement",
+        {"systemctl", "--global", "disable", "APPLaunch.service"});
+    if (!error.empty()) return error;
+
+    error = required(
         "Failed to enable the APPLaunch user manager",
         {"loginctl", "enable-linger", user});
     if (!error.empty()) return error;

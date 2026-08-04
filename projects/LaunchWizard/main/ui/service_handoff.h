@@ -15,9 +15,11 @@ struct HandoffCommandResult {
 using HandoffCommandRunner =
     std::function<HandoffCommandResult(const std::vector<std::string> &)>;
 
-// Enables APPLaunch for future user sessions without requiring a running user
-// manager or D-Bus session during first-boot configuration.
-std::string enable_applaunch_after_reboot(const HandoffCommandRunner &run);
+// Enables APPLaunch only for the configured account. The user manager is
+// started explicitly so this does not create a global link for greeter users.
+std::string enable_applaunch_after_reboot(const std::string &user,
+                                          unsigned int uid,
+                                          const HandoffCommandRunner &run);
 
 // Starts and verifies APPLaunch before stopping LaunchWizard. On failure the
 // remaining commands are not run, so the currently visible wizard stays up.

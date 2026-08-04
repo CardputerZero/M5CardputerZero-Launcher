@@ -8,12 +8,15 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
+#include <cstdint>
 #include <functional>
 #include <iterator>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -27,7 +30,10 @@ public:
     typedef std::function<void(int, std::string)> callback_t;
     typedef std::list<std::string> arg_t;
 
-    AudioSystem() = default;
+    AudioSystem()
+        : playback_cleanup_thread_(&AudioSystem::playback_cleanup_loop, this)
+    {
+    }
     ~AudioSystem()
     {
         shutdown();
@@ -35,9 +41,15 @@ public:
 
     void shutdown() noexcept
     {
+        if (shutdown_started_.exchange(true))
+            return;
         try { set_status_callback(nullptr); } catch (...) {}
         try { capture_.set_status_callback(nullptr); } catch (...) {}
         try { capture_.stop(); } catch (...) {}
+        playback_cleanup_stop_.store(true);
+        playback_cleanup_cv_.notify_one();
+        if (playback_cleanup_thread_.joinable())
+            playback_cleanup_thread_.join();
         try { stop_play_device(false); } catch (...) {}
     }
 
@@ -47,6 +59,15 @@ public:
     std::unique_ptr<ma_device>  ma_cp0_play_device;
     std::unique_ptr<ma_decoder> ma_cp0_play_decoder;
     std::atomic<bool> play_finished_reported_{false};
+    std::atomic<bool> playback_stopping_{false};
+    std::mutex playback_mutex_;
+    std::atomic<std::uint64_t> playback_generation_{0};
+    std::atomic<std::uint64_t> playback_cleanup_generation_{0};
+    std::atomic<bool> playback_cleanup_stop_{false};
+    std::atomic<bool> shutdown_started_{false};
+    std::mutex playback_cleanup_wait_mutex_;
+    std::condition_variable playback_cleanup_cv_;
+    std::thread playback_cleanup_thread_;
 
     Cp0SystemSoundPlayer system_sounds_;
     Cp0AudioMixerControl mixer_;
@@ -67,7 +88,11 @@ public:
             ma_silence_pcm_frames(silence, frameCount - framesRead, pDevice->playback.format, pDevice->playback.channels);
         }
         bool finished = (result == MA_AT_END || framesRead < frameCount);
-        if(finished && !self->play_finished_reported_.exchange(true)) {
+        if(finished && !self->playback_stopping_.load() &&
+           !self->play_finished_reported_.exchange(true)) {
+            self->playback_cleanup_generation_.store(
+                self->playback_generation_.load());
+            self->playback_cleanup_cv_.notify_one();
             auto callback = self->status_callback();
             cp0::audio::invoke_callback(callback, 0, "play over\n");
         }
@@ -78,17 +103,21 @@ public:
 
     int play(std::string wav)
     {
+        std::unique_lock<std::mutex> lock(playback_mutex_);
         ma_result result;
         ma_device_config deviceConfig;
-        stop_play_device(false);
+        stop_play_device_locked(false);
+        playback_generation_.fetch_add(1);
+        playback_cleanup_generation_.store(0);
         play_finished_reported_.store(false);
         ma_cp0_play_device = std::make_unique<ma_device>();
         ma_cp0_play_decoder = std::make_unique<ma_decoder>();
         result = ma_decoder_init_file(wav.c_str(), NULL, ma_cp0_play_decoder.get());
         if (result != MA_SUCCESS) {
-            report_status(-2, "Could not load file\n");
             ma_cp0_play_decoder.reset();
             ma_cp0_play_device.reset();
+            lock.unlock();
+            report_status(-2, "Could not load file\n");
             return -2;
         }
 
@@ -101,18 +130,20 @@ public:
 
         if (ma_device_init(NULL, &deviceConfig, ma_cp0_play_device.get()) != MA_SUCCESS) {
             ma_decoder_uninit(ma_cp0_play_decoder.get());
-            report_status(-3, "Failed to open playback device.\n");
             ma_cp0_play_decoder.reset();
             ma_cp0_play_device.reset();
+            lock.unlock();
+            report_status(-3, "Failed to open playback device.\n");
             return -3;
         }
 
         if (ma_device_start(ma_cp0_play_device.get()) != MA_SUCCESS) {
             ma_device_uninit(ma_cp0_play_device.get());
             ma_decoder_uninit(ma_cp0_play_decoder.get());
-            report_status(-4, "Failed to start playback device.\n");
             ma_cp0_play_decoder.reset();
             ma_cp0_play_device.reset();
+            lock.unlock();
+            report_status(-4, "Failed to start playback device.\n");
             return -4;
         }
 
@@ -128,6 +159,30 @@ public:
 
 
 private:
+    void playback_cleanup_loop()
+    {
+        std::unique_lock<std::mutex> wait_lock(playback_cleanup_wait_mutex_);
+        while (!playback_cleanup_stop_.load()) {
+            playback_cleanup_cv_.wait(wait_lock, [this] {
+                return playback_cleanup_stop_.load() ||
+                       playback_cleanup_generation_.load() != 0;
+            });
+            if (playback_cleanup_stop_.load())
+                break;
+
+            const std::uint64_t generation =
+                playback_cleanup_generation_.exchange(0);
+            wait_lock.unlock();
+            {
+                std::lock_guard<std::mutex> lock(playback_mutex_);
+                if (generation == playback_generation_.load() &&
+                    play_finished_reported_.load())
+                    stop_play_device_locked(false);
+            }
+            wait_lock.lock();
+        }
+    }
+
     callback_t status_callback()
     {
         std::lock_guard<std::mutex> lock(callback_mutex_);
@@ -177,6 +232,14 @@ private:
 
     void stop_play_device(bool report_state)
     {
+        std::lock_guard<std::mutex> lock(playback_mutex_);
+        stop_play_device_locked(report_state);
+    }
+
+    void stop_play_device_locked(bool report_state)
+    {
+        playback_stopping_.store(true);
+        playback_cleanup_generation_.store(0);
         play_finished_reported_.store(false);
         if(ma_cp0_play_device)
         {
@@ -188,6 +251,7 @@ private:
             ma_decoder_uninit(ma_cp0_play_decoder.get());
             ma_cp0_play_decoder.reset();
         }
+        playback_stopping_.store(false);
         if(report_state) report_status(0, "play stop\n");
     }
 
@@ -288,25 +352,39 @@ public:
     void PlayPause(arg_t arg, callback_t callback)
     {
         (void)arg;
-        if(!ma_cp0_play_device)
+        ma_result result = MA_INVALID_OPERATION;
+        bool started = false;
         {
-            report(callback, -1, "play not started\n");
-            return;
+            std::lock_guard<std::mutex> lock(playback_mutex_);
+            if(ma_cp0_play_device) {
+                started = true;
+                result = ma_device_stop(ma_cp0_play_device.get());
+            }
         }
-        ma_result ret = ma_device_stop(ma_cp0_play_device.get());
-        report(callback, ret == MA_SUCCESS ? 0 : -2, ret == MA_SUCCESS ? "play pause\n" : "play pause failed\n");
+        if(!started)
+            report(callback, -1, "play not started\n");
+        else
+            report(callback, result == MA_SUCCESS ? 0 : -2,
+                   result == MA_SUCCESS ? "play pause\n" : "play pause failed\n");
     }
 
     void PlayContinue(arg_t arg, callback_t callback)
     {
         (void)arg;
-        if(!ma_cp0_play_device)
+        ma_result result = MA_INVALID_OPERATION;
+        bool started = false;
         {
-            report(callback, -1, "play not started\n");
-            return;
+            std::lock_guard<std::mutex> lock(playback_mutex_);
+            if(ma_cp0_play_device) {
+                started = true;
+                result = ma_device_start(ma_cp0_play_device.get());
+            }
         }
-        ma_result ret = ma_device_start(ma_cp0_play_device.get());
-        report(callback, ret == MA_SUCCESS ? 0 : -2, ret == MA_SUCCESS ? "play continue\n" : "play continue failed\n");
+        if(!started)
+            report(callback, -1, "play not started\n");
+        else
+            report(callback, result == MA_SUCCESS ? 0 : -2,
+                   result == MA_SUCCESS ? "play continue\n" : "play continue failed\n");
     }
 
     void PlayEnd(arg_t arg, callback_t callback)

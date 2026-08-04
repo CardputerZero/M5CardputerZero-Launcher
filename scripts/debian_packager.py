@@ -228,40 +228,51 @@ set -e
 mkdir -p /var/cache/{config.app_name}
 chown 1000:1000 /var/cache/{config.app_name} || true
 ln -sfn /var/cache/{config.app_name} /usr/share/{config.app_name}/cache
-APP_UID=1000
-APP_USER="$(getent passwd "$APP_UID" | cut -d: -f1)"
-SERVICE_NAME="{service_name}"
-SERVICE_FILE="{service_file}"
-{adb_migration}
+	APP_UID=1000
+	APP_USER="$(getent passwd "$APP_UID" | cut -d: -f1)"
+	APP_GID="$(getent passwd "$APP_UID" | cut -d: -f4)"
+	APP_HOME="$(getent passwd "$APP_UID" | cut -d: -f6)"
+	SERVICE_NAME="{service_name}"
+	SERVICE_FILE="{service_file}"
+	{adb_migration}
 
 systemd_is_running() {{
     [ -d /run/systemd/system ] && [ "$(ps -p 1 -o comm= 2>/dev/null)" = "systemd" ]
 }}
 
-user_systemctl() {{
+	user_systemctl() {{
     runuser -u "$APP_USER" -- env \\
         XDG_RUNTIME_DIR="/run/user/$APP_UID" \\
         DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$APP_UID/bus" \\
-        systemctl --user "$@"
-}}
+	        systemctl --user "$@"
+	}}
 
-if command -v systemctl >/dev/null 2>&1 && [ -f "$SERVICE_FILE" ]; then
-    systemctl --global enable "$SERVICE_NAME"
-    if systemd_is_running && [ -n "$APP_USER" ]; then
+	enable_user_service_offline() {{
+	    USER_WANTS="$APP_HOME/.config/systemd/user/default.target.wants"
+	    install -d -m 0755 -o "$APP_UID" -g "$APP_GID" "$USER_WANTS"
+	    ln -sfn "$SERVICE_FILE" "$USER_WANTS/$SERVICE_NAME"
+	    chown -h "$APP_UID:$APP_GID" "$USER_WANTS/$SERVICE_NAME"
+	}}
+
+	if command -v systemctl >/dev/null 2>&1 && [ -f "$SERVICE_FILE" ]; then
+	    # A global user-service link starts the launcher in greeter and service
+	    # accounts too. Remove legacy global enablement and scope it to UID 1000.
+	    systemctl --global disable "$SERVICE_NAME" || true
+	    if systemd_is_running && [ -n "$APP_USER" ]; then
         if command -v loginctl >/dev/null 2>&1; then
             loginctl enable-linger "$APP_USER" || true
         fi
         systemctl daemon-reload
         systemctl start "user@$APP_UID.service"
         user_systemctl daemon-reload
-        user_systemctl enable "$SERVICE_NAME"
-        user_systemctl restart "$SERVICE_NAME" || user_systemctl start "$SERVICE_NAME"
-    else
-        echo "{config.app_name}: systemd is not running; enabled user service globally for first boot" >&2
-        if [ -z "$APP_USER" ]; then
-            echo "{config.app_name}: UID 1000 user not found; skip immediate user service start" >&2
-        fi
-    fi
+	        user_systemctl enable "$SERVICE_NAME"
+	        user_systemctl restart "$SERVICE_NAME" || user_systemctl start "$SERVICE_NAME"
+	    elif [ -n "$APP_USER" ]; then
+	        enable_user_service_offline
+	        echo "{config.app_name}: enabled user service for UID $APP_UID on first boot" >&2
+	    else
+	        echo "{config.app_name}: UID 1000 user not found; skip user service enable/start" >&2
+	    fi
 else
     echo "{config.app_name}: systemctl unavailable or service file missing; skip user service enable/start" >&2
 fi
@@ -297,8 +308,9 @@ exit 0
 """
     return f"""#!/bin/sh
 set -e
-APP_UID=1000
-APP_USER="$(getent passwd "$APP_UID" | cut -d: -f1)"
+	APP_UID=1000
+	APP_USER="$(getent passwd "$APP_UID" | cut -d: -f1)"
+	APP_HOME="$(getent passwd "$APP_UID" | cut -d: -f6)"
 SERVICE_NAME="{service_name}"
 SERVICE_FILE="{service_file}"
 
@@ -320,7 +332,10 @@ case "$1" in
                 user_systemctl stop "$SERVICE_NAME" || true
                 user_systemctl disable "$SERVICE_NAME" || true
             fi
-            systemctl --global disable "$SERVICE_NAME" || true
+	            systemctl --global disable "$SERVICE_NAME" || true
+	            if [ -n "$APP_HOME" ]; then
+	                rm -f "$APP_HOME/.config/systemd/user/default.target.wants/$SERVICE_NAME"
+	            fi
         fi
         rm -rf /var/cache/{config.app_name}
         ;;
