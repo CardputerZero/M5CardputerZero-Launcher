@@ -173,7 +173,7 @@ struct WizardModel {
     int exit_ticks = 0;
     std::string worker_message;
     int worker_step = 0;
-    int worker_total = 9;
+    int worker_total = 8;
     std::mutex mutex;
 
     const Timezone &current_timezone() const;

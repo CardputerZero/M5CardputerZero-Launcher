@@ -20,7 +20,6 @@ void build_menu(UISetupPage &page)
     Help::append(page, candidate);
     ExtPort::append(page, candidate);
     access.developer().append(page, candidate);
-    access.rtc().append(page, candidate);
     access.bluetooth().append(page, candidate);
     Ethernet::append(page, candidate);
     Account::append(page, candidate);

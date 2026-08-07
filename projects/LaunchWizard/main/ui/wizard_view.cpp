@@ -941,7 +941,11 @@ void handle_back()
                              : (g.use_ethernet ? Screen::EthernetConfig
                                                : Screen::WifiPassword));
         break;
-    case Screen::Ssh: go(Screen::ManualTime); break;
+    case Screen::Ssh:
+        go(g.network_skipped ? Screen::Network
+                             : (g.use_ethernet ? Screen::EthernetConfig
+                                               : Screen::WifiPassword));
+        break;
     case Screen::ApplyError: go(Screen::Ssh); break;
     case Screen::Applying: break;
     case Screen::RestartPrompt: break;
@@ -1088,7 +1092,7 @@ void handle_enter()
         } else {
             g.network_skipped = true;
             g.use_ethernet = false;
-            go(Screen::ManualTime);
+            go(Screen::Ssh);
         }
         break;
     case Screen::EthernetConfig:
@@ -1101,7 +1105,7 @@ void handle_enter()
                 render();
                 return;
             }
-            go(Screen::ManualTime);
+            go(Screen::Ssh);
         }
         break;
     case Screen::WifiList:
@@ -1122,7 +1126,7 @@ void handle_enter()
         break;
     case Screen::WifiPassword:
         if (g.wifi_connected) {
-            go(Screen::ManualTime);
+            go(Screen::Ssh);
         } else if (g.wifi_manual && g.wifi_focus == 0) {
             g.wifi_focus = 1;
             render();
@@ -1179,7 +1183,7 @@ void handle_tab()
             render();
             return;
         }
-        go(Screen::ManualTime);
+        go(Screen::Ssh);
         break;
     case Screen::WifiPassword:
         if (g.wifi_manual && !g.wifi_connecting && !g.wifi_connected) {

@@ -201,9 +201,8 @@ bool ApplyCheckpointStore::clear(std::string &error) const
 std::uint64_t wizard_configuration_fingerprint(const WizardModel &model)
 {
     std::uint64_t hash = UINT64_C(14695981039346656037);
+    hash_string(hash, "oobe-no-manual-time-v1");
     hash_string(hash, model.current_timezone().name);
-    hash_string(hash, model.manual_date);
-    hash_string(hash, model.manual_time);
     hash_string(hash, model.hostname);
     hash_string(hash, model.username);
     hash_string(hash, model.password);
