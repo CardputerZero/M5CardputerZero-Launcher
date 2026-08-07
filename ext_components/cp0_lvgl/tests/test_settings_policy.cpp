@@ -50,6 +50,8 @@ int main()
     assert(!cp0::settings::parse_integer_response("-1", 0, INT_MAX, parsed));
     assert(cp0::settings::parse_integer_file_line("12\n", 0, 100, parsed) && parsed == 12);
     assert(cp0::settings::parse_integer_file_line("12\r\n", 0, 100, parsed) && parsed == 12);
+    assert(cp0::settings::parse_integer_file_line("255\n", 0, INT_MAX, parsed) &&
+           cp0::settings::switch_value(parsed) == 1);
     assert(!cp0::settings::parse_integer_file_line("12junk\n", 0, 100, parsed));
     assert(cp0::settings::parse_switch_response("0", parsed) && parsed == 0);
     assert(cp0::settings::parse_switch_response("1", parsed) && parsed == 1);

@@ -138,6 +138,16 @@ static void saved_volume_write(int val)
     });
 }
 
+static void saved_gpio_write(const char *name)
+{
+    const int value = config_get_int(name, -1);
+    if (value != 0 && value != 1)
+        return;
+    cp0::signal::invoke_noexcept([&] {
+        cp0_signal_settings_api({"GpioSet", name, std::to_string(value)}, nullptr);
+    });
+}
+
 extern "C" void init_lvgl_saved_settings()
 {
     int saved_bright = config_get_int("brightness", -1);
@@ -147,4 +157,7 @@ extern "C" void init_lvgl_saved_settings()
     int saved_vol = config_get_int("volume", -1);
     if (saved_vol >= 0)
         saved_volume_write(saved_vol);
+
+    saved_gpio_write("extport_usb");
+    saved_gpio_write("extport_5vout");
 }

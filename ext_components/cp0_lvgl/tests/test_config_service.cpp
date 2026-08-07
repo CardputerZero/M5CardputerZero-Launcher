@@ -57,6 +57,14 @@ int main()
     assert(call(service, {"Save"}) == std::make_pair(0, std::string("ok")));
     assert(saved.size() == 3);
     assert(saved[0] == std::make_pair(std::string("count"), std::string("17")));
+    assert(call(service, {"SetInt", "extport_usb", "1"}).first == 0);
+    assert(call(service, {"SetInt", "extport_5vout", "0"}).first == 0);
+    assert(call(service, {"Save"}) == std::make_pair(0, std::string("ok")));
+    assert(saved.size() == 5);
+    assert(saved[0] == std::make_pair(std::string("count"), std::string("17")));
+    assert(saved[2] == std::make_pair(std::string("label"), std::string("hello")));
+    assert(saved[3] == std::make_pair(std::string("extport_usb"), std::string("1")));
+    assert(saved[4] == std::make_pair(std::string("extport_5vout"), std::string("0")));
 
     save_result = -1;
     assert(call(service, {"Save"}) == std::make_pair(-1, std::string("save failed")));
