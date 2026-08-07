@@ -6,6 +6,7 @@
 
 #define APP_PAGE_IMPLEMENTATION_UNIT
 #include "ui_app_st.hpp"
+#include "../model/st_key_encoder.hpp"
 
 void UISTPage::create_ui()
 {
@@ -284,14 +285,10 @@ void UISTPage::event_cb(lv_event_t *event)
         }
     }
 
-    bool shift = shift_down_ || (key->mods & KBD_MOD_SHIFT) != 0;
-    if (key->key_state && shift && key->key_code == KEY_PAGEUP) {
-        scrollback_page(1);
-        render_all();
-        return;
-    }
-    if (key->key_state && shift && key->key_code == KEY_PAGEDOWN) {
-        scrollback_page(-1);
+    const int scrollback_direction = STKeyEncoder::scrollback_direction(
+        key->key_code, key->mods, shift_down_);
+    if (key->key_state && scrollback_direction != 0) {
+        scrollback_page(scrollback_direction);
         render_all();
         return;
     }

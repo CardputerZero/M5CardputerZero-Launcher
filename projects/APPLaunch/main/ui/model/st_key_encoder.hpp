@@ -17,4 +17,6 @@ public:
 
     static std::string encode(uint32_t evdev_key, const char *utf8,
                               bool application_cursor_mode);
+    static int scrollback_direction(uint32_t evdev_key, uint32_t modifiers,
+                                    bool shift_down);
 };
