@@ -97,6 +97,6 @@ std::vector<AdbAuthorization> parse_adb_authorizations(const char *output)
 
 bool adb_state_after_failure(const AdbStatus &status, bool previous)
 {
-    return status.valid ? status.active : previous;
+    return status.valid ? status.enabled : previous;
 }
 } // namespace setting

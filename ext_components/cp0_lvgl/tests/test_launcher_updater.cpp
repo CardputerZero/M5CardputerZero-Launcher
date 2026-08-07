@@ -13,6 +13,7 @@ struct Fixture {
     std::string architecture = "arm64\n";
     std::string candidate = "1.2.0\n";
     std::string installed = "1.1.0\n";
+    std::string state = "succeeded:1.2.0\n";
     std::string fail_operation;
 
     int run(const std::vector<std::string> &arguments)
@@ -25,7 +26,7 @@ struct Fixture {
 
     int capture(const std::vector<std::string> &arguments, std::string &output)
     {
-        if (arguments[0] == "cat") output = hash + "  applaunch_arm64.deb\n";
+        if (arguments[0] == "cat") output = state;
         else if (arguments[0] == "sha256sum") output = actual;
         else if (arguments[0] == "dpkg-query") output = installed;
         else if (arguments.size() >= 4 && arguments[3] == "Package") output = package;
@@ -54,29 +55,14 @@ int main()
 
     Fixture fixture;
     auto result = execute(fixture);
-    assert(result.code == 0 && result.stage == "submitted");
-
-    fixture.actual = std::string(64, 'b');
-    result = execute(fixture);
-    assert(result.code != 0 && result.stage == "checksum");
-    fixture.actual = std::string(64, 'a');
-
-    fixture.package = "other\n";
-    result = execute(fixture);
-    assert(result.stage == "package-name");
-    fixture.package = "applaunch\n";
-
-    fixture.architecture = "amd64\n";
-    result = execute(fixture);
-    assert(result.stage == "architecture");
-    fixture.architecture = "arm64\n";
-
-    fixture.fail_operation = "dpkg:--compare-versions";
-    result = execute(fixture);
-    assert(result.stage == "version-not-newer");
-    fixture.fail_operation.clear();
+    assert(result.code == 0 && result.stage == "1.2.0");
 
     fixture.fail_operation = "systemctl";
+    fixture.state = "failed:incompatible\n";
     result = execute(fixture);
-    assert(result.stage == "submit");
+    assert(result.code == 9 && result.stage == "incompatible");
+
+    fixture.state = "unreadable\n";
+    result = execute(fixture);
+    assert(result.code == 9 && result.stage == "service");
 }

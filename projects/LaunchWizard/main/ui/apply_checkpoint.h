@@ -10,7 +10,7 @@
 
 namespace launch_wizard {
 
-inline constexpr int kApplyStepCount = 9;
+inline constexpr int kApplyStepCount = 8;
 
 enum class ApplyCheckpointLoad {
     Missing,

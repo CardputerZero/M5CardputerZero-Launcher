@@ -24,6 +24,9 @@ set -e
 
 SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 GADGET="$SELF_DIR/cardputer-adb-gadget"
+HOTPLUG="$SELF_DIR/cardputer-adb-hotplug"
+HOTPLUG_UNIT_NAME=cardputer-adb-hotplug.service
+HOTPLUG_UNIT=/etc/systemd/system/$HOTPLUG_UNIT_NAME
 ADB_KEYS=/adb_keys
 # Tests run this helper without privileges. Root executions always use the
 # production path, regardless of inherited environment variables.
@@ -172,6 +175,27 @@ ExecStartPost=
 ExecStartPost=$GADGET activate
 ExecStopPost=
 ExecStopPost=$GADGET reset
+Restart=on-failure
+RestartSec=1
+EOF
+    systemctl daemon-reload 2>/dev/null || true
+}
+
+install_hotplug_unit() {
+    [ -x "$HOTPLUG" ] || die "missing ADB hotplug monitor: $HOTPLUG"
+    cat > "$HOTPLUG_UNIT" <<EOF
+[Unit]
+Description=Recover CardputerZero ADB after USB reconnect
+After=adbd.service
+
+[Service]
+Type=simple
+ExecStart=$HOTPLUG
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
 EOF
     systemctl daemon-reload 2>/dev/null || true
 }
@@ -229,32 +253,38 @@ stop_serial_gadget() {
 }
 
 cmd_enable() {
+    authorization_mode=${1:-paired}
     prepare_authorizations
-    [ "$(authorization_count)" -gt 0 ] || {
+    [ "$authorization_mode" = ui ] || [ "$(authorization_count)" -gt 0 ] || {
         log "pair a host in Settings before enabling ADB"
-        exit 11
+        return 11
     }
     ensure_adbd_installed
     setup_better_shell
     install_dropin
+    install_hotplug_unit
     stop_serial_gadget
 
     rc=0
     ensure_peripheral || rc=$?
     if [ "$rc" = 10 ]; then
         systemctl enable adbd.service 2>/dev/null || true
+        systemctl enable "$HOTPLUG_UNIT_NAME" 2>/dev/null || true
         log "USB switched to peripheral mode; reboot required"
-        exit 10
+        return 10
     fi
 
     systemctl enable adbd.service 2>/dev/null || true
     # restart (not just start) so the branded-gadget drop-in is applied even when
     # adbd was already running.
     systemctl restart adbd.service || die "failed to start adbd"
+    systemctl enable "$HOTPLUG_UNIT_NAME" 2>/dev/null || true
+    systemctl restart "$HOTPLUG_UNIT_NAME" || die "failed to start ADB hotplug monitor"
     log "ADB debug enabled"
 }
 
 cmd_disable() {
+    systemctl disable --now "$HOTPLUG_UNIT_NAME" 2>/dev/null || true
     systemctl disable --now adbd.service 2>/dev/null || true
     "$GADGET" reset 2>/dev/null || true
 
@@ -263,9 +293,23 @@ cmd_disable() {
     ensure_host || rc=$?
     if [ "$rc" = 10 ]; then
         log "ADB disabled; USB returns to host/hub mode after reboot"
-        exit 10
+        return 10
     fi
     log "ADB debug disabled"
+}
+
+# The Settings UI treats exit 10 as an applied setting that needs a reboot.
+# Other failures, including missing authorization (11), still reach the UI.
+cmd_set() {
+    value=$1
+    rc=0
+    case "$value" in
+        1) cmd_enable ui || rc=$? ;;
+        0) cmd_disable || rc=$? ;;
+        *) die "usage: cardputer-adb set <0|1>" ;;
+    esac
+    [ "$rc" -eq 10 ] && return 0
+    return "$rc"
 }
 
 cmd_status() {
@@ -323,6 +367,13 @@ cmd_migrate() {
     if [ "$before" -gt 0 ] && systemctl is-active --quiet adbd.service 2>/dev/null; then
         systemctl restart adbd.service || die "removed legacy key but failed to restart adbd"
     fi
+    if systemctl is-enabled --quiet adbd.service 2>/dev/null; then
+        install_hotplug_unit
+        systemctl enable "$HOTPLUG_UNIT_NAME" 2>/dev/null || true
+        if systemctl is-active --quiet adbd.service 2>/dev/null; then
+            systemctl restart "$HOTPLUG_UNIT_NAME" 2>/dev/null || true
+        fi
+    fi
 }
 
 cmd_clear_authorizations() {
@@ -336,10 +387,11 @@ cmd_clear_authorizations() {
 case "$1" in
     enable)    cmd_enable ;;
     disable)   cmd_disable ;;
+    set)       shift; cmd_set "${1:-}" ;;
     status)    cmd_status ;;
     authorize) shift; cmd_authorize "$@" ;;
     revoke) shift; cmd_revoke "$@" ;;
     migrate) cmd_migrate ;;
     clear-authorizations) cmd_clear_authorizations ;;
-    *) echo "Usage: $0 {enable|disable|status|authorize <pubkey>|revoke <fingerprint>|clear-authorizations|migrate}" >&2; exit 1 ;;
+    *) echo "Usage: $0 {enable|disable|set <0|1>|status|authorize <pubkey>|revoke <fingerprint>|clear-authorizations|migrate}" >&2; exit 1 ;;
 esac

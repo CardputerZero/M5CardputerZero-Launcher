@@ -8,6 +8,7 @@
 #include "../main/ui/model/st_page_contract.hpp"
 
 #include "input_keys.h"
+#include "keyboard_input.h"
 
 #include <cassert>
 #include <string>
@@ -65,5 +66,18 @@ int main()
 
     // A recognized control key never falls through to the supplied text.
     assert(STKeyEncoder::encode(KEY_ENTER, "ignored", false) == "\r");
+
+    assert(STKeyEncoder::scrollback_direction(KEY_PAGEUP, 0, false) == 0);
+    assert(STKeyEncoder::scrollback_direction(KEY_PAGEDOWN, KBD_MOD_CTRL, false) == 0);
+    assert(STKeyEncoder::scrollback_direction(KEY_PAGEDOWN, KBD_MOD_ALT, false) == 0);
+    assert(STKeyEncoder::scrollback_direction(KEY_PAGEUP, KBD_MOD_SHIFT, false) == 1);
+    assert(STKeyEncoder::scrollback_direction(KEY_PAGEDOWN, KBD_MOD_SHIFT, false) == -1);
+    assert(STKeyEncoder::scrollback_direction(KEY_PAGEUP, 0, true) == 1);
+    assert(STKeyEncoder::scrollback_direction(KEY_PAGEDOWN, 0, true) == -1);
+
+    constexpr uint32_t ctrl_alt = KBD_MOD_CTRL | KBD_MOD_ALT;
+    assert(STKeyEncoder::scrollback_direction(KEY_PAGEUP, ctrl_alt, false) == 1);
+    assert(STKeyEncoder::scrollback_direction(KEY_PAGEDOWN, ctrl_alt, false) == -1);
+    assert(STKeyEncoder::scrollback_direction(KEY_A, ctrl_alt, false) == 0);
     return 0;
 }

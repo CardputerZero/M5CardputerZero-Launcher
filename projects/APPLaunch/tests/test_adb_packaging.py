@@ -46,7 +46,8 @@ assert 'action.lookup("unit") == "applaunch-updater.service"' in policy
 assert 'action.lookup("verb") == "start"' in policy
 assert 'action.lookup("verb") == "stop"' in policy
 assert 'action.lookup("unit") == "applaunch-apt-update.service"' in policy
-assert "subject.local && subject.active" in policy
+assert 'subject.isInGroup("sudo")' in policy
+assert "subject.local && subject.active" not in policy
 
 service = packager._updater_service_text()
 assert "Type=oneshot" in service

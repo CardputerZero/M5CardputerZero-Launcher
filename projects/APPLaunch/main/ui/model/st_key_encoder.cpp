@@ -7,6 +7,7 @@
 #include "st_key_encoder.hpp"
 
 #include "input_keys.h"
+#include "keyboard_input.h"
 
 #include <cstring>
 
@@ -28,4 +29,17 @@ std::string STKeyEncoder::encode(uint32_t evdev_key, const char *utf8,
     const size_t length = std::strlen(utf8);
     if (length == 0 || length > MAX_TEXT_BYTES) return {};
     return std::string(utf8, length);
+}
+
+int STKeyEncoder::scrollback_direction(uint32_t evdev_key, uint32_t modifiers,
+                                       bool shift_down)
+{
+    const bool shift = shift_down || (modifiers & KBD_MOD_SHIFT) != 0;
+    constexpr uint32_t LEGACY_MODIFIERS = KBD_MOD_CTRL | KBD_MOD_ALT;
+    const bool ctrl_alt = (modifiers & LEGACY_MODIFIERS) == LEGACY_MODIFIERS;
+    if (!shift && !ctrl_alt) return 0;
+
+    if (evdev_key == KEY_PAGEUP) return 1;
+    if (evdev_key == KEY_PAGEDOWN) return -1;
+    return 0;
 }

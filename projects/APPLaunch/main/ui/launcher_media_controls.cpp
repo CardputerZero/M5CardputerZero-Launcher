@@ -56,6 +56,20 @@ int read_volume()
     return LauncherMediaControlsModel::clamp_percent(volume);
 }
 
+bool read_mute()
+{
+    bool muted = model.muted();
+    cp0_signal_audio_api({"MuteRead"}, [&](int code, std::string data) {
+        int parsed = 0;
+        if (code == 0 && LauncherMediaControlsModel::parse_int(data, parsed) &&
+            (parsed == 0 || parsed == 1)) {
+            muted = parsed != 0;
+            model.set_mute(muted);
+        }
+    });
+    return muted;
+}
+
 int write_volume(int previous, int percent)
 {
     percent = LauncherMediaControlsModel::clamp_percent(percent);
@@ -129,6 +143,8 @@ namespace launcher_media_controls {
 
 int adjust_volume(int delta_percent)
 {
+    if (read_mute())
+        (void)toggle_mute();
     const int current = model.has_volume() ? model.volume_or(0) : read_volume();
     return write_volume(current, current + delta_percent);
 }

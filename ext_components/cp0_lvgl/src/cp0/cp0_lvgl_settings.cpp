@@ -384,8 +384,9 @@ private:
                 return -EIO;
             int value = 0;
             return cp0::settings::parse_integer_file_line(
-                       std::string_view(buf, static_cast<std::size_t>(size)), 0, 1, value)
-                       ? value
+                       std::string_view(buf, static_cast<std::size_t>(size)), 0,
+                       std::numeric_limits<int>::max(), value)
+                       ? cp0::settings::switch_value(value)
                        : -EINVAL;
         }
         return -ENOENT;

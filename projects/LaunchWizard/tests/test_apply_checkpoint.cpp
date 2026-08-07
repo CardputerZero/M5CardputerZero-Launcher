@@ -58,6 +58,15 @@ bool test_apply_checkpoint()
     changed.hostname = "different-host";
     expect(wizard_configuration_fingerprint(changed) != fingerprint,
            "apply fingerprint did not include hostname");
+    WizardModel manual_time_changed;
+    manual_time_changed.password = configuration.password;
+    manual_time_changed.wifi_password = configuration.wifi_password;
+    manual_time_changed.manual_date = "2030-01-02";
+    manual_time_changed.manual_time = "03:04";
+    expect(wizard_configuration_fingerprint(manual_time_changed) == fingerprint,
+           "inactive manual time still affected the apply fingerprint");
+    expect(kApplyStepCount == 8,
+           "manual time removal did not reduce the apply sequence to eight steps");
 
     // A new invocation always starts from the first step, even when a valid
     // checkpoint from an interrupted configuration exists.

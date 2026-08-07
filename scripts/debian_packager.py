@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tarfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
@@ -34,6 +34,7 @@ SERVICE_PATH = PurePosixPath("usr/lib/systemd/user")
 SYSTEM_SERVICE_PATH = PurePosixPath("usr/lib/systemd/system")
 POLKIT_RULES_PATH = PurePosixPath("usr/share/polkit-1/rules.d")
 LIBEXEC_PATH = PurePosixPath("usr/libexec")
+LAUNCHER_UPDATE_ABI = "1"
 
 OPTIONAL_BINARIES = (
     "M5CardputerZero-AppStore",
@@ -169,7 +170,21 @@ def _copy_optional_binaries(src_dir: Path, package_root: Path, config: PackageCo
     return copied
 
 
+def _source_date_epoch() -> int:
+    value = os.environ.get("SOURCE_DATE_EPOCH")
+    if value is None:
+        return int(datetime.now(timezone.utc).timestamp())
+    try:
+        epoch = int(value)
+    except ValueError as exc:
+        raise PackError("SOURCE_DATE_EPOCH must be an integer") from exc
+    if epoch < 0:
+        raise PackError("SOURCE_DATE_EPOCH must not be negative")
+    return epoch
+
+
 def _control_text(config: PackageConfig) -> str:
+    packaged_at = datetime.fromtimestamp(_source_date_epoch(), timezone.utc)
     fields = {
         "Package": config.package_name,
         "Version": config.version,
@@ -179,9 +194,11 @@ def _control_text(config: PackageConfig) -> str:
         "Section": config.section,
         "Priority": config.priority,
         "Homepage": config.homepage,
-        "Packaged-Date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "Packaged-Date": packaged_at.strftime("%Y-%m-%d %H:%M:%S UTC"),
         "Description": config.description,
     }
+    if config.app_name == APP_NAME and config.package_name == PACKAGE_NAME:
+        fields["X-CardputerZero-Update-ABI"] = LAUNCHER_UPDATE_ABI
     return "".join(f"{key}: {value}\n" for key, value in fields.items())
 
 
@@ -353,7 +370,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/libexec/applaunch-updater
-TimeoutStartSec=10min
+TimeoutStartSec=20min
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
@@ -375,7 +392,9 @@ Nice=10
 
 
 def _updater_polkit_text() -> str:
-    return """// Permit a local interactive session to start only the fixed updater unit.
+    return """// Permit a local administrator to start only the fixed updater units.
+// APPLaunch runs as a systemd user service, so it is not attached to the
+// active seat even though it owns the physical device UI.
 polkit.addRule(function(action, subject) {
     if (action.id == "org.freedesktop.systemd1.manage-units" &&
         (action.lookup("unit") == "applaunch-updater.service" ||
@@ -383,7 +402,7 @@ polkit.addRule(function(action, subject) {
         (action.lookup("verb") == "start" ||
          (action.lookup("verb") == "stop" &&
           action.lookup("unit") == "applaunch-apt-update.service")) &&
-        subject.local && subject.active) {
+        subject.isInGroup("sudo")) {
         return polkit.Result.YES;
     }
 });
@@ -398,7 +417,9 @@ set -eu
 # private runtime copy so replacing /usr/libexec/applaunch-updater cannot alter
 # the script that is currently coordinating install and rollback.
 if [ "${APPLAUNCH_UPDATER_REEXEC:-0}" != 1 ]; then
-    self_dir=$(mktemp -d /run/applaunch-updater.XXXXXX)
+    state_root=${APPLAUNCH_UPDATE_STATE_DIR:-/var/lib/applaunch-updater}
+    install -d -m 0755 "$state_root"
+    self_dir=$(mktemp -d "$state_root/self.XXXXXX")
     install -m 0700 "$0" "$self_dir/updater"
     exec env APPLAUNCH_UPDATER_REEXEC=1 APPLAUNCH_UPDATER_SELF_DIR="$self_dir" \
         "$self_dir/updater"
@@ -407,13 +428,14 @@ SELF_DIR=${APPLAUNCH_UPDATER_SELF_DIR:-}
 
 PACKAGE_NAME=${APPLAUNCH_UPDATE_PACKAGE_NAME:-applaunch}
 ARCHITECTURE=${APPLAUNCH_UPDATE_ARCHITECTURE:-arm64}
+UPDATE_ABI=${APPLAUNCH_UPDATE_ABI:-1}
 RELEASE_ROOT=${APPLAUNCH_UPDATE_RELEASE_ROOT:-https://github.com/CardputerZero/launcher/releases/download}
 RELEASE_URL=${APPLAUNCH_UPDATE_RELEASE_URL:-$RELEASE_ROOT/launcher-latest}
 STATE_DIR=${APPLAUNCH_UPDATE_STATE_DIR:-/var/lib/applaunch-updater}
 CACHE_DIR=${APPLAUNCH_UPDATE_CACHE_DIR:-/var/cache/APPLaunch/updates}
 STATUS_FILE=$STATE_DIR/status
 APP_UID=${APPLAUNCH_UPDATE_UID:-1000}
-APP_EXECUTABLE=${APPLAUNCH_UPDATE_EXECUTABLE:-/usr/bin/M5CardputerZero-APPLaunch}
+APP_EXECUTABLE=${APPLAUNCH_UPDATE_EXECUTABLE:-/usr/share/APPLaunch/bin/M5CardputerZero-APPLaunch}
 PROC_ROOT=${APPLAUNCH_UPDATE_PROC_ROOT:-/proc}
 
 mkdir -p "$STATE_DIR" "$CACHE_DIR"
@@ -425,6 +447,7 @@ flock -n 9 || exit 0
 tmp_dir=$(mktemp -d "$STATE_DIR/run.XXXXXX")
 package=$tmp_dir/applaunch_arm64.deb
 checksum=$tmp_dir/applaunch_arm64.deb.sha256
+abi_file=$tmp_dir/applaunch_arm64.deb.update-abi
 phase=starting
 cleanup() { rm -rf "$tmp_dir"; [ -z "$SELF_DIR" ] || rm -rf "$SELF_DIR"; }
 trap cleanup EXIT
@@ -495,6 +518,8 @@ rollback_and_fail() {
 previous_status=$(sed -n '1p' "$STATUS_FILE" 2>/dev/null || true)
 phase=downloading
 status downloading
+wget -q --https-only --timeout=30 --tries=3 "$RELEASE_URL/applaunch_arm64.deb.update-abi" -O "$abi_file" || fail incompatible
+[ "$(tr -d '[:space:]' <"$abi_file")" = "$UPDATE_ABI" ] || fail incompatible
 wget -q --https-only --timeout=30 --tries=3 "$RELEASE_URL/applaunch_arm64.deb" -O "$package" || fail download-package
 wget -q --https-only --timeout=30 --tries=3 "$RELEASE_URL/applaunch_arm64.deb.sha256" -O "$checksum" || fail download-checksum
 expected=$(awk 'NF && $1 ~ /^[0-9a-fA-F]{64}$/ { print tolower($1); exit }' "$checksum")
@@ -504,6 +529,7 @@ actual=$(sha256sum "$package" | awk '{print $1}')
 
 [ "$(dpkg-deb -f "$package" Package)" = "$PACKAGE_NAME" ] || fail package-name
 [ "$(dpkg-deb -f "$package" Architecture)" = "$ARCHITECTURE" ] || fail architecture
+[ "$(dpkg-deb -f "$package" X-CardputerZero-Update-ABI 2>/dev/null || true)" = "$UPDATE_ABI" ] || fail incompatible
 candidate=$(dpkg-deb -f "$package" Version)
 installed=$(dpkg-query -W -f='${Version}' "$PACKAGE_NAME" 2>/dev/null) || fail installed-version
 audit=$(dpkg --audit 2>/dev/null || true)
@@ -719,6 +745,7 @@ def _tar_filter(tar_info: tarfile.TarInfo) -> tarfile.TarInfo:
     tar_info.gid = 0
     tar_info.uname = "root"
     tar_info.gname = "root"
+    tar_info.mtime = _source_date_epoch()
     if tar_info.isdir():
         tar_info.mode = 0o755
     elif tar_info.mode & 0o111:
@@ -750,7 +777,7 @@ def _ar_member_header(name: str, size: int, mode: int = 0o100644) -> bytes:
         raise PackError(f"ar member name too long: {name}")
     header = (
         f"{name + '/':<16}"
-        f"{int(datetime.now().timestamp()):<12}"
+        f"{_source_date_epoch():<12}"
         f"{0:<6}"
         f"{0:<6}"
         f"{format(mode, 'o'):<8}"

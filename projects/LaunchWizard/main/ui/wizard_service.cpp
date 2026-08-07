@@ -664,7 +664,7 @@ std::string enable_applaunch_service(const std::string &user, unsigned int uid)
 }
 
 // ---------------------------------------------------------------------------
-// System integration -- new OOBE steps (timezone / hostname / wifi / time / ssh).
+// System integration -- OOBE steps (timezone / hostname / wifi / ssh).
 // ---------------------------------------------------------------------------
 std::string apply_timezone(const std::string &timezone)
 {
@@ -892,11 +892,6 @@ std::string WizardService::apply(
         best_effort("Setting timezone...", [timezone] {
             const std::string error = apply_timezone(timezone);
             return error.empty() ? error : "Timezone failed: " + error;
-        }),
-        best_effort("Setting date and time...", [&g] {
-            const std::string error = WizardService::set_manual_time(
-                g.manual_date, g.manual_time);
-            return error.empty() ? error : "System time failed: " + error;
         }),
         best_effort("Setting hostname...", [hostname] {
             const std::string error = apply_hostname(hostname);

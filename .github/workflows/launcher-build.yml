@@ -15,6 +15,8 @@ on:
       - 'ext_components/**'
       - '.gitmodules'
       - '.github/workflows/launcher-build.yml'
+      - 'scripts/build_cardputerzero_release_local.sh'
+      - 'scripts/cardputer_adb_hotplug.c'
       - 'scripts/debian_packager.py'
   pull_request:
     branches: [master]
@@ -186,7 +188,11 @@ jobs:
 
     - name: Build .deb package
       run: |
-        python3 scripts/debian_packager.py --version "${{ steps.version.outputs.version }}"
+        SCONS=scons \
+          OUTPUT_DIR="$GITHUB_WORKSPACE/projects/APPLaunch/tools" \
+          APPLAUNCH_CHANNEL=prerelease \
+          scripts/build_cardputerzero_release_local.sh \
+            "${{ steps.version.outputs.version }}" 1
 
     - name: Collect artifacts
       run: |
@@ -197,6 +203,7 @@ jobs:
         test "$(printf '%s\n' "${package}" | sed '/^$/d' | wc -l)" -eq 1
         cp "${package}" artifacts/applaunch_arm64.deb
         (cd artifacts && sha256sum applaunch_arm64.deb > applaunch_arm64.deb.sha256)
+        printf '1\n' > artifacts/applaunch_arm64.deb.update-abi
 
     - uses: actions/upload-artifact@v4
       with:
@@ -263,6 +270,7 @@ jobs:
         files: |
           artifacts/*.deb
           artifacts/*.sha256
+          artifacts/*.update-abi
           artifacts/M5CardputerZero-APPLaunch
 
     - name: Publish launcher update channel
@@ -275,3 +283,4 @@ jobs:
         files: |
           artifacts/applaunch_arm64.deb
           artifacts/applaunch_arm64.deb.sha256
+          artifacts/applaunch_arm64.deb.update-abi

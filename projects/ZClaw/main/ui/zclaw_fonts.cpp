@@ -29,6 +29,8 @@ std::string runtime_font_path()
 {
     const char *env_path = std::getenv("ZCLAW_FONT");
     const std::vector<std::string> candidates = {
+        "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf",
+        "/usr/share/APPLaunch/share/font/LiberationMono-Regular.ttf",
         cp0_file_path("AlibabaPuHuiTi-3-55-Regular.ttf"),
         cp0_file_path("share/font/AlibabaPuHuiTi-3-55-Regular.ttf"),
         "./APPLaunch/share/font/AlibabaPuHuiTi-3-55-Regular.ttf",
