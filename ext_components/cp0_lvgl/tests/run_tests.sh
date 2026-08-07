@@ -24,6 +24,10 @@ trap 'rm -f "$binary" "$esc_state_object"' EXIT HUP INT TERM
     -I"$root/src" "$root/tests/test_audio_runtime_lifecycle.cpp" -o "$binary"
 "$binary"
 
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
+    -I"$root/src" "$root/tests/test_audio_quiet_period_gate.cpp" -o "$binary"
+"$binary"
+
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
     -I"$root/include" "$root/tests/test_async_testable_utils.cpp" -o "$binary"
 "$binary"

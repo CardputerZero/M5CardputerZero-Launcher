@@ -36,7 +36,7 @@ void UISetupPage::play_enter()
 
 void UISetupPage::play_back()
 {
-    play_audio_file(snd_back_);
+    cp0_signal_audio_api({"SystemSoundPlay", "1"}, nullptr);
 }
 
 void UISetupPage::schedule_volume_preview()

@@ -1,13 +1,12 @@
 #include "cp0_audio_system_sound_player.hpp"
+#include "../cp0_audio_quiet_period_gate.hpp"
 
 #include "hal_lvgl_bsp.h"
 #include "miniaudio.h"
 
 #include <algorithm>
 #include <array>
-#include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <mutex>
 #include <thread>
 
@@ -15,6 +14,7 @@ class Cp0SystemSoundPlayer::Impl
 {
 public:
     static constexpr std::size_t kSoundCount = 3;
+    static constexpr auto kCleanupGracePeriod = std::chrono::milliseconds(800);
 
     Impl()
         : names{"Ding2.wav", "key_back.wav", "key_back.wav"}
@@ -24,8 +24,7 @@ public:
 
     ~Impl()
     {
-        cleanup_stop.store(true);
-        cleanup_cv.notify_one();
+        cleanup_gate.stop();
         if (cleanup_thread.joinable())
             cleanup_thread.join();
 
@@ -37,35 +36,25 @@ public:
     static void sound_end_callback(void *user_data, ma_sound *)
     {
         auto *self = static_cast<Impl *>(user_data);
-        self->cleanup_requested.store(true);
-        self->cleanup_cv.notify_one();
+        try {
+            self->cleanup_gate.request();
+        } catch (...) {
+        }
     }
 
     void cleanup_loop()
     {
-        std::unique_lock<std::mutex> wait_lock(cleanup_wait_mutex);
-        while (!cleanup_stop.load()) {
-            cleanup_cv.wait(wait_lock, [this] {
-                return cleanup_stop.load() || cleanup_requested.load();
-            });
-            if (cleanup_stop.load())
-                break;
-
-            cleanup_requested.store(false);
-            wait_lock.unlock();
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            {
-                std::lock_guard<std::mutex> lock(mutex);
-                bool playing = false;
-                for (std::size_t i = 0; i < slots.size(); ++i)
-                    playing = playing ||
-                              (slots[i] && ma_sound_is_playing(&sounds[i]));
-                if (!playing) {
-                    unload();
-                    uninitialize();
-                }
+        while (const std::uint64_t generation =
+                   cleanup_gate.wait_until_quiet(kCleanupGracePeriod)) {
+            std::lock_guard<std::mutex> lock(mutex);
+            bool playing = false;
+            for (std::size_t i = 0; i < slots.size(); ++i)
+                playing = playing ||
+                          (slots[i] && ma_sound_is_playing(&sounds[i]));
+            if (!playing && cleanup_gate.current(generation)) {
+                unload();
+                uninitialize();
             }
-            wait_lock.lock();
         }
     }
 
@@ -154,10 +143,7 @@ public:
     bool loaded = false;
     bool enabled = true;
     mutable std::mutex mutex;
-    std::atomic<bool> cleanup_requested{false};
-    std::atomic<bool> cleanup_stop{false};
-    std::mutex cleanup_wait_mutex;
-    std::condition_variable cleanup_cv;
+    cp0::audio::QuietPeriodGate cleanup_gate;
     std::thread cleanup_thread;
 };
 
@@ -188,8 +174,11 @@ bool Cp0SystemSoundPlayer::play_index(std::size_t index)
     ma_sound *sound = &impl_->sounds[index];
     if (ma_sound_is_playing(sound))
         return true;
-    return ma_sound_seek_to_pcm_frame(sound, 0) == MA_SUCCESS &&
-           ma_sound_start(sound) == MA_SUCCESS;
+    const bool started = ma_sound_seek_to_pcm_frame(sound, 0) == MA_SUCCESS &&
+                         ma_sound_start(sound) == MA_SUCCESS;
+    if (started)
+        impl_->cleanup_gate.request();
+    return started;
 }
 
 bool Cp0SystemSoundPlayer::play_named(const std::string &name)
@@ -203,8 +192,11 @@ bool Cp0SystemSoundPlayer::play_named(const std::string &name)
         ma_sound *sound = &impl_->sounds[i];
         if (ma_sound_is_playing(sound))
             return true;
-        return ma_sound_seek_to_pcm_frame(sound, 0) == MA_SUCCESS &&
-               ma_sound_start(sound) == MA_SUCCESS;
+        const bool started = ma_sound_seek_to_pcm_frame(sound, 0) == MA_SUCCESS &&
+                             ma_sound_start(sound) == MA_SUCCESS;
+        if (started)
+            impl_->cleanup_gate.request();
+        return started;
     }
     return false;
 }
