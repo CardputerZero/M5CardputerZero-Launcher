@@ -38,9 +38,12 @@ int main()
     assert(std::string(update_request(UpdateAction::CheckSystem)) == "AptUpdateStart");
     assert(std::string(update_request(UpdateAction::UpdateLauncher)) ==
            "UpdateLauncherStart");
-    assert(update_job_label(UpdateAction::CheckSystem, 0, "running").empty());
+    assert(update_job_label(UpdateAction::CheckSystem, 0, "running") ==
+           "Refreshing package lists...");
+    assert(update_job_label(UpdateAction::UpdateLauncher, 0, "running") ==
+           "Checking launcher update...\nLauncher may restart");
     assert(update_job_label(UpdateAction::CheckSystem, 0, "succeeded:completed") ==
-           "System check complete");
+           "Package lists refreshed");
     assert(update_job_label(UpdateAction::CheckSystem, 1, "failed:apt-update:1") ==
            "System check failed");
     assert(update_job_label(UpdateAction::UpdateLauncher, 1,

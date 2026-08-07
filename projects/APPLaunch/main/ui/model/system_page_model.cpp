@@ -56,10 +56,13 @@ const char *update_request(UpdateAction action)
 std::string update_job_label(UpdateAction action, int result_code,
                              const std::string &state)
 {
-    if (state == "running") return {};
+    if (state == "running")
+        return action == UpdateAction::CheckSystem
+            ? "Refreshing package lists..."
+            : "Checking launcher update...\nLauncher may restart";
     if (action == UpdateAction::CheckSystem)
         return result_code == 0 && state.rfind("succeeded:", 0) == 0
-            ? "System check complete" : "System check failed";
+            ? "Package lists refreshed" : "System check failed";
 
     if (result_code == 0 && state.rfind("succeeded:", 0) == 0)
         return "Launcher updated";

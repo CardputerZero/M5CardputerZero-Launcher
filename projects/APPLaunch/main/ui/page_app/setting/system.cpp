@@ -1,5 +1,6 @@
 #define APP_PAGE_IMPLEMENTATION_UNIT
 #include "../ui_app_setup.hpp"
+#include "../../launcher_toast.h"
 #include "../../model/system_page_model.hpp"
 #include "setup_page_access.hpp"
 
@@ -282,12 +283,14 @@ void Update::update_launcher(UISetupPage &page)
 
 void UISetupPage::stop_update_timer(bool cancel_job)
 {
+    const bool had_job = update_timer_ || !update_job_id_.empty();
     if (update_timer_) lv_timer_delete(update_timer_);
     update_timer_ = nullptr;
     if (cancel_job && !update_job_id_.empty())
         cp0_signal_osinfo_api({"UpdateJobCancel", update_job_id_}, nullptr);
     update_job_id_.clear();
     update_item_index_ = -1;
+    if (had_job) launcher_toast().hide();
 }
 
 void UISetupPage::start_update_job(const char *command, int item_index)
@@ -295,8 +298,11 @@ void UISetupPage::start_update_job(const char *command, int item_index)
     if (update_timer_ || !command) return;
     MenuItem *menu = setting::SetupPageAccess(*this).find_menu("Update");
     if (!menu || item_index < 0 || item_index >= static_cast<int>(menu->sub_items.size())) return;
-    menu->sub_items[item_index].label = item_index == 0 ? "Checking System..." : "Updating Launcher...";
-    build_sub_view();
+    const auto action = item_index == 0
+        ? system_page::UpdateAction::CheckSystem
+        : system_page::UpdateAction::UpdateLauncher;
+    const std::string running_label = system_page::update_job_label(action, 0, "running");
+    launcher_toast().show_persistent(running_label.c_str());
     lv_refr_now(nullptr);
     try {
         cp0_signal_osinfo_api({command}, [&](int code, std::string id) {
@@ -306,17 +312,15 @@ void UISetupPage::start_update_job(const char *command, int item_index)
         update_job_id_.clear();
     }
     if (update_job_id_.empty()) {
-        menu->sub_items[item_index].label = item_index == 0
-            ? "System check unavailable" : "Launcher update unavailable";
-        build_sub_view();
+        launcher_toast().show(item_index == 0
+            ? "System check unavailable" : "Launcher update unavailable");
         return;
     }
     update_item_index_ = item_index;
     update_timer_ = lv_timer_create(update_timer_cb, 500, this);
     if (!update_timer_) {
-        menu->sub_items[item_index].label = "Status unavailable";
         stop_update_timer();
-        build_sub_view();
+        launcher_toast().show("Update status unavailable");
     }
 }
 
@@ -330,18 +334,15 @@ void UISetupPage::update_timer_cb(lv_timer_t *timer) noexcept
         cp0_signal_osinfo_api({"UpdateJobStatus", page->update_job_id_},
             [&](int result, std::string payload) { code = result; state = std::move(payload); });
         if (code == 0 && state == "running") return;
-        MenuItem *menu = setting::SetupPageAccess(*page).find_menu("Update");
-        if (menu && page->update_item_index_ >= 0 &&
-            page->update_item_index_ < static_cast<int>(menu->sub_items.size())) {
-            const auto action = page->update_item_index_ == 0
-                ? system_page::UpdateAction::CheckSystem
-                : system_page::UpdateAction::UpdateLauncher;
-            menu->sub_items[page->update_item_index_].label =
-                system_page::update_job_label(action, code, state);
-        }
+        const auto action = page->update_item_index_ == 0
+            ? system_page::UpdateAction::CheckSystem
+            : system_page::UpdateAction::UpdateLauncher;
+        const std::string result_label =
+            system_page::update_job_label(action, code, state);
         page->stop_update_timer(false);
-        if (page->view_state_ == ViewState::SUB) page->build_sub_view();
+        launcher_toast().show(result_label.c_str());
     } catch (...) {
         page->stop_update_timer();
+        launcher_toast().show("Update status unavailable");
     }
 }
