@@ -118,19 +118,13 @@ private:
     static cp0::update::Result update_launcher(const std::atomic<bool> &cancel)
     {
         auto timeout_for = [](const std::vector<std::string> &arguments) {
-            if (!arguments.empty() && arguments.front() == "wget") return 120000;
-            if (!arguments.empty() && arguments.front() == "dpkg") return 300000;
+            if (!arguments.empty() && arguments.front() == "systemctl") return 1200000;
             return 30000;
         };
-        auto argv = [&cancel](const std::vector<std::string> &arguments) {
+        auto argv = [timeout_for, &cancel](const std::vector<std::string> &arguments) {
             std::string ignored;
-            const int timeout = !arguments.empty() && arguments.front() == "wget"
-                                    ? 120000
-                                    : (!arguments.empty() && arguments.front() == "dpkg"
-                                           ? 300000
-                                           : 30000);
             return cp0_process_commands::capture_argv_with_timeout(
-                arguments, ignored, timeout, &cancel);
+                arguments, ignored, timeout_for(arguments), &cancel);
         };
         auto capture = [timeout_for, &cancel](const std::vector<std::string> &arguments,
                                      std::string &output) {

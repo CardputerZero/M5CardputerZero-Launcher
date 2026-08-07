@@ -38,6 +38,20 @@ int main()
     assert(std::string(update_request(UpdateAction::CheckSystem)) == "AptUpdateStart");
     assert(std::string(update_request(UpdateAction::UpdateLauncher)) ==
            "UpdateLauncherStart");
+    assert(update_job_label(UpdateAction::CheckSystem, 0, "running").empty());
+    assert(update_job_label(UpdateAction::CheckSystem, 0, "succeeded:completed") ==
+           "System check complete");
+    assert(update_job_label(UpdateAction::CheckSystem, 1, "failed:apt-update:1") ==
+           "System check failed");
+    assert(update_job_label(UpdateAction::UpdateLauncher, 1,
+                            "failed:incompatible:1") == "No compatible update");
+    assert(update_job_label(UpdateAction::UpdateLauncher, 1,
+                            "failed:version-not-newer:1") == "Launcher is up to date");
+    assert(update_job_label(UpdateAction::UpdateLauncher, 1,
+                            "failed:download-package:1") == "Update download failed");
+    assert(launcher_state_label("downloading") == "Updating: downloading");
+    assert(launcher_state_label("succeeded:0.6.32") == "Launcher is up to date");
+    assert(launcher_state_label("failed:incompatible") == "No compatible update");
 
     assert(extport_toggle_value(false, true, true));
     assert(!extport_toggle_value(true, false, true));

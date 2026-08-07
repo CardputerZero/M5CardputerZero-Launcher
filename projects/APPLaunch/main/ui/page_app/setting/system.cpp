@@ -19,8 +19,16 @@ void apply_extport_toggle(UISetupPage &page,
     const bool desired = item.toggle_state;
     const int current = access.gpio_get(gpio_name);
     const bool previous = current >= 0 ? current != 0 : !desired;
+    const int previous_config = access.config_get_int(gpio_name, previous ? 1 : 0);
     const bool gpio_succeeded = access.gpio_set(gpio_name, desired ? 1 : 0);
-    item.toggle_state = system_page::extport_toggle_value(previous, desired, gpio_succeeded);
+    const bool config_succeeded = gpio_succeeded &&
+        access.config_set_int(gpio_name, desired ? 1 : 0) && access.config_save();
+    if (gpio_succeeded && !config_succeeded) {
+        access.config_set_int(gpio_name, previous_config != 0 ? 1 : 0);
+        access.gpio_set(gpio_name, previous ? 1 : 0);
+    }
+    item.toggle_state = system_page::extport_toggle_value(
+        previous, desired, gpio_succeeded && config_succeeded);
 }
 
 } // namespace
@@ -145,14 +153,14 @@ void ExtPort::append(UISetupPage &page, std::vector<MenuItem> &menu)
     MenuItem item;
     item.label = "ExtPort";
     SetupPageAccess access(page);
-    bool usb_enabled = access.gpio_get("GROVE5V") == 1;
-    bool output_enabled = access.gpio_get("EXT5V") == 1;
+    bool usb_enabled = access.gpio_get("extport_usb") == 1;
+    bool output_enabled = access.gpio_get("extport_5vout") == 1;
     item.sub_items = {
         {"GROVE5V", true, usb_enabled, [page_ptr]() {
-            apply_extport_toggle(*page_ptr, 0, "GROVE5V");
+            apply_extport_toggle(*page_ptr, 0, "extport_usb");
         }},
         {"EXT5V", true, output_enabled, [page_ptr]() {
-            apply_extport_toggle(*page_ptr, 1, "EXT5V");
+            apply_extport_toggle(*page_ptr, 1, "extport_5vout");
         }},
     };
     menu.push_back(item);
@@ -250,12 +258,9 @@ void Update::refresh_version_info(UISetupPage &page)
     MenuItem *item = SetupPageAccess(page).find_menu("Update");
     if (item && item->sub_items.size() >= 4) {
         cp0_signal_osinfo_api({"UpdateLauncherState"}, [&](int code, std::string state) {
-            if (code == 0 && state.rfind("failed:", 0) == 0)
-                item->sub_items[1].label = "Update " + state.substr(7);
-            else if (code == 0 && state.rfind("succeeded:", 0) == 0)
-                item->sub_items[1].label = "Launcher is up to date";
-            else if (code == 0 && !state.empty())
-                item->sub_items[1].label = "Updating: " + state;
+            if (code != 0) return;
+            const std::string label = system_page::launcher_state_label(state);
+            if (!label.empty()) item->sub_items[1].label = label;
         });
         item->sub_items[2].label = system_page::version_label(LAUNCHER_VERSION);
         item->sub_items[3].label = system_page::build_label(
@@ -292,11 +297,17 @@ void UISetupPage::start_update_job(const char *command, int item_index)
     if (!menu || item_index < 0 || item_index >= static_cast<int>(menu->sub_items.size())) return;
     menu->sub_items[item_index].label = item_index == 0 ? "Checking System..." : "Updating Launcher...";
     build_sub_view();
-    cp0_signal_osinfo_api({command}, [&](int code, std::string id) {
-        if (code == 0 && !id.empty()) update_job_id_ = std::move(id);
-    });
+    lv_refr_now(nullptr);
+    try {
+        cp0_signal_osinfo_api({command}, [&](int code, std::string id) {
+            if (code == 0 && !id.empty()) update_job_id_ = std::move(id);
+        });
+    } catch (...) {
+        update_job_id_.clear();
+    }
     if (update_job_id_.empty()) {
-        menu->sub_items[item_index].label = "Update start failed";
+        menu->sub_items[item_index].label = item_index == 0
+            ? "System check unavailable" : "Launcher update unavailable";
         build_sub_view();
         return;
     }
@@ -322,11 +333,11 @@ void UISetupPage::update_timer_cb(lv_timer_t *timer) noexcept
         MenuItem *menu = setting::SetupPageAccess(*page).find_menu("Update");
         if (menu && page->update_item_index_ >= 0 &&
             page->update_item_index_ < static_cast<int>(menu->sub_items.size())) {
+            const auto action = page->update_item_index_ == 0
+                ? system_page::UpdateAction::CheckSystem
+                : system_page::UpdateAction::UpdateLauncher;
             menu->sub_items[page->update_item_index_].label =
-                code == 0 && state == "succeeded:submitted" ? "Update submitted; restarting" :
-                (code == 0 && state.rfind("succeeded:", 0) == 0 ? "Update succeeded" :
-                (state.rfind("failed:", 0) == 0 ? "Update " + state.substr(7) :
-                                                  "Update status failed"));
+                system_page::update_job_label(action, code, state);
         }
         page->stop_update_timer(false);
         if (page->view_state_ == ViewState::SUB) page->build_sub_view();

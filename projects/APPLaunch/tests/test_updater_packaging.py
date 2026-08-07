@@ -28,7 +28,8 @@ def run_update(fail_install: bool = False,
                keep_audit_dirty: bool = False,
                unhealthy_process: bool = False,
                audit_required: bool = False,
-               interrupted_candidate: bool = False) -> tuple[subprocess.CompletedProcess[str], str, str]:
+               interrupted_candidate: bool = False,
+               compatible: bool = True) -> tuple[subprocess.CompletedProcess[str], str, str]:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
         fake_bin = root / "bin"
@@ -55,6 +56,9 @@ def run_update(fail_install: bool = False,
         (release / "applaunch_arm64.deb.sha256").write_text(
             f"{digest}  applaunch_arm64.deb\n", encoding="ascii"
         )
+        (release / "applaunch_arm64.deb.update-abi").write_text(
+            "1\n" if compatible else "0\n", encoding="ascii"
+        )
         if provide_rollback:
             old_package = old_release / "applaunch_1.0_arm64.deb"
             old_package.write_bytes(b"trusted previous package")
@@ -68,6 +72,7 @@ def run_update(fail_install: bool = False,
         executable(
             fake_bin / "dpkg-deb",
             'case "$3" in Package) echo applaunch;; Architecture) echo arm64;; '
+            'X-CardputerZero-Update-ABI) echo "${TEST_UPDATE_ABI:-1}";; '
             'Version) case "$2" in *installed.deb|*rollback.deb) echo 1.0;; *) echo 2.0;; esac;; esac\n',
         )
         executable(
@@ -113,6 +118,7 @@ def run_update(fail_install: bool = False,
                 "APPLAUNCH_UPDATE_EXECUTABLE": str(app_executable),
                 "APPLAUNCH_UPDATE_PROC_ROOT": str(proc),
                 "APPLAUNCH_UPDATE_HEALTH_CHECKS": "1",
+                "TEST_UPDATE_ABI": "1" if compatible else "0",
             }
         )
         if interrupted_candidate:
@@ -178,6 +184,34 @@ assert "dpkg --configure -a" in commands
 missing_rollback, status, commands = run_update(provide_rollback=False)
 assert missing_rollback.returncode != 0
 assert status == "failed:rollback-unavailable"
+
+incompatible, status, commands = run_update(compatible=False)
+assert incompatible.returncode != 0
+assert status == "failed:incompatible"
+assert "dpkg -i" not in commands
+assert "applaunch_arm64.deb" not in commands
+
+old_source_date_epoch = os.environ.get("SOURCE_DATE_EPOCH")
+try:
+    os.environ["SOURCE_DATE_EPOCH"] = "1704067200"
+    control = packager._control_text(packager.PackageConfig())
+    assert "Packaged-Date: 2024-01-01 00:00:00 UTC\n" in control
+    assert "X-CardputerZero-Update-ABI: 1\n" in control
+    other_control = packager._control_text(
+        packager.PackageConfig(app_name="OtherApp", package_name="other")
+    )
+    assert "X-CardputerZero-Update-ABI" not in other_control
+    assert packager._ar_member_header("data.tar.gz", 1)[16:28].strip() == b"1704067200"
+finally:
+    if old_source_date_epoch is None:
+        os.environ.pop("SOURCE_DATE_EPOCH", None)
+    else:
+        os.environ["SOURCE_DATE_EPOCH"] = old_source_date_epoch
+
+assert "/usr/share/APPLaunch/bin/M5CardputerZero-APPLaunch" in packager._updater_script_text()
+assert 'mktemp -d "$state_root/self.XXXXXX"' in packager._updater_script_text()
+assert "/run/applaunch-updater" not in packager._updater_script_text()
+assert "TimeoutStartSec=20min" in packager._updater_service_text()
 assert "dpkg -i" not in commands
 
 workflow = (repo / ".github" / "workflows" / "launcher-build.yml").read_text(
@@ -187,3 +221,11 @@ assert "branches: [master, ci/**]" in workflow
 assert "if: github.ref == 'refs/heads/master'" in workflow
 assert "startsWith(github.ref, 'refs/heads/ci/')" not in workflow
 assert workflow.count("tag_name: launcher-latest") == 1
+assert "scripts/build_cardputerzero_release_local.sh" in workflow
+assert "python3 scripts/debian_packager.py --version" not in workflow
+
+release_builder = (repo / "scripts" / "build_cardputerzero_release_local.sh").read_text(
+    encoding="utf-8"
+)
+assert 'CLEAN_BUILD=${CLEAN_BUILD:-1}' in release_builder
+assert '"$ROOT/projects/$project/main/build"' in release_builder
