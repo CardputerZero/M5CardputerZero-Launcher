@@ -102,9 +102,14 @@ public:
         } else if (cmd == "AdbStatus") {
             if (!cp0_process_api_contract::has_exact_arguments(arg, 1)) return invalid(callback);
             std::string output;
-            const int result = cp0_process_commands::capture_argv(
+            const int active_result = cp0_process_commands::capture_argv(
                 {"systemctl", "is-active", "adbd.service"}, output);
-            report(callback, 0, result == 0 ? "adbd=active\n" : "adbd=inactive\n");
+            std::string enabled_output;
+            const int enabled_result = cp0_process_commands::capture_argv(
+                {"systemctl", "is-enabled", "adbd.service"}, enabled_output);
+            output = active_result == 0 ? "adbd=active\n" : "adbd=inactive\n";
+            output += enabled_result == 0 ? "enabled=enabled\n" : "enabled=disabled\n";
+            report(callback, 0, output);
         } else if (cmd == "DesktopExecIsSafe") {
             const auto *exec = cp0_process_api_contract::argument_at(arg, 1);
             if (!cp0_process_api_contract::has_exact_arguments(arg, 2) || !exec || exec->empty())
