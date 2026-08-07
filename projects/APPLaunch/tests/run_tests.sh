@@ -195,6 +195,15 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
 
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
+    -I"$(dirname "$0")/../../../SDK/github_source/eventpp/include" \
+    "$(dirname "$0")/test_launcher_media_controls.cpp" \
+    "$(dirname "$0")/../main/ui/launcher_media_controls.cpp" \
+    "$(dirname "$0")/../main/ui/model/launcher_media_model.cpp" \
+    -o "$build_dir/test_launcher_media_controls"
+"$build_dir/test_launcher_media_controls"
+
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
     "$(dirname "$0")/test_global_hint_policy.cpp" \
     "$(dirname "$0")/../main/ui/model/global_hint_policy.cpp" \
     -o "$build_dir/test_global_hint_policy"
