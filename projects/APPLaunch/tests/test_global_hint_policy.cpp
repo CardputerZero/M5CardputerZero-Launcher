@@ -53,10 +53,8 @@ int main()
            GlobalHintAction::TAKE_SCREENSHOT);
     assert(policy.action_for({KEY_SYSRQ, "Print", false}) == GlobalHintAction::NONE);
 
-    assert(policy.action_for({KEY_LEFTSHIFT, nullptr, true}) ==
-           GlobalHintAction::SHOW_LOCK_HINT);
-    assert(policy.action_for({KEY_RIGHTSHIFT, nullptr, true}) ==
-           GlobalHintAction::SHOW_LOCK_HINT);
+    assert(policy.action_for({KEY_LEFTSHIFT, nullptr, true}) == GlobalHintAction::NONE);
+    assert(policy.action_for({KEY_RIGHTSHIFT, nullptr, true}) == GlobalHintAction::NONE);
     assert(policy.action_for({KEY_COMPOSE, nullptr, true}) ==
            GlobalHintAction::SHOW_LOCK_HINT);
     assert(policy.action_for({999, "Multi_key", true}) == GlobalHintAction::SHOW_LOCK_HINT);

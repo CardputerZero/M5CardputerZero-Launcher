@@ -85,8 +85,7 @@ GlobalHintAction GlobalHintPolicy::action_for(const GlobalHintKeyInput &input) c
     if (input.key_code == KEY_FN)
         return GlobalHintAction::NONE;
 
-    if (input.key_code == KEY_LEFTSHIFT || input.key_code == KEY_RIGHTSHIFT ||
-        input.key_code == KEY_COMPOSE || is_symbol_key_name(input.symbol_name)) {
+    if (input.key_code == KEY_COMPOSE || is_symbol_key_name(input.symbol_name)) {
         return GlobalHintAction::SHOW_LOCK_HINT;
     }
 

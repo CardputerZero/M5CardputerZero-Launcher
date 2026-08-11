@@ -262,7 +262,8 @@ void Speaker::enter_volume_adjust(UISetupPage &page)
         vol_val_ = read_config_int_strict("volume", 100);
     vol_val_ = std::clamp(vol_val_, 0, 100);
     preview_active_ = true;
-    access.enter_value("Volume", {"100%", "75%", "50%", "25%", "0%"},
+    access.enter_value("Volume", {"100%", "90%", "80%", "70%", "60%", "50%",
+                                  "40%", "30%", "20%", "10%", "0%"},
         setup_values::volume_index(vol_val_));
 }
 

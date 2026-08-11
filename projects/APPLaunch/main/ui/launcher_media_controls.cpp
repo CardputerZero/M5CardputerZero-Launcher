@@ -8,6 +8,7 @@
 
 #include "hal_lvgl_bsp.h"
 #include "model/launcher_media_model.hpp"
+#include "model/setup_value_policy.hpp"
 
 #include <string>
 
@@ -145,8 +146,11 @@ int adjust_volume(int delta_percent)
 {
     if (read_mute())
         (void)toggle_mute();
-    const int current = model.has_volume() ? model.volume_or(0) : read_volume();
-    return write_volume(current, current + delta_percent);
+    const int current = read_volume();
+    const int base = setup_values::round_volume_percent(current);
+    const int delta = delta_percent > 0 ? VOLUME_STEP_PERCENT
+                                       : delta_percent < 0 ? -VOLUME_STEP_PERCENT : 0;
+    return write_volume(current, base + delta);
 }
 
 int adjust_brightness(int delta_percent)
