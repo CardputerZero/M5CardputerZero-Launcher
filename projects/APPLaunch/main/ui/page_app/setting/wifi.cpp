@@ -40,6 +40,14 @@ namespace {
 
 constexpr auto kWifiScanPeriod = std::chrono::seconds(8);
 
+lv_result_t queue_lvgl_async(lv_async_cb_t callback, void *user_data)
+{
+    lv_lock();
+    const lv_result_t result = lv_async_call(callback, user_data);
+    lv_unlock();
+    return result;
+}
+
 const char *wifi_error_message(int result)
 {
     switch (result) {
@@ -168,7 +176,7 @@ void WiFi::start_scan(UISetupPage &page)
             }
             const bool failed = result->count < 0;
             ScanResult *raw = result.release();
-            if (lv_async_call(scan_result_cb, raw) != LV_RESULT_OK)
+            if (queue_lvgl_async(scan_result_cb, raw) != LV_RESULT_OK)
                 delete raw;
 
             std::unique_lock<std::mutex> lock(state->mutex);
@@ -377,7 +385,7 @@ bool WiFi::start_connection(UISetupPage &page, std::string ssid,
                 return;
             }
             ConnectionResult *queued = result.release();
-            if (lv_async_call(connection_result_cb, queued) != LV_RESULT_OK) {
+            if (queue_lvgl_async(connection_result_cb, queued) != LV_RESULT_OK) {
                 queued->token.complete();
                 delete queued;
             }

@@ -14,9 +14,10 @@
  *       "Hold ESC 3s to return home". Short taps (released
  *       before 0.5s) show nothing, so a quick "back" press inside
  *       an app no longer flashes the return-home toast.
- *   (b) Single press of SHIFT (Aa / KEY_LEFTSHIFT) or SYM (physical
- *       "SYM" key on the M5 CardputerZero; currently best-effort mapped)
- *       -> show "Double-tap to lock" for ~1.5s.
+ *   (b) Single press of SYM (physical "SYM" key on the M5
+ *       CardputerZero; currently best-effort mapped) -> show
+ *       "Double-tap to lock" for ~1.5s. Synthetic Shift events are
+ *       ignored because they do not identify the physical key gesture.
  *
  *   Fn key is intentionally NOT hinted (no lock feature yet).
  *
@@ -45,7 +46,7 @@
 #include <string>
 #include <utility>
 
-#define MEDIA_OSD_STEP      5
+#define BRIGHTNESS_OSD_STEP 5
 
 static void show_hint(const char *text)
 {
@@ -109,16 +110,17 @@ void on_key(const struct key_item *elm) noexcept
     switch (action) {
         case GlobalHintAction::BRIGHTNESS_UP:
         case GlobalHintAction::BRIGHTNESS_DOWN: {
-            const int delta = action == GlobalHintAction::BRIGHTNESS_UP ? MEDIA_OSD_STEP
-                                                                       : -MEDIA_OSD_STEP;
+            const int delta = action == GlobalHintAction::BRIGHTNESS_UP ? BRIGHTNESS_OSD_STEP
+                                                                       : -BRIGHTNESS_OSD_STEP;
             const int pct = launcher_media_controls::adjust_brightness(delta);
             launcher_media_osd().show_level("Brightness", LV_SYMBOL_TINT, pct);
             return;
         }
         case GlobalHintAction::VOLUME_UP:
         case GlobalHintAction::VOLUME_DOWN: {
-            const int delta = action == GlobalHintAction::VOLUME_UP ? MEDIA_OSD_STEP
-                                                                   : -MEDIA_OSD_STEP;
+            const int delta = action == GlobalHintAction::VOLUME_UP
+                                  ? launcher_media_controls::VOLUME_STEP_PERCENT
+                                  : -launcher_media_controls::VOLUME_STEP_PERCENT;
             const int pct = launcher_media_controls::adjust_volume(delta);
             launcher_media_osd().show_level(
                 "Volume", pct == 0 ? LV_SYMBOL_MUTE : LV_SYMBOL_VOLUME_MAX, pct);

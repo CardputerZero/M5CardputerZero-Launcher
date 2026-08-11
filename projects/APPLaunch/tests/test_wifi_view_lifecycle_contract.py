@@ -27,6 +27,19 @@ def test_wifi_controller_unmounts_list_while_view_is_alive():
     assert body.index("list_view_.unmount();") < body.index("clear_password_view();")
 
 
+def test_wifi_background_callbacks_lock_lvgl_async_queue():
+    start = CONTROLLER.index("lv_result_t queue_lvgl_async")
+    end = CONTROLLER.index("const char *wifi_error_message", start)
+    body = CONTROLLER[start:end]
+    assert body.index("lv_lock();") < body.index("lv_async_call(")
+    assert body.index("lv_async_call(") < body.index("lv_unlock();")
+
+    assert "queue_lvgl_async(scan_result_cb, raw)" in CONTROLLER
+    assert "queue_lvgl_async(connection_result_cb, queued)" in CONTROLLER
+    assert "lv_async_call(scan_result_cb, raw)" not in CONTROLLER
+    assert "lv_async_call(connection_result_cb, queued)" not in CONTROLLER
+
+
 def test_scan_respects_user_disabled_radio():
     hidden_start = CONTROLLER.index("void WiFi::enter_hidden_wifi(UISetupPage &page)")
     hidden_end = CONTROLLER.index("void WiFi::enter_scan", hidden_start)
@@ -66,4 +79,5 @@ def test_scan_respects_user_disabled_radio():
 if __name__ == "__main__":
     test_owned_wifi_views_unmount_before_member_destruction()
     test_wifi_controller_unmounts_list_while_view_is_alive()
+    test_wifi_background_callbacks_lock_lvgl_async_queue()
     test_scan_respects_user_disabled_radio()

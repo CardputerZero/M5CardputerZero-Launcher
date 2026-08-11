@@ -18,7 +18,7 @@ eventpp::CallbackList<void(std::list<std::string>, std::function<void(int, std::
 
 namespace {
 
-int sink_volume = 80;
+int sink_volume = 63;
 int configured_volume = 80;
 bool sink_muted = true;
 int mute_toggles = 0;
@@ -77,10 +77,11 @@ int main()
             }
         });
 
-    assert(launcher_media_controls::adjust_volume(-5) == 75);
+    assert(launcher_media_controls::VOLUME_STEP_PERCENT == 10);
+    assert(launcher_media_controls::adjust_volume(-10) == 50);
     assert(!sink_muted);
-    assert(sink_volume == 75);
-    assert(configured_volume == 75);
+    assert(sink_volume == 50);
+    assert(configured_volume == 50);
     assert(mute_toggles == 1);
     assert(audio_commands.size() >= 4);
     assert(audio_commands[0] == "MuteRead");
@@ -89,16 +90,24 @@ int main()
     assert(audio_commands[3] == "VolumeWrite");
 
     sink_muted = true;
-    assert(launcher_media_controls::adjust_volume(5) == 80);
+    sink_volume = 63;
+    assert(launcher_media_controls::adjust_volume(10) == 70);
+    assert(!sink_muted);
+    assert(sink_volume == 70);
+    assert(configured_volume == 70);
+    assert(mute_toggles == 2);
+
+    sink_volume = 71;
+    assert(launcher_media_controls::adjust_volume(10) == 80);
     assert(!sink_muted);
     assert(sink_volume == 80);
     assert(configured_volume == 80);
     assert(mute_toggles == 2);
 
-    assert(launcher_media_controls::adjust_volume(-5) == 75);
-    assert(!sink_muted);
-    assert(sink_volume == 75);
-    assert(configured_volume == 75);
+    sink_volume = 82;
+    assert(launcher_media_controls::adjust_volume(-10) == 70);
+    assert(sink_volume == 70);
+    assert(configured_volume == 70);
     assert(mute_toggles == 2);
     return 0;
 }

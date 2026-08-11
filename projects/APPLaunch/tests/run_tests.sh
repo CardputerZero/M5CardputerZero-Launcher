@@ -199,6 +199,7 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/test_launcher_media_controls.cpp" \
     "$(dirname "$0")/../main/ui/launcher_media_controls.cpp" \
     "$(dirname "$0")/../main/ui/model/launcher_media_model.cpp" \
+    "$(dirname "$0")/../main/ui/model/setup_value_policy.cpp" \
     -o "$build_dir/test_launcher_media_controls"
 "$build_dir/test_launcher_media_controls"
 
