@@ -18,6 +18,8 @@
 namespace {
 
 #if LV_USE_FREETYPE
+constexpr uint32_t kZClawFontSize = 14;
+
 bool file_exists(const std::string &path)
 {
     if (path.empty()) return false;
@@ -29,6 +31,8 @@ std::string runtime_font_path()
 {
     const char *env_path = std::getenv("ZCLAW_FONT");
     const std::vector<std::string> candidates = {
+        "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-SemiBold.ttf",
+        "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Bold.ttf",
         "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf",
         "/usr/share/APPLaunch/share/font/LiberationMono-Regular.ttf",
         cp0_file_path("AlibabaPuHuiTi-3-55-Regular.ttf"),
@@ -107,19 +111,19 @@ void FontManager::init()
         return;
 
     font_10_ = lv_freetype_font_create(
-        font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, 10,
+        font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, kZClawFontSize,
         LV_FREETYPE_FONT_STYLE_NORMAL);
     font_12_ = lv_freetype_font_create(
-        font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, 12,
+        font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, kZClawFontSize,
         LV_FREETYPE_FONT_STYLE_NORMAL);
 
     const std::string fallback_path = runtime_fallback_font_path();
     if (!fallback_path.empty()) {
         fallback_font_10_ = lv_freetype_font_create(
-            fallback_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, 10,
+            fallback_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, kZClawFontSize,
             LV_FREETYPE_FONT_STYLE_NORMAL);
         fallback_font_12_ = lv_freetype_font_create(
-            fallback_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, 12,
+            fallback_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, kZClawFontSize,
             LV_FREETYPE_FONT_STYLE_NORMAL);
     }
     set_fallback_chain(font_10_, fallback_font_10_);
@@ -156,7 +160,7 @@ const lv_font_t *FontManager::font_10() const
 #elif defined(LV_FONT_SOURCE_HAN_SANS_SC_16_CJK) && LV_FONT_SOURCE_HAN_SANS_SC_16_CJK
     return &lv_font_source_han_sans_sc_16_cjk;
 #endif
-    return &lv_font_montserrat_10;
+    return &lv_font_montserrat_14;
 }
 
 const lv_font_t *FontManager::font_12() const
@@ -170,7 +174,7 @@ const lv_font_t *FontManager::font_12() const
 #elif defined(LV_FONT_SOURCE_HAN_SANS_SC_16_CJK) && LV_FONT_SOURCE_HAN_SANS_SC_16_CJK
     return &lv_font_source_han_sans_sc_16_cjk;
 #endif
-    return &lv_font_montserrat_12;
+    return &lv_font_montserrat_14;
 }
 
 }  // namespace zclaw
