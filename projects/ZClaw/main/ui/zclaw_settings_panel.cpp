@@ -9,6 +9,12 @@ namespace {
 
 constexpr lv_coord_t kScreenWidth = 320;
 constexpr lv_coord_t kScreenHeight = 170;
+constexpr lv_coord_t kHeaderHeight = 20;
+
+lv_coord_t centered_y(lv_coord_t container_height, lv_coord_t item_height)
+{
+    return (container_height - item_height) / 2;
+}
 }  // namespace
 
 SettingsPanel::~SettingsPanel()
@@ -26,14 +32,28 @@ bool SettingsPanel::create(lv_obj_t *parent, const FontManager *fonts)
     lv_obj_add_event_cb(panel_, panel_deleted, LV_EVENT_DELETE, this);
     lv_obj_move_foreground(panel_);
 
-    lv_obj_t *bar = widgets::box(panel_, 0, 0, kScreenWidth, 20, theme::kBar);
-    header_label_ = widgets::label(bar, "ZClaw Settings", 12, 4, 160, 12,
+    lv_obj_t *bar = widgets::box(panel_, 0, 0, kScreenWidth, kHeaderHeight,
+                                 theme::kBar);
+    const lv_coord_t title_height =
+        lv_font_get_line_height(fonts_->font_12());
+    const lv_coord_t hint_height =
+        lv_font_get_line_height(fonts_->font_10());
+    header_label_ = widgets::label(
+        bar, "ZClaw Settings", 12, centered_y(kHeaderHeight, title_height),
+        160, title_height,
                                    fonts_->font_12(), theme::kText);
-    hint_label_ = widgets::label(bar, "Tab / Esc", 214, 5, 94, 10,
+    hint_label_ = widgets::label(bar, "Tab / Esc", 214,
+                                 centered_y(kHeaderHeight, hint_height),
+                                 94, hint_height,
                                  fonts_->font_10(), theme::kDim, LV_TEXT_ALIGN_RIGHT);
-    rows_container_ = widgets::box(panel_, 0, 20, kScreenWidth, 150,
+    widgets::box(bar, 0, kHeaderHeight - 1, kScreenWidth, 1, theme::kPanelLine);
+    rows_container_ = widgets::box(panel_, 0, kHeaderHeight, kScreenWidth,
+                                   kScreenHeight - kHeaderHeight,
                                    theme::kBackground);
     lv_obj_add_flag(rows_container_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(rows_container_, static_cast<lv_obj_flag_t>(
+        LV_OBJ_FLAG_SCROLL_ELASTIC | LV_OBJ_FLAG_SCROLL_MOMENTUM |
+        LV_OBJ_FLAG_SCROLL_CHAIN));
     lv_obj_set_scroll_dir(rows_container_, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(rows_container_, LV_SCROLLBAR_MODE_AUTO);
     lv_obj_set_style_width(rows_container_, 3, LV_PART_SCROLLBAR);
@@ -99,16 +119,20 @@ bool SettingsPanel::add_row(const std::string &title, const std::string &value)
         return false;
     const int index = row_count_;
     const lv_coord_t y = 8 + index * 28;
-    lv_obj_t *row = widgets::box(rows_container_, 12, y, 296, 26,
+    constexpr lv_coord_t row_height = 26;
+    lv_obj_t *row = widgets::box(rows_container_, 12, y, 296, row_height,
                                  theme::kPanel, 8);
     lv_obj_set_style_border_width(row, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(row, lv_color_hex(theme::kPanel),
+    lv_obj_set_style_border_color(row, lv_color_hex(theme::kPanelLine),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
-    widgets::label(row, title, 10, 5, 160, 14, fonts_->font_10(), theme::kText);
-    values_[index] = widgets::label(row, value, 168, 5, 118, 14,
+    const lv_coord_t text_height = lv_font_get_line_height(fonts_->font_10());
+    const lv_coord_t text_y = centered_y(row_height, text_height);
+    widgets::label(row, title, 10, text_y, 160, text_height,
+                   fonts_->font_10(), theme::kText);
+    values_[index] = widgets::label(row, value, 168, text_y, 118, text_height,
                                     fonts_->font_10(), theme::kMuted,
                                     LV_TEXT_ALIGN_RIGHT);
-    widgets::box(row, 8, 23, 280, 1, theme::kPanelLine);
+    widgets::box(row, 8, row_height - 3, 280, 1, theme::kPanelLine);
     rows_[index] = row;
     ++row_count_;
     return true;
@@ -126,10 +150,12 @@ void SettingsPanel::update_selection(int selected_index)
             continue;
         const bool selected = index == selected_index;
         lv_obj_set_style_border_color(rows_[index],
-                                      lv_color_hex(selected ? theme::kPurple : theme::kPanel),
+                                      lv_color_hex(selected ? theme::kPurple
+                                                            : theme::kPanelLine),
                                       LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_bg_color(rows_[index],
-                                  lv_color_hex(selected ? 0x252542 : theme::kPanel),
+                                  lv_color_hex(selected ? theme::kSelectedPanel
+                                                        : theme::kPanel),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
         if (values_[index])
             lv_obj_set_style_text_color(values_[index],

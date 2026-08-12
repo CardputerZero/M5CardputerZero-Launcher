@@ -63,7 +63,7 @@ bool parse_ui_document(const std::string &document, UiConfig *config,
         const std::string key = decode_config_field(fields[0]);
         const bool known = key == "webhook_url" || key == "agent_alias" ||
                            key == "webhook_secret" || key == "bearer_token" ||
-                           key == "setup_complete";
+                           key == "setup_complete" || key == "ui_sounds_enabled";
         if (!known)
             continue;
         if (strict && !is_valid_config_field_encoding(fields[1])) {
@@ -93,6 +93,13 @@ bool parse_ui_document(const std::string &document, UiConfig *config,
                 continue;
             }
             config->setup_complete = value == "1";
+            recognized = true;
+        } else if (key == "ui_sounds_enabled") {
+            if (strict && value != "0" && value != "1") {
+                invalid = true;
+                continue;
+            }
+            config->ui_sounds_enabled = value != "0";
             recognized = true;
         }
     }
@@ -156,6 +163,8 @@ std::string make_ui_config_document(const UiConfig &config)
                 encode_config_field(config.bearer_token) + '\n';
     document += encode_config_field("setup_complete") + '\t' +
                 (config.setup_complete ? "1" : "0") + '\n';
+    document += encode_config_field("ui_sounds_enabled") + '\t' +
+                (config.ui_sounds_enabled ? "1" : "0") + '\n';
     return document;
 }
 

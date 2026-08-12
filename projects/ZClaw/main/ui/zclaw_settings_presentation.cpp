@@ -17,6 +17,7 @@ SettingsPresentation present_settings_main(const UiConfig &config)
             {"Providers", "Manage"},
             {"Agent", config.agent_alias},
             {"Transport", config.bearer_token.empty() ? "Webhook" : "WS"},
+            {"UI Sounds", config.ui_sounds_enabled ? "On" : "Off"},
         },
     };
 }
