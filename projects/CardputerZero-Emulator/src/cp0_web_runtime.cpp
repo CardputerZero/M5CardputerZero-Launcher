@@ -1,10 +1,12 @@
 #include "cp0_lvgl_app.h"
+#include "cp0_esc_state.h"
 #include "keyboard_input.h"
 #include "lvgl/lvgl.h"
 
 #include <SDL2/SDL.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -97,11 +99,12 @@
 
 struct keyboard_queue_t keyboard_queue;
 pthread_mutex_t keyboard_mutex = PTHREAD_MUTEX_INITIALIZER;
-volatile int LVGL_HOME_KEY_FLAG = 0;
 volatile int LVGL_RUN_FLAGE = 1;
 volatile uint32_t LV_EVENT_KEYBOARD = 0;
 
 namespace {
+
+std::atomic<int> keyboard_input_context{KBD_INPUT_CONTEXT_NAVIGATION};
 
 struct WebKeyboard {
     key_item current{};
@@ -293,6 +296,7 @@ void fill_key_meta(WebKeyboard *kbd, const SDL_KeyboardEvent *event)
     kbd->current.keysym = static_cast<uint32_t>(event->keysym.sym);
     kbd->current.key_state = event->repeat ? KBD_KEY_REPEATED : KBD_KEY_PRESSED;
     kbd->current.codepoint = ctrl_to_lv_key(event->keysym.sym);
+    kbd->current.input_context = cp0_keyboard_get_input_context();
 
     SDL_Keymod mods = SDL_GetModState();
     if (mods & KMOD_SHIFT) kbd->current.mods |= KBD_MOD_SHIFT;
@@ -323,6 +327,7 @@ void set_text_key(WebKeyboard *kbd, const char *utf8)
     if (!kbd->current_valid) {
         std::memset(&kbd->current, 0, sizeof(kbd->current));
         kbd->current.key_state = KBD_KEY_PRESSED;
+        kbd->current.input_context = cp0_keyboard_get_input_context();
         kbd->current_valid = true;
     }
     std::snprintf(kbd->current.utf8, sizeof(kbd->current.utf8), "%s", utf8 ? utf8 : "");
@@ -336,7 +341,7 @@ void enqueue_key(const key_item *event)
     *elm = *event;
     elm->flage = 0;
 
-    if (elm->key_code == KEY_ESC) LVGL_HOME_KEY_FLAG = elm->key_state;
+    if (elm->key_code == KEY_ESC) cp0_esc_state_write(elm->key_state);
 
     if (LVGL_RUN_FLAGE) {
         pthread_mutex_lock(&keyboard_mutex);
@@ -357,22 +362,25 @@ bool queue_has_data()
 
 void web_keyboard_read(lv_indev_t *, lv_indev_data_t *data)
 {
+    data->key = 0;
     data->state = LV_INDEV_STATE_RELEASED;
     data->continue_reading = false;
 
     pthread_mutex_lock(&keyboard_mutex);
     if (!STAILQ_EMPTY(&keyboard_queue)) {
+        const int intercept = cp0_keyboard_get_lvgl_keypad_intercept();
         key_item *elm = STAILQ_FIRST(&keyboard_queue);
         STAILQ_REMOVE_HEAD(&keyboard_queue, entries);
 
         lv_obj_t *root = lv_screen_active();
         if (root) lv_obj_send_event(root, static_cast<lv_event_code_t>(LV_EVENT_KEYBOARD), elm);
 
-        data->key = linux_key_to_lv(elm->key_code);
-        if (data->key) {
-            data->state = static_cast<lv_indev_state_t>(elm->key_state);
-            data->continue_reading = !STAILQ_EMPTY(&keyboard_queue);
+        if (!intercept) {
+            data->key = linux_key_to_lv(elm->key_code);
+            if (data->key)
+                data->state = static_cast<lv_indev_state_t>(elm->key_state);
         }
+        data->continue_reading = !STAILQ_EMPTY(&keyboard_queue);
         std::free(elm);
     }
     pthread_mutex_unlock(&keyboard_mutex);
@@ -439,6 +447,19 @@ void keyboard_pause(void) {}
 void keyboard_resume(void) {}
 void *keyboard_read_thread(void *) { return nullptr; }
 void kbd_dump_keymap_table(void) {}
+
+void cp0_keyboard_set_input_context(cp0_keyboard_input_context_t context)
+{
+    if (context < KBD_INPUT_CONTEXT_NAVIGATION || context > KBD_INPUT_CONTEXT_GAME)
+        context = KBD_INPUT_CONTEXT_NAVIGATION;
+    keyboard_input_context.store(context, std::memory_order_release);
+}
+
+cp0_keyboard_input_context_t cp0_keyboard_get_input_context(void)
+{
+    return static_cast<cp0_keyboard_input_context_t>(
+        keyboard_input_context.load(std::memory_order_acquire));
+}
 
 const char *kbd_state_name(int state)
 {
@@ -548,7 +569,7 @@ int cp0_network_list(cp0_netif_info_t *entries, int max_entries, int *out_count)
     return 0;
 }
 
-int cp0_process_exec_blocking(const char *, volatile int *, int) { return -1; }
+int cp0_process_exec_blocking(const char *, int) { return -1; }
 cp0_pid_t cp0_process_spawn(const char *, int) { return -1; }
 void cp0_process_stop(cp0_pid_t) {}
 int cp0_process_check_lock(const char *, int *holder_pid)
@@ -602,15 +623,6 @@ int cp0_time_set(const char *) { return -1; }
 int cp0_time_ntp_get(void) { return 0; }
 int cp0_time_ntp_set(int) { return -1; }
 int cp0_bq27220_calibrate(int) { return -1; }
-int cp0_compass_calibrate(void) { return -1; }
-int cp0_compass_read(cp0_compass_read_cb_t callback, void *user)
-{
-    cp0_compass_info_t info{};
-    copy_cstr(info.status, sizeof(info.status), "Web emulator");
-    if (callback) callback(0, &info, user);
-    return 0;
-}
-
 cp0_battery_info_t cp0_battery_read(void)
 {
     cp0_battery_info_t info{};

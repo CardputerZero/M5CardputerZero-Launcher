@@ -10,6 +10,7 @@
 #include "cp0_lvgl_app.h"
 #include "app_directory_watcher.h"
 #include "ui_loading.h"
+#include "esc_ui_watchdog.h"
 #include "model/launcher_navigation_model.hpp"
 
 #include <functional>
@@ -78,6 +79,7 @@ private:
     std::weak_ptr<UILaunchPage> launch_page_;
     int current_app = 2;
     AppDirectoryWatcher app_directory_watcher_;
+    EscUiWatchdog esc_ui_watchdog_;
     LauncherPageLifecycleModel page_lifecycle_;
     int fixed_count = 0;
     bool bound_ = false;

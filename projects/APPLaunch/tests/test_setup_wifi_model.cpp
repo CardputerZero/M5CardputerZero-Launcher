@@ -13,6 +13,11 @@ int main()
     auto scanning = list.snapshot();
     assert(scanning.rows.empty());
     assert(scanning.empty_message == "Scanning for WiFi networks...");
+    list.fail_scan("Network service unavailable; retry");
+    assert(!list.scanning());
+    assert(list.snapshot().empty_message == "Network service unavailable; retry");
+    list.begin_scan();
+    list.clear_scan_error();
 
     std::vector<SetupWifiAccessPoint> networks;
     for (int index = 0; index < 7; ++index) {
@@ -39,6 +44,10 @@ int main()
     std::rotate(reordered.begin(), reordered.begin() + 3, reordered.end());
     list.apply_scan(std::move(reordered));
     assert(list.selected() && list.selected()->ssid == "wifi-3");
+    list.fail_scan("Network service unavailable; retry");
+    assert(list.size() == 0);
+    assert(list.snapshot().empty_message == "Network service unavailable; retry");
+    list.clear_scan_error();
     list.begin_scan();
     list.cancel_scan();
     assert(!list.scanning());
@@ -106,6 +115,31 @@ int main()
     assert(model.ssid().empty());
     assert(model.password().empty());
     assert(!model.can_submit());
+
+    auto valid_wpa = [](const std::string &password) {
+        SetupWifiPasswordModel candidate;
+        candidate.begin("Secure WiFi", "WPA2");
+        assert(candidate.append(password));
+        return candidate.can_submit();
+    };
+    assert(!valid_wpa(std::string(7, 'x')));
+    assert(valid_wpa(std::string(8, 'x')));
+    assert(valid_wpa(std::string(63, 'x')));
+    assert(valid_wpa(std::string(64, 'a')));
+    assert(!valid_wpa(std::string(64, 'z')));
+    SetupWifiPasswordModel enterprise;
+    enterprise.begin("Corp", "WPA2 802.1X");
+    assert(enterprise.append("valid-looking-password"));
+    assert(!enterprise.can_submit());
+
+    SetupWifiSsidModel ssid;
+    assert(!ssid.can_submit());
+    assert(ssid.append("Hidden WiFi"));
+    assert(ssid.can_submit() && ssid.ssid() == "Hidden WiFi");
+    assert(ssid.erase_last() && ssid.ssid() == "Hidden WiF");
+    ssid.reset();
+    assert(!ssid.append(std::string(33, 'x')));
+    assert(!ssid.append("\n"));
 
     SetupWifiFeedbackModel feedback;
     assert(!feedback.pending());

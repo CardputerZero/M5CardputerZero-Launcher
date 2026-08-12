@@ -5,6 +5,7 @@
  */
 
 #pragma once
+#include "cp0_keyboard_input_context.hpp"
 #include "setting/basic.hpp"
 #include "../model/rtc_state_model.hpp"
 #include "../model/adb_state.hpp"
@@ -24,6 +25,18 @@
 #define LAUNCHER_GIT_COMMIT_RAW unknown
 #endif
 #define LAUNCHER_GIT_COMMIT STRINGIFY(LAUNCHER_GIT_COMMIT_RAW)
+#ifndef LAUNCHER_VERSION_RAW
+#define LAUNCHER_VERSION_RAW 0.0.0-dev
+#endif
+#ifndef LAUNCHER_CHANNEL_RAW
+#define LAUNCHER_CHANNEL_RAW development
+#endif
+#ifndef LAUNCHER_BUILD_DATE_RAW
+#define LAUNCHER_BUILD_DATE_RAW unknown
+#endif
+#define LAUNCHER_VERSION STRINGIFY(LAUNCHER_VERSION_RAW)
+#define LAUNCHER_CHANNEL STRINGIFY(LAUNCHER_CHANNEL_RAW)
+#define LAUNCHER_BUILD_DATE STRINGIFY(LAUNCHER_BUILD_DATE_RAW)
 #include "../launcher_ui_app_page.hpp"
 #include "../model/setup_page_model.hpp"
 #include <climits>
@@ -49,7 +62,7 @@
 
 
 class UISetupPage;
-namespace setting { class SetupPageAccess; }
+namespace setting { class SetupPageAccess; class Update; }
 
 // ============================================================
 //  System settings screen  UISetupPage  (Carousel Design)
@@ -73,6 +86,7 @@ public:
 private:
     std::vector<MenuItem> menu_items_;
     friend class setting::SetupPageAccess;
+    friend class setting::Update;
 
     setting::Screen screen_;
     setting::WiFi wifi_;
@@ -85,6 +99,7 @@ private:
     setting::SoundCard soundcard_;
 
     SetupPageModel model_;
+    Cp0KeyboardInputContextScope input_context_scope_;
     SetupPageLifecycle lifecycle_;
     int &selected_idx_ = model_.selected_index;
     int &sub_selected_idx_ = model_.sub_selected_index;
@@ -107,6 +122,10 @@ private:
 
     // Power timer
     lv_timer_t *pwr_timer_ = nullptr;
+    lv_timer_t *update_timer_ = nullptr;
+    lv_timer_t *volume_preview_timer_ = nullptr;
+    std::string update_job_id_;
+    int update_item_index_ = -1;
 
     static constexpr int SCREEN_W = 320;
     static constexpr int SCREEN_H = 150;
@@ -139,10 +158,16 @@ private:
     SetupConfirmController confirm_controller_;
 
     void enter_confirm_action(const char *title, std::function<void()> action);
-    void apply_value_selection();
+    bool apply_value_selection();
+    void schedule_volume_preview();
+    void stop_volume_preview_timer();
+    static void volume_preview_timer_cb(lv_timer_t *timer) noexcept;
 
     // ==================== Power timer ====================
     void stop_power_timer();
+    void start_update_job(const char *command, int item_index);
+    void stop_update_timer(bool cancel_job = true);
+    static void update_timer_cb(lv_timer_t *timer) noexcept;
 
     // ==================== UI ====================
     void create_ui();

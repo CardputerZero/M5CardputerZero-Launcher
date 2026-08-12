@@ -40,7 +40,7 @@ void UITankBattlePage::creat_UI()
 
     lv_obj_t *hint_label = lv_label_create(title);
     if (hint_label) {
-        lv_label_set_text(hint_label, "33/45/44/46 move 57 fire");
+        lv_label_set_text(hint_label, "F/X/Z/C Move  Space Fire");
         lv_obj_set_align(hint_label, LV_ALIGN_RIGHT_MID);
         lv_obj_set_x(hint_label, -4);
         lv_obj_set_style_text_color(hint_label, lv_color_hex(0xB7D1E6), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -98,31 +98,17 @@ void UITankBattlePage::creat_UI()
         lv_obj_clear_flag(line, LV_OBJ_FLAG_SCROLLABLE);
     }
 
-    player_obj_ = lv_obj_create(arena);
+    player_tank_ = create_tank_visual(arena, 0x35D07F);
+    player_obj_ = player_tank_.root;
     if (!player_obj_) return;
     lv_obj_add_event_cb(player_obj_, owned_obj_delete_cb, LV_EVENT_DELETE, this);
-    lv_obj_set_size(player_obj_, CELL - 2, CELL - 2);
-    lv_obj_set_style_radius(player_obj_, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_color(player_obj_, lv_color_hex(0x2ECC71), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(player_obj_, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_width(player_obj_, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_clear_flag(player_obj_, LV_OBJ_FLAG_SCROLLABLE);
 
-    enemy_objs_.clear();
+    enemy_tanks_.clear();
     for (size_t i = 0; i < model_.enemies().size(); ++i) {
-        lv_obj_t *obj = lv_obj_create(arena);
-        if (!obj) {
-            enemy_objs_.push_back(nullptr);
-            continue;
-        }
-        lv_obj_add_event_cb(obj, owned_obj_delete_cb, LV_EVENT_DELETE, this);
-        lv_obj_set_size(obj, CELL - 2, CELL - 2);
-        lv_obj_set_style_radius(obj, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_bg_color(obj, lv_color_hex(0xE74C3C), LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_bg_opa(obj, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_set_style_border_width(obj, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-        lv_obj_clear_flag(obj, LV_OBJ_FLAG_SCROLLABLE);
-        enemy_objs_.push_back(obj);
+        TankVisual visual = create_tank_visual(arena, 0xE65045);
+        if (visual.root)
+            lv_obj_add_event_cb(visual.root, owned_obj_delete_cb, LV_EVENT_DELETE, this);
+        enemy_tanks_.push_back(visual);
     }
 
     bullet_objs_.clear();
@@ -145,6 +131,98 @@ void UITankBattlePage::creat_UI()
 
     create_game_message_panel(arena);
     sync_scene();
+}
+
+UITankBattlePage::TankVisual UITankBattlePage::create_tank_visual(
+    lv_obj_t *arena, std::uint32_t armor_color)
+{
+    TankVisual visual;
+    visual.root = lv_obj_create(arena);
+    if (!visual.root) return visual;
+    lv_obj_set_size(visual.root, CELL - 2, CELL - 2);
+    lv_obj_set_style_bg_opa(visual.root, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(visual.root, 0, 0);
+    lv_obj_set_style_pad_all(visual.root, 0, 0);
+    lv_obj_clear_flag(visual.root, LV_OBJ_FLAG_SCROLLABLE);
+
+    auto make_part = [&](int x, int y, int w, int h, std::uint32_t color,
+                         int radius) -> lv_obj_t * {
+        lv_obj_t *part = lv_obj_create(visual.root);
+        if (!part) return nullptr;
+        lv_obj_set_size(part, w, h);
+        lv_obj_set_pos(part, x, y);
+        lv_obj_set_style_radius(part, radius, 0);
+        lv_obj_set_style_bg_color(part, lv_color_hex(color), 0);
+        lv_obj_set_style_bg_opa(part, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(part, 0, 0);
+        lv_obj_set_style_pad_all(part, 0, 0);
+        lv_obj_clear_flag(part, LV_OBJ_FLAG_SCROLLABLE);
+        return part;
+    };
+
+    visual.left_track = make_part(0, 2, 2, 9, 0x252B31, 1);
+    visual.right_track = make_part(10, 2, 2, 9, 0x252B31, 1);
+    visual.hull = make_part(2, 2, 8, 9, armor_color, 2);
+    visual.barrel = make_part(5, 0, 2, 5, 0xD8E0E5, 1);
+    visual.turret = make_part(4, 4, 4, 4, armor_color, 2);
+    return visual;
+}
+
+void UITankBattlePage::sync_tank_visual(TankVisual &visual, TankDirection direction,
+                                        std::uint32_t armor_color)
+{
+    if (!visual.root) return;
+    if (visual.hull) lv_obj_set_style_bg_color(visual.hull, lv_color_hex(armor_color), 0);
+    if (visual.turret) lv_obj_set_style_bg_color(visual.turret, lv_color_hex(armor_color), 0);
+    if (!visual.barrel) return;
+
+    switch (direction) {
+    case TankDirection::UP:
+    case TankDirection::DOWN:
+        if (visual.left_track) {
+            lv_obj_set_size(visual.left_track, 2, 9);
+            lv_obj_set_pos(visual.left_track, 0, 2);
+        }
+        if (visual.right_track) {
+            lv_obj_set_size(visual.right_track, 2, 9);
+            lv_obj_set_pos(visual.right_track, 10, 2);
+        }
+        if (visual.hull) {
+            lv_obj_set_size(visual.hull, 8, 9);
+            lv_obj_set_pos(visual.hull, 2, 2);
+        }
+        if (direction == TankDirection::UP) {
+            lv_obj_set_size(visual.barrel, 2, 5);
+            lv_obj_set_pos(visual.barrel, 5, 0);
+        } else {
+            lv_obj_set_size(visual.barrel, 2, 5);
+            lv_obj_set_pos(visual.barrel, 5, 7);
+        }
+        break;
+    case TankDirection::LEFT:
+    case TankDirection::RIGHT:
+        if (visual.left_track) {
+            lv_obj_set_size(visual.left_track, 9, 2);
+            lv_obj_set_pos(visual.left_track, 2, 0);
+        }
+        if (visual.right_track) {
+            lv_obj_set_size(visual.right_track, 9, 2);
+            lv_obj_set_pos(visual.right_track, 2, 10);
+        }
+        if (visual.hull) {
+            lv_obj_set_size(visual.hull, 9, 8);
+            lv_obj_set_pos(visual.hull, 2, 2);
+        }
+        if (direction == TankDirection::LEFT) {
+            lv_obj_set_size(visual.barrel, 5, 2);
+            lv_obj_set_pos(visual.barrel, 0, 5);
+        } else {
+            lv_obj_set_size(visual.barrel, 5, 2);
+            lv_obj_set_pos(visual.barrel, 7, 5);
+        }
+        break;
+    }
+    if (visual.turret) lv_obj_move_foreground(visual.turret);
 }
 
 void UITankBattlePage::create_game_message_panel(lv_obj_t *arena)

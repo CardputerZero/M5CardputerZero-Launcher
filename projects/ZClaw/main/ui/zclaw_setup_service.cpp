@@ -28,6 +28,7 @@ PreparedSetup SetupService::prepare(
 {
     PreparedSetup result;
     result.config = std::move(config);
+    const bool reconfigure = result.config.setup_complete;
     provider = normalize_setup_provider(std::move(provider));
 
     if (!backend_->ensure_installed(&result.error, progress_handler))
@@ -37,8 +38,11 @@ PreparedSetup SetupService::prepare(
     if (!backend_->apply_config(&result.config, provider, &result.error))
         return result;
 
-    report_progress(progress_handler, "Starting ZeroClaw service", 86);
-    if (!backend_->start_service(&result.error))
+    report_progress(progress_handler,
+                    reconfigure ? "Restarting ZeroClaw service" :
+                                  "Starting ZeroClaw service", 86);
+    if (reconfigure ? !backend_->restart_service(&result.error) :
+                      !backend_->start_service(&result.error))
         return result;
 
     report_progress(progress_handler, "Pairing local client", 94);

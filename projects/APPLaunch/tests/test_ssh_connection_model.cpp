@@ -19,6 +19,7 @@ int main()
     assert(model.label(0) == std::string("Host"));
     assert(model.value(0) == "192.168.1.1");
     assert(model.valid());
+    assert(model.validate().error == SshConnectionModel::Error::NONE);
 
     auto arguments = model.arguments();
     assert(arguments.size() == 3);
@@ -41,6 +42,7 @@ int main()
     clear_active(model);
     assert(model.append("70000"));
     assert(!model.valid() && model.arguments().empty());
+    assert(model.validate().field == SshConnectionModel::Field::PORT);
     clear_active(model);
     assert(model.append("65535"));
     assert(model.valid());
@@ -70,4 +72,10 @@ int main()
     clear_active(model);
     assert(model.append("-oProxyCommand=bad"));
     assert(!model.valid());
+
+    SshConnectionModel loaded;
+    assert(loaded.set_values("example.com", "2222", "alice"));
+    assert(loaded.value(0) == "example.com");
+    assert(!loaded.set_values("", "22", "alice"));
+    assert(loaded.value(0) == "example.com");
 }

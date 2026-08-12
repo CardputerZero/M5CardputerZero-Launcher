@@ -1,6 +1,7 @@
 #include "cp0_settings_policy.hpp"
 
 #include <charconv>
+#include <cctype>
 #include <limits>
 
 namespace cp0::settings {
@@ -101,12 +102,34 @@ bool parse_switch_response(std::string_view text, int &value)
     return parse_integer_response(text, 0, 1, value);
 }
 
+std::string gpiochip_path_from_debug_line(std::string_view line,
+                                          std::string_view controller_name)
+{
+    if (controller_name.empty() || line.find(controller_name) == std::string_view::npos)
+        return {};
+    const std::size_t colon = line.find(':');
+    if (colon == std::string_view::npos) return {};
+    std::string_view chip = line.substr(0, colon);
+    while (!chip.empty() && std::isspace(static_cast<unsigned char>(chip.front())))
+        chip.remove_prefix(1);
+    while (!chip.empty() && std::isspace(static_cast<unsigned char>(chip.back())))
+        chip.remove_suffix(1);
+    constexpr std::string_view prefix = "gpiochip";
+    if (chip.size() <= prefix.size() || chip.substr(0, prefix.size()) != prefix)
+        return {};
+    for (const char digit : chip.substr(prefix.size()))
+        if (!std::isdigit(static_cast<unsigned char>(digit))) return {};
+    return "/dev/" + std::string(chip);
+}
+
 PowerOutput power_output_from_name(const std::string &name)
 {
     if (name == "GROVE5V" || name == "extport_usb")
         return PowerOutput::Grove5V;
     if (name == "EXT5V" || name == "extport_5vout")
         return PowerOutput::Ext5V;
+    if (name == "BACKLIGHT")
+        return PowerOutput::Backlight;
     return PowerOutput::Unknown;
 }
 

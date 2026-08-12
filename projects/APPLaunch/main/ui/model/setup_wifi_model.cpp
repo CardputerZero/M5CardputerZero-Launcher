@@ -1,6 +1,7 @@
 #include "setup_wifi_model.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <utility>
 
 namespace {
@@ -106,7 +107,7 @@ SetupWifiListSnapshot SetupWifiListViewModel::snapshot() const
     result.title = status.connected
         ? "Connected WiFi: " + status.ssid + "  " + status.ip
         : "WiFi: Not connected";
-    result.empty_message = model_.scanning()
+    result.empty_message = !scan_error_.empty() ? scan_error_ : model_.scanning()
         ? "Scanning for WiFi networks..."
         : "No networks found. Press R to rescan.";
     result.hint = model_.scanning()
@@ -136,16 +137,43 @@ SetupWifiPasswordModel::~SetupWifiPasswordModel()
     secure_clear_password();
 }
 
-void SetupWifiPasswordModel::begin(std::string ssid)
+void SetupWifiPasswordModel::begin(std::string ssid, std::string security)
 {
     ssid_ = std::move(ssid);
+    security_ = std::move(security);
     secure_clear_password();
 }
 
 void SetupWifiPasswordModel::reset()
 {
     ssid_.clear();
+    security_.clear();
     secure_clear_password();
+}
+
+std::string SetupWifiPasswordModel::validation_error() const
+{
+    if (ssid_.empty()) return "SSID required";
+    if (password_.empty()) return "Password required";
+    std::string security = security_;
+    std::transform(security.begin(), security.end(), security.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::toupper(ch));
+    });
+    if (security.find("802.1X") != std::string::npos ||
+        security.find("EAP") != std::string::npos ||
+        security.find("ENTERPRISE") != std::string::npos)
+        return "Enterprise WiFi is not supported by this form";
+    if (security.find("WPA") == std::string::npos) return {};
+    if (password_.size() >= 8 && password_.size() <= 63) return {};
+    if (password_.size() == 64 && std::all_of(password_.begin(), password_.end(), [](unsigned char ch) {
+            return std::isxdigit(ch) != 0;
+        })) return {};
+    return "WPA password must be 8-63 chars or 64 hex";
+}
+
+bool SetupWifiPasswordModel::can_submit() const
+{
+    return validation_error().empty();
 }
 
 bool SetupWifiPasswordModel::append(const std::string &text)
@@ -172,6 +200,25 @@ bool SetupWifiPasswordModel::erase_last()
 void SetupWifiPasswordModel::clear_password()
 {
     secure_clear_password();
+}
+
+bool SetupWifiSsidModel::append(const std::string &text)
+{
+    if (text.empty() || ssid_.size() + text.size() > MAX_SSID_BYTES ||
+        !is_valid_utf8_text(text))
+        return false;
+    ssid_ += text;
+    return true;
+}
+
+bool SetupWifiSsidModel::erase_last()
+{
+    if (ssid_.empty()) return false;
+    std::size_t start = ssid_.size() - 1;
+    while (start > 0 && is_continuation(static_cast<unsigned char>(ssid_[start])))
+        --start;
+    ssid_.erase(start);
+    return true;
 }
 
 void SetupWifiPasswordModel::secure_clear_password()

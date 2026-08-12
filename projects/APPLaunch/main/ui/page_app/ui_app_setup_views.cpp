@@ -166,6 +166,7 @@ void UISetupPage::anim_done_cb(lv_anim_t *animation) noexcept
 
 void UISetupPage::rebuild_view()
 {
+    input_context_scope_.update(setup_input_context(view_state_));
     if (view_state_ == ViewState::MAIN) build_main_view();
     else if (view_state_ == ViewState::SUB) build_sub_view();
     else if (view_state_ == ViewState::VALUE_SELECT) build_value_view();

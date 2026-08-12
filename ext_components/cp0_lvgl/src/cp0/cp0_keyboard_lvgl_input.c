@@ -15,6 +15,7 @@
 
 static cp0_keyboard_key_handler_t global_key_handler;
 static cp0_keyboard_input_lifecycle_t keypad_lifecycle;
+static volatile int lvgl_keypad_intercept;
 
 static void keypad_delete_cb(lv_event_t *event)
 {
@@ -36,6 +37,16 @@ __attribute__((weak)) int ui_screensaver_filter_key(const struct key_item *item)
 void cp0_keyboard_set_global_key_handler(cp0_keyboard_key_handler_t handler)
 {
     global_key_handler = handler;
+}
+
+void cp0_keyboard_set_lvgl_keypad_intercept(int intercept)
+{
+    lvgl_keypad_intercept = intercept != 0;
+}
+
+int cp0_keyboard_get_lvgl_keypad_intercept(void)
+{
+    return lvgl_keypad_intercept;
 }
 
 static uint32_t lvgl_key_from_evdev(uint16_t code)
@@ -67,6 +78,7 @@ static void keypad_read(lv_indev_t *indev, lv_indev_data_t *data)
 
     struct key_item *item = cp0_keyboard_queue_pop();
     if (item) {
+        const int intercept = lvgl_keypad_intercept;
 
         char utf8_debug[64] = "";
         int debug_length = 0;
@@ -94,12 +106,16 @@ static void keypad_read(lv_indev_t *indev, lv_indev_data_t *data)
             else
                 ui_global_hint_on_key(item);
 
-            data->key = lvgl_key_from_evdev((uint16_t)item->key_code);
-            if (data->key)
-                data->state = (lv_indev_state_t)item->key_state;
+            if (!intercept) {
+                const uint32_t semantic_key = item->semantic_key
+                                                  ? item->semantic_key
+                                                  : item->key_code;
+                data->key = lvgl_key_from_evdev((uint16_t)semantic_key);
+                if (data->key)
+                    data->state = (lv_indev_state_t)item->key_state;
+            }
         }
-        if (data->key || swallowed)
-            data->continue_reading = cp0_keyboard_queue_has_data();
+        data->continue_reading = cp0_keyboard_queue_has_data();
         free(item);
     }
 }

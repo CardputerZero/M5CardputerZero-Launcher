@@ -27,3 +27,6 @@ zeromp3
 *.pyc
 docs/rtc/applaunch_rtc_flow.html
 projects/APPLaunch/tests/APPLaunch测试需求文档.md
+projects/KeyboardTest
+docs/CP0-测试体验问题分析与改进建议.md
+docs/CP0-代码Bug定位报告.md

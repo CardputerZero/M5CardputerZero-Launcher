@@ -58,7 +58,9 @@ int SetupPageModel::clamp_index(int index, int item_count)
 
 bool SetupPageModel::move_main(int direction, int item_count)
 {
-    int next = clamp_index(selected_index + direction, item_count);
+    if (item_count <= 1 || direction == 0) return false;
+    int next = (selected_index + direction) % item_count;
+    if (next < 0) next += item_count;
     if (next == selected_index) return false;
     selected_index = next;
     return true;
@@ -72,10 +74,17 @@ void SetupPageModel::enter_sub(int item_count, int center_row)
 
 bool SetupPageModel::move_sub(int direction, int item_count)
 {
-    int next = clamp_index(sub_selected_index + direction, item_count);
+    if (item_count <= 1 || direction == 0) return false;
+    int next = (sub_selected_index + direction) % item_count;
+    if (next < 0) next += item_count;
     if (next == sub_selected_index) return false;
     sub_selected_index = next;
     return true;
+}
+
+void SetupPageModel::select_sub(int index, int item_count)
+{
+    sub_selected_index = clamp_index(index, item_count);
 }
 
 void SetupPageModel::enter_value(std::string title, std::vector<std::string> options, int selected)

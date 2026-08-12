@@ -243,6 +243,7 @@ void Bluetooth::toggle_named_only(UISetupPage &page)
 
 void Bluetooth::toggle_discoverable(UISetupPage &page)
 {
+    if (!require_power_enabled(page)) return;
     for (auto &menu : SetupPageAccess(page).menus()) {
         if (menu.label != "Bluetooth") continue;
         model_.set_discoverable(menu.sub_items[2].toggle_state);
@@ -256,6 +257,7 @@ void Bluetooth::toggle_discoverable(UISetupPage &page)
 
 void Bluetooth::start_scan_timer(UISetupPage &page)
 {
+    if (!require_power_enabled(page)) return;
     stop_scan_timer();
     discovery_active_ = api_int({"BtDiscoveryStart"}, 0) == 0;
     refresh_devices();
@@ -292,6 +294,7 @@ void Bluetooth::scan_timer_cb(lv_timer_t *timer) noexcept
                 return;
             bluetooth->action_busy_ = false;
             bluetooth->resume_scan_discovery();
+            if (!access.is_view(SetupViewState::BT_LIST)) return;
             bluetooth->show_action(*page, "Bluetooth action failed", 0xFF4444);
         }
         bluetooth->refresh_devices();
@@ -313,6 +316,7 @@ void Bluetooth::resume_scan_discovery()
 {
     if (discovery_active_ || !scan_timer_ || !scan_page_)
         return;
+    if (!require_power_enabled(*scan_page_)) return;
     discovery_active_ = api_int({"BtDiscoveryStart"}, 0) == 0;
 }
 

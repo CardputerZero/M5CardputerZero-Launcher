@@ -7,6 +7,7 @@
 #include "zclaw_provider_manager.h"
 #include "zclaw_settings_coordinator.h"
 #include "zclaw_settings_panel.h"
+#include "zclaw_secret_input_model.h"
 
 #include <cstddef>
 
@@ -59,12 +60,26 @@ void ProviderWorkflow::edit_selected_field()
     if (settings_.state().provider_edit_field() == ProviderEditField::None)
         return;
     ProviderConfig provider = providers_.providers()[provider_index];
+    if (settings_.state().provider_edit_field() == ProviderEditField::WireApi) {
+        toggle_wire_api(&provider);
+        settings_.state().set_provider_edit_field(ProviderEditField::None);
+        std::string error;
+        if (!providers_.replace(static_cast<std::size_t>(provider_index), provider,
+                                &error))
+            report_save_error(error);
+        settings_.render_provider_detail();
+        return;
+    }
     const std::string *value = provider_field_value(
         &provider, settings_.state().provider_edit_field());
-    if (value)
+    if (value) {
+        const bool secret =
+            settings_.state().provider_edit_field() == ProviderEditField::ApiKey;
         input_.open_text(&fonts_,
                          provider_field_name(settings_.state().provider_edit_field()),
-                         *value, InputMode::ProviderEdit);
+                         secret ? secret_input_initial_text() : *value,
+                         InputMode::ProviderEdit, secret);
+    }
 }
 
 void ProviderWorkflow::apply_edit(const std::string &value)
@@ -78,8 +93,11 @@ void ProviderWorkflow::apply_edit(const std::string &value)
     ProviderConfig provider = providers_.providers()[provider_index];
     std::string *field = provider_field_value(
         &provider, settings_.state().provider_edit_field());
-    if (field)
-        *field = value;
+    if (field) {
+        *field = settings_.state().provider_edit_field() == ProviderEditField::ApiKey
+                     ? apply_secret_input(*field, value)
+                     : value;
+    }
     settings_.state().set_provider_edit_field(ProviderEditField::None);
     std::string error;
     if (!providers_.replace(static_cast<std::size_t>(provider_index), provider,

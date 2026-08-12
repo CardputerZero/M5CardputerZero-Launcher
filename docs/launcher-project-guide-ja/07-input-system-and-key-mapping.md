@@ -160,9 +160,8 @@ static void enqueue_key(const struct key_item *src) {
     struct key_item *elm = malloc(sizeof(*elm));
     *elm = *src;
 
-    if (elm->key_code == KEY_ESC) {
-        LVGL_HOME_KEY_FLAG = elm->key_state;
-    }
+    if (elm->key_code == KEY_ESC)
+        cp0_esc_state_write(elm->key_state);
 
     if (LVGL_RUN_FLAGE) {
         pthread_mutex_lock(&keyboard_mutex);
@@ -180,7 +179,7 @@ static void enqueue_key(const struct key_item *src) {
 | --- | --- |
 | `keyboard_queue` | LVGL が消費するのを待っている `key_item` イベントのキュー |
 | `keyboard_mutex` | キューのロック |
-| `LVGL_HOME_KEY_FLAG` | 現在の ESC 状態。外部アプリ実行中の長押し戻り / プロセス kill ロジックで使用 |
+| `cp0_esc_state_*` | 長押し戻り / プロセス kill ロジックで使用する ESC 原子状態 C ABI |
 | `LVGL_RUN_FLAGE` | LVGL が入力を受け付けるかどうか。外部アプリ実行中は 0 にされる場合がある |
 | `LV_EVENT_KEYBOARD` | カスタム LVGL イベント id |
 
@@ -337,7 +336,7 @@ LVGL_RUN_FLAGE = 0;
 lv_indev_set_group(indev, NULL);
 lv_timer_enable(false);
 
-int ret = cp0_process_exec_blocking(exec.c_str(), &LVGL_HOME_KEY_FLAG, keep_root ? 1 : 0);
+int ret = cp0_process_exec_blocking(exec.c_str(), keep_root ? 1 : 0);
 
 lv_timer_enable(true);
 launch_page_->show_home_screen();
@@ -347,7 +346,7 @@ LVGL_RUN_FLAGE = 1;
 意味:
 
 - 外部プロセス実行中、APPLaunch は LVGL タイマーを停止し、通常のキュー経由キーボードイベントを受け取らなくなります。
-- ESC 状態は `LVGL_HOME_KEY_FLAG` に更新され続け、外部プロセス復帰ロジックで使われます。
+- ESC 状態は `cp0_esc_state_write()` で更新され、外部プロセス復帰ロジックは `cp0_esc_state_read()` で読み取ります。
 - 外部プロセス終了後、ホーム画面、入力グループ、LVGL タイマーが復元されます。
 
 ## 11. 入力グループの切り替え

@@ -62,6 +62,8 @@ KeyAction route_key(const KeyRouteContext &context, const KeyEvent &event)
     if (context.input_open) {
         if (event.key == Key::Escape)
             return {KeyActionType::InputClose, {}};
+        if (event.key == Key::Tab)
+            return {KeyActionType::InputToggleSecretVisibility, {}};
         if (event.key == Key::Enter && !event.shift)
             return {KeyActionType::InputSubmit, {}};
         return {};
@@ -100,6 +102,9 @@ KeyAction route_key(const KeyRouteContext &context, const KeyEvent &event)
             return {KeyActionType::SetupRetryDismiss, {}};
         return {};
     }
+
+    if (key == Key::Tab && context.setup_in_flight)
+        return {};
 
     if (key == Key::Tab)
         return {KeyActionType::ToggleSettings, {}};

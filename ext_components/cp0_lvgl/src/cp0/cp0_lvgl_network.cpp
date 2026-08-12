@@ -5,9 +5,13 @@
 #include "../cp0_callback_result.hpp"
 #include "../cp0_signal_registration.hpp"
 #include "cp0_network_policy.hpp"
+#include "cp0_process_commands.hpp"
+#include "cp0_wifi_error_policy.hpp"
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -103,12 +107,17 @@ public:
         case cp0::network::ApiCommand::Scan: {
             std::vector<cp0_wifi_ap_t> aps(static_cast<std::size_t>(request.scan_limit));
             int count = scan(aps.empty() ? nullptr : aps.data(), static_cast<int>(aps.size()));
-            result.complete(count, cp0::network::encode_scan_payload(aps.data(), count));
+            result.complete(count, count < 0 ? std::string() :
+                cp0::network::encode_scan_payload(aps.data(), count));
             break;
         }
         case cp0::network::ApiCommand::Connect:
             result.complete(
                 connect(request.ssid.c_str(), request.password.empty() ? nullptr : request.password.c_str()), "");
+            break;
+        case cp0::network::ApiCommand::ConnectHidden:
+            result.complete(connect(request.ssid.c_str(),
+                request.password.empty() ? nullptr : request.password.c_str(), true), "");
             break;
         case cp0::network::ApiCommand::Disconnect:
             result.complete(disconnect(), "");
@@ -142,20 +151,27 @@ public:
 
     int scan(cp0_wifi_ap_t *out, int max_aps)
     {
-        const char *rescan_argv[] = {"nmcli", "dev", "wifi", "rescan", nullptr};
-        cp0_process_run_argv(rescan_argv, 0);
+        constexpr int kScanCommandTimeoutMs = 8000;
+        std::string command_output;
+        int command_result = cp0_process_commands::capture_argv_with_timeout(
+            {"nmcli", "dev", "wifi", "rescan"}, command_output,
+            kScanCommandTimeoutMs);
+        if (command_result == -ETIMEDOUT) return CP0_WIFI_ERROR_TIMEOUT;
+        if (command_result != 0) return cp0::wifi::classify_command_failure(command_output);
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-        char output[8192] = {};
-        const char *scan_argv[] = {"nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY,IN-USE", "dev", "wifi", "list", nullptr};
-        if (cp0_process_capture_argv(scan_argv, output, sizeof(output)) != 0)
-            return 0;
+        std::string output;
+        command_result = cp0_process_commands::capture_argv_with_timeout(
+            {"nmcli", "-t", "-f", "SSID,SIGNAL,SECURITY,IN-USE",
+             "dev", "wifi", "list"}, output, kScanCommandTimeoutMs);
+        if (command_result == -ETIMEDOUT) return CP0_WIFI_ERROR_TIMEOUT;
+        if (command_result != 0) return cp0::wifi::classify_command_failure(output);
 
         std::unordered_set<std::string> saved_profiles;
-        char profiles_output[4096] = {};
-        const char *profiles_argv[] = {
-            "nmcli", "-t", "--escape", "no", "-f", "NAME", "con", "show", nullptr};
-        if (cp0_process_capture_argv(profiles_argv, profiles_output, sizeof(profiles_output)) == 0) {
+        std::string profiles_output;
+        if (cp0_process_commands::capture_argv_with_timeout(
+                {"nmcli", "-t", "--escape", "no", "-f", "NAME", "con", "show"},
+                profiles_output, kScanCommandTimeoutMs) == 0) {
             std::istringstream lines(profiles_output);
             std::string profile;
             while (std::getline(lines, profile)) {
@@ -185,27 +201,34 @@ public:
         return count;
     }
 
-    int connect(const char *ssid, const char *password)
+    int connect(const char *ssid, const char *password, bool hidden = false)
     {
         if (!ssid || !ssid[0])
             return -1;
 
         constexpr const char *kActivationTimeoutSeconds = "20";
         const bool with_password = password && password[0];
-        char output[4096] = {};
+        std::string output;
         int command_result = -1;
-        if (with_password) {
-            const char *argv[] = {"nmcli", "--wait", kActivationTimeoutSeconds, "dev", "wifi", "connect",
-                                  ssid, "password", password, nullptr};
-            command_result = cp0_process_capture_argv(argv, output, sizeof(output));
+        auto run_connect = [&](std::vector<std::string> args) {
+            return cp0_process_commands::capture_argv_with_timeout(
+                args, output, 25000);
+        };
+        if (with_password && hidden) {
+            command_result = run_connect({"nmcli", "--wait", kActivationTimeoutSeconds,
+                "dev", "wifi", "connect", ssid, "password", password, "hidden", "yes"});
+        } else if (with_password) {
+            command_result = run_connect({"nmcli", "--wait", kActivationTimeoutSeconds,
+                "dev", "wifi", "connect", ssid, "password", password});
+        } else if (hidden) {
+            command_result = run_connect({"nmcli", "--wait", kActivationTimeoutSeconds,
+                "dev", "wifi", "connect", ssid, "hidden", "yes"});
         } else {
-            const char *argv[] = {"nmcli", "--wait", kActivationTimeoutSeconds, "con", "up", "id", ssid,
-                                  nullptr};
-            command_result = cp0_process_capture_argv(argv, output, sizeof(output));
+            command_result = run_connect({"nmcli", "--wait", kActivationTimeoutSeconds,
+                "con", "up", "id", ssid});
             if (command_result != 0) {
-                const char *open_argv[] = {"nmcli", "--wait", kActivationTimeoutSeconds, "dev", "wifi",
-                                           "connect", ssid, nullptr};
-                command_result = cp0_process_capture_argv(open_argv, output, sizeof(output));
+                command_result = run_connect({"nmcli", "--wait", kActivationTimeoutSeconds,
+                    "dev", "wifi", "connect", ssid});
             }
         }
 
@@ -219,10 +242,12 @@ public:
         // profile with that wrong password (named after the SSID). Delete it so the
         // password is never persisted and the next attempt must re-enter it (#69).
         if (with_password) {
-            const char *del_argv[] = {"nmcli", "con", "delete", "id", ssid, nullptr};
-            cp0_process_run_argv(del_argv, 0);
+            std::string ignored;
+            cp0_process_commands::capture_argv_with_timeout(
+                {"nmcli", "con", "delete", "id", ssid}, ignored, 5000);
         }
-        return -1;
+        if (command_result == -ETIMEDOUT) return CP0_WIFI_ERROR_TIMEOUT;
+        return cp0::wifi::classify_command_failure(output);
     }
 
     int disconnect()
@@ -236,17 +261,18 @@ public:
     {
         if (!ssid || !ssid[0])
             return -1;
-        const char *argv[] = {"nmcli", "con", "delete", "id", ssid, nullptr};
-        return cp0_process_run_argv(argv, 0);
+        std::string output;
+        return cp0_process_commands::capture_argv_with_timeout(
+            {"nmcli", "con", "delete", "id", ssid}, output, 5000);
     }
 
     int profile_exists(const char *ssid)
     {
         if (!ssid || !ssid[0])
             return 0;
-        char output[4096] = {};
-        const char *argv[] = {"nmcli", "-t", "-f", "NAME", "con", "show", nullptr};
-        if (cp0_process_capture_argv(argv, output, sizeof(output)) != 0)
+        std::string output;
+        if (cp0_process_commands::capture_argv_with_timeout(
+                {"nmcli", "-t", "-f", "NAME", "con", "show"}, output, 5000) != 0)
             return 0;
         std::istringstream lines(output);
         std::string line;
@@ -264,23 +290,25 @@ public:
         const std::string active = active_connection_name();
         if (active.empty())
             return -1;
-        const char *argv[] = {"nmcli", "con", "down", "id", active.c_str(), nullptr};
-        return cp0_process_run_argv(argv, 0);
+        std::string output;
+        return cp0_process_commands::capture_argv_with_timeout(
+            {"nmcli", "con", "down", "id", active}, output, 5000);
     }
 
     int radio_enabled()
     {
-        char output[64] = {};
-        const char *argv[] = {"nmcli", "radio", "wifi", nullptr};
-        if (cp0_process_capture_argv(argv, output, sizeof(output)) != 0)
+        std::string output;
+        if (cp0_process_commands::capture_argv_with_timeout(
+                {"nmcli", "radio", "wifi"}, output, 5000) != 0)
             return 0;
         return cp0::network::parse_radio_enabled(output) ? 1 : 0;
     }
 
     int radio_set_enabled(bool enabled)
     {
-        const char *argv[] = {"nmcli", "radio", "wifi", enabled ? "on" : "off", nullptr};
-        int ret = cp0_process_run_argv(argv, 0);
+        std::string output;
+        int ret = cp0_process_commands::capture_argv_with_timeout(
+            {"nmcli", "radio", "wifi", enabled ? "on" : "off"}, output, 5000);
         update_status_cache();
         return ret;
     }
@@ -313,13 +341,14 @@ private:
 
     static void read_status(cp0_wifi_status_t &st)
     {
-        char output[4096] = {};
+        std::string output;
         std::string wifi_iface;
         // 用 DEVICE,TYPE,STATE,CONNECTION 四列判断：只要 wifi 设备的 STATE 以 "connected"
         // 开头就算已连接，避免插拔网线后 wlan0 变成 "connected (externally)" 且 CONNECTION
         // 显示为 "--" 时被误判为未连接（#37）。
-        const char *status_argv[] = {"nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "dev", "status", nullptr};
-        if (cp0_process_capture_argv(status_argv, output, sizeof(output)) == 0) {
+        if (cp0_process_commands::capture_argv_with_timeout(
+                {"nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION", "dev", "status"},
+                output, 2000) == 0) {
             const auto parsed = cp0::network::parse_device_status(output);
             st.connected = parsed.connected ? 1 : 0;
             st.ethernet = parsed.ethernet ? 1 : 0;
@@ -333,8 +362,10 @@ private:
         if (wifi_iface.empty())
             wifi_iface = "wlan0";
 
-        const char *signal_argv[] = {"nmcli", "-t", "-f", "IN-USE,SIGNAL,SSID", "dev", "wifi", "list", "--rescan", "no", nullptr};
-        if (cp0_process_capture_argv(signal_argv, output, sizeof(output)) == 0) {
+        output.clear();
+        if (cp0_process_commands::capture_argv_with_timeout(
+                {"nmcli", "-t", "-f", "IN-USE,SIGNAL,SSID", "dev", "wifi", "list",
+                 "--rescan", "no"}, output, 2000) == 0) {
             cp0::network::Status parsed;
             parsed.ssid = st.ssid;
             cp0::network::apply_active_wifi(output, parsed);
@@ -342,17 +373,19 @@ private:
             cp0_copy_string(st.ssid, sizeof(st.ssid), parsed.ssid);
         }
 
-        const char *ip_argv[] = {"ip", "-4", "-o", "addr", "show", wifi_iface.c_str(), nullptr};
-        if (cp0_process_capture_argv(ip_argv, output, sizeof(output)) == 0) {
+        output.clear();
+        if (cp0_process_commands::capture_argv_with_timeout(
+                {"ip", "-4", "-o", "addr", "show", wifi_iface}, output, 2000) == 0) {
             cp0_copy_string(st.ip, sizeof(st.ip), cp0::network::parse_ipv4_address(output));
         }
     }
 
     static std::string active_connection_name()
     {
-        char output[4096] = {};
-        const char *argv[] = {"nmcli", "-t", "-f", "NAME", "con", "show", "--active", nullptr};
-        if (cp0_process_capture_argv(argv, output, sizeof(output)) != 0)
+        std::string output;
+        if (cp0_process_commands::capture_argv_with_timeout(
+                {"nmcli", "-t", "-f", "NAME", "con", "show", "--active"},
+                output, 5000) != 0)
             return {};
         return cp0::network::first_active_connection(output);
     }

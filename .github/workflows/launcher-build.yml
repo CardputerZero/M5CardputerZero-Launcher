@@ -15,6 +15,8 @@ on:
       - 'ext_components/**'
       - '.gitmodules'
       - '.github/workflows/launcher-build.yml'
+      - 'scripts/build_cardputerzero_release_local.sh'
+      - 'scripts/cardputer_adb_hotplug.c'
       - 'scripts/debian_packager.py'
   pull_request:
     branches: [master]
@@ -131,6 +133,9 @@ jobs:
         rm -rf build dist
         export CardputerZero=y
         export CONFIG_REPO_AUTOMATION=y
+        export APPLAUNCH_VERSION="${{ steps.version.outputs.version }}"
+        export APPLAUNCH_CHANNEL=prerelease
+        export SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
         scons -j$(nproc)
 
     - name: Build AppStore (cross-compile aarch64)
@@ -183,22 +188,69 @@ jobs:
 
     - name: Build .deb package
       run: |
-        python3 scripts/debian_packager.py --version "${{ steps.version.outputs.version }}"
+        SCONS=scons \
+          OUTPUT_DIR="$GITHUB_WORKSPACE/projects/APPLaunch/tools" \
+          APPLAUNCH_CHANNEL=prerelease \
+          scripts/build_cardputerzero_release_local.sh \
+            "${{ steps.version.outputs.version }}" 1
 
     - name: Collect artifacts
       run: |
         mkdir -p artifacts
         cp projects/APPLaunch/dist/M5CardputerZero-APPLaunch artifacts/
         cp projects/APPLaunch/tools/*.deb artifacts/
+        package="$(find projects/APPLaunch/tools -maxdepth 1 -type f -name 'applaunch_*_arm64.deb' -print)"
+        test "$(printf '%s\n' "${package}" | sed '/^$/d' | wc -l)" -eq 1
+        cp "${package}" artifacts/applaunch_arm64.deb
+        (cd artifacts && sha256sum applaunch_arm64.deb > applaunch_arm64.deb.sha256)
+        printf '1\n' > artifacts/applaunch_arm64.deb.update-abi
 
     - uses: actions/upload-artifact@v4
       with:
         name: applaunch-arm64
         path: artifacts/
 
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Initialize submodules (SDK)
+      run: git submodule update --init --depth=1 SDK
+
+    - name: Install test dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libxkbcommon-dev
+
+    - name: Pre-download eventpp headers (pinned to the revision scons resolves)
+      run: |
+        REF=c472fb22e71ead0e58ff7df89e12c66b0bdfb533
+        DEST=SDK/github_source/eventpp
+        if [ ! -d "$DEST" ]; then
+          for i in 1 2 3; do
+            curl -fsSL -o /tmp/eventpp.zip "https://github.com/wqking/eventpp/archive/${REF}.zip" && break
+            echo "retry $i..."; sleep 5
+          done
+          mkdir -p SDK/github_source
+          unzip -q /tmp/eventpp.zip -d /tmp/eventpp
+          mv "/tmp/eventpp/eventpp-${REF}" "$DEST"
+        fi
+        ls "$DEST/include/eventpp/callbacklist.h" && echo "eventpp ready"
+
+    - name: Lower ASLR entropy (Ubuntu 24.04 mmap_rnd_bits exceeds what ThreadSanitizer can map)
+      run: |
+        bits=$(sudo sysctl -n vm.mmap_rnd_bits 2>/dev/null || echo 0)
+        if [ "$bits" -gt 28 ]; then
+          sudo sysctl -w vm.mmap_rnd_bits=28
+        fi
+
+    - name: Run cp0_lvgl unit tests
+      run: sh ext_components/cp0_lvgl/tests/run_tests.sh
+
   prerelease:
-    needs: build
-    if: github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/heads/ci/')
+    needs: [build, unit-tests]
+    if: github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -217,4 +269,18 @@ jobs:
         generate_release_notes: true
         files: |
           artifacts/*.deb
+          artifacts/*.sha256
+          artifacts/*.update-abi
           artifacts/M5CardputerZero-APPLaunch
+
+    - name: Publish launcher update channel
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: launcher-latest
+        name: "APPLauncher Update Channel"
+        prerelease: true
+        overwrite_files: true
+        files: |
+          artifacts/applaunch_arm64.deb
+          artifacts/applaunch_arm64.deb.sha256
+          artifacts/applaunch_arm64.deb.update-abi

@@ -14,8 +14,10 @@ int main()
     assert(!parse_adb_status("unrelated=active\n").valid);
     assert(!parse_adb_status(nullptr).valid);
     assert(adb_state_after_failure(active, false));
-    assert(!adb_state_after_failure(pending, true));
+    assert(adb_state_after_failure(pending, false));
     assert(!adb_state_after_failure(off, true));
+    AdbStatus transient = parse_adb_status("adbd=active\nenabled=disabled\n");
+    assert(!adb_state_after_failure(transient, true));
     assert(adb_state_after_failure(AdbStatus{}, true));
     assert(!adb_state_after_failure(AdbStatus{}, false));
     AdbStatus paired = parse_adb_status("adbd=inactive\nenabled=disabled\nauthorizations=2\n");

@@ -33,6 +33,33 @@ int main()
     assert(literal_output.ok());
     assert(literal_output.output == literal);
 
+    const std::string secret = "zclaw-secret-sentinel-7c52f9";
+    const zclaw::CommandResult secret_output = executor.run_with_secret_input(
+        {"/bin/sh", "-c",
+         "tr '\\0' ' ' </proc/self/cmdline; printf '\\n'; "
+         "IFS= read -r value; test -n \"$value\"; printf accepted"},
+        secret);
+    assert(secret_output.ok());
+    assert(secret_output.output.find("accepted") != std::string::npos);
+    assert(secret_output.output.find(secret) == std::string::npos);
+
+    zclaw::ProcessExecutor deadline_executor;
+    const auto deadline_started = std::chrono::steady_clock::now();
+    const zclaw::CommandResult timed_out = deadline_executor.run_with_secret_input(
+        {"/bin/sh", "-c", "IFS= read -r value; sleep 30"}, secret, 100);
+    assert(!timed_out.ok());
+    assert(timed_out.output == "command timed out");
+    assert(std::chrono::steady_clock::now() - deadline_started <
+           std::chrono::seconds(2));
+
+    const zclaw::CommandResult bounded_output =
+        deadline_executor.run_with_secret_input(
+            {"/bin/sh", "-c",
+             "IFS= read -r value; head -c 70000 /dev/zero | tr '\\0' x"},
+            secret, 2000);
+    assert(bounded_output.ok());
+    assert(bounded_output.output.size() == 64 * 1024);
+
     const std::size_t descriptors_before = open_fd_count();
     for (int attempt = 0; attempt < 50; ++attempt)
         assert(executor.run({"/definitely/missing/zclaw-command"}).status != 0);

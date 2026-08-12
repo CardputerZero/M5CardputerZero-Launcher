@@ -10,8 +10,9 @@
 #include <locale.h>
 #endif
 #include <stdbool.h>
-#include <stdint.h>
 #include <stdatomic.h>
+#include <stdint.h>
+#include <time.h>
 #ifdef __linux__
 #include <sys/ioctl.h>
 #include <sys/timerfd.h>
@@ -24,9 +25,11 @@
 #endif
 #include "cp0_lvgl_app.h"
 #include "cp0_keyboard_keymap.h"
+#include "cp0_keyboard_navigation_contract.h"
 #include "cp0_keyboard_lvgl_input.h"
 #include "../cp0_keyboard_thread_lifecycle.h"
 #include "../cp0_keyboard_queue.h"
+#include "cp0_esc_state.h"
 #include "../cp0_keyboard_text.h"
 #include "keyboard_input.h"
 #include "lvgl/lvgl.h"
@@ -40,7 +43,6 @@
  * ============================================================ */
 struct keyboard_queue_t keyboard_queue;
 pthread_mutex_t keyboard_mutex = PTHREAD_MUTEX_INITIALIZER;
-volatile int LVGL_HOME_KEY_FLAG = 0;
 volatile int LVGL_RUN_FLAGE = 1;
 volatile uint32_t LV_EVENT_KEYBOARD;
 
@@ -126,9 +128,27 @@ static const char *getenv_default(const char *name, const char *dflt)
  *  Parameters
  * ============================================================ */
 #define EVDEV_KEYCODE_OFFSET   8
-#define REPEAT_DELAY_MS      500   /* delay before repeating text input */
-#define NAV_REPEAT_DELAY_MS  180   /* shorter delay for directional navigation */
-#define REPEAT_RATE_MS        30   /* interval between subsequent repeats */
+#define REPEAT_RATE_MS        50   /* interval between subsequent repeats */
+
+static atomic_int keyboard_input_context = KBD_INPUT_CONTEXT_NAVIGATION;
+static atomic_uint keyboard_input_context_generation = 1;
+
+void cp0_keyboard_set_input_context(cp0_keyboard_input_context_t context)
+{
+    if (context < KBD_INPUT_CONTEXT_NAVIGATION || context > KBD_INPUT_CONTEXT_GAME)
+        context = KBD_INPUT_CONTEXT_NAVIGATION;
+    const int previous = atomic_exchange_explicit(
+        &keyboard_input_context, context, memory_order_acq_rel);
+    if (previous != context)
+        atomic_fetch_add_explicit(
+            &keyboard_input_context_generation, 1, memory_order_release);
+}
+
+cp0_keyboard_input_context_t cp0_keyboard_get_input_context(void)
+{
+    return (cp0_keyboard_input_context_t)atomic_load_explicit(
+        &keyboard_input_context, memory_order_acquire);
+}
 
 /* ============================================================
  *  libinput open/close callbacks
@@ -172,7 +192,29 @@ struct kbd_ctx {
     int      repeat_fd;
     bool     repeating;
     struct key_item repeat_template;   /* save the last pressed key for repeat copies */
+    bool fn_pressed;
+    uint64_t fn_pressed_at_ms;
+    unsigned int input_context_generation;
 };
+
+static uint64_t monotonic_ms(void)
+{
+    struct timespec now = {0};
+    if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return 0;
+    return (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u;
+}
+
+static void recover_stale_fn(struct kbd_ctx *kc)
+{
+    const unsigned int generation = atomic_load_explicit(
+        &keyboard_input_context_generation, memory_order_acquire);
+    const uint64_t now = monotonic_ms();
+    if (kc->input_context_generation != generation ||
+        (kc->fn_pressed && now - kc->fn_pressed_at_ms >= 10000u)) {
+        kc->fn_pressed = false;
+        kc->input_context_generation = generation;
+    }
+}
 
 /* ============================================================
  *  xkbcommon log callback
@@ -236,7 +278,7 @@ static void enqueue_key(const struct key_item *src) {
     utf8_dbg[di] = '\0';
     SLOGD("[KBD] enqueue code=%u state=%s sym=%s utf8='%s' cp=0x%x mods=0x%x run=%d home_flag=%d",
           item.key_code, kbd_state_name(item.key_state), item.sym_name,
-          utf8_dbg, item.codepoint, item.mods, LVGL_RUN_FLAGE, LVGL_HOME_KEY_FLAG);
+          utf8_dbg, item.codepoint, item.mods, LVGL_RUN_FLAGE, cp0_esc_state_read());
     (void)cp0_keyboard_queue_push(&item);
 }
 
@@ -250,6 +292,8 @@ int cp0_keyboard_inject(uint32_t key_code, int key_state, uint32_t mods)
     item.key_code = key_code;
     item.key_state = key_state;
     item.mods = mods;
+    item.input_context = cp0_keyboard_get_input_context();
+    item.semantic_key = cp0_keyboard_semantic_key(key_code, item.input_context);
     const char *ctrl = cp0_keyboard_control_utf8(key_code);
     if (ctrl) snprintf(item.utf8, sizeof(item.utf8), "%s", ctrl);
     snprintf(item.sym_name, sizeof(item.sym_name), "RPC_%u", key_code);
@@ -284,10 +328,8 @@ int cp0_keyboard_inject_text(const char *utf8)
  * ============================================================ */
 static void repeat_start(struct kbd_ctx *kc) {
     const uint32_t key_code = kc->repeat_template.key_code;
-    const uint32_t delay_ms =
-        key_code == KEY_UP || key_code == KEY_DOWN ||
-        key_code == KEY_LEFT || key_code == KEY_RIGHT
-            ? NAV_REPEAT_DELAY_MS : REPEAT_DELAY_MS;
+    const uint32_t delay_ms = cp0_keyboard_repeat_delay_ms(
+        key_code, kc->repeat_template.input_context);
     struct itimerspec ts = {
         .it_interval = { .tv_sec = 0, .tv_nsec = (long)REPEAT_RATE_MS  * 1000000L },
         .it_value    = { .tv_sec = 0, .tv_nsec = (long)delay_ms * 1000000L },
@@ -307,10 +349,18 @@ static void repeat_stop(struct kbd_ctx *kc) {
  * ============================================================ */
 static void process_key(struct kbd_ctx *kc, uint32_t code, int pressed)
 {
+    recover_stale_fn(kc);
     xkb_keycode_t keycode = code + EVDEV_KEYCODE_OFFSET;
     struct key_item item = {0};
     item.key_code  = code;
     item.key_state = pressed ? KBD_KEY_PRESSED : KBD_KEY_RELEASED;
+    item.input_context = cp0_keyboard_get_input_context();
+    item.semantic_key = cp0_keyboard_semantic_key(code, item.input_context);
+    const bool fn_active = kc->fn_pressed || (code == KEY_FN && pressed);
+    if (code == KEY_FN) {
+        kc->fn_pressed = pressed;
+        if (pressed) kc->fn_pressed_at_ms = monotonic_ms();
+    }
 
     /* ---------- 1. TCA8418 custom keycodes first ---------- */
     const struct cp0_keyboard_keymap_entry *mapped = cp0_keyboard_keymap_lookup(code);
@@ -321,7 +371,7 @@ static void process_key(struct kbd_ctx *kc, uint32_t code, int pressed)
         snprintf(item.utf8,     sizeof(item.utf8),     "%s", mapped->utf8);
         item.keysym    = sym;
         item.codepoint = (sym != XKB_KEY_NoSymbol) ? xkb_keysym_to_utf32(sym) : 0;
-        item.mods      = get_mods(kc->state);
+        item.mods      = get_mods(kc->state) | (fn_active ? KBD_MOD_FN : 0);
 
         /* repeat handling */
         if (pressed) {
@@ -393,7 +443,7 @@ static void process_key(struct kbd_ctx *kc, uint32_t code, int pressed)
     item.keysym    = one_sym;
     item.codepoint = (one_sym != XKB_KEY_NoSymbol)
                          ? xkb_keysym_to_utf32(one_sym) : 0;
-    item.mods      = get_mods(kc->state);
+    item.mods      = get_mods(kc->state) | (fn_active ? KBD_MOD_FN : 0);
 
     /* If compose did not provide utf8, get it from xkb_state */
     if (item.utf8[0] == '\0') {
@@ -582,8 +632,10 @@ void *keyboard_read_thread(void *argv) {
             uint64_t exp;
             while (read(kc.repeat_fd, &exp, sizeof(exp)) == sizeof(exp)) {
                 if (kc.repeating) {
+                    recover_stale_fn(&kc);
                     /* refresh mods (prevents Shift, etc. from changing during repeat) */
-                    kc.repeat_template.mods = get_mods(kc.state);
+                    kc.repeat_template.mods = get_mods(kc.state) |
+                        (kc.fn_pressed ? KBD_MOD_FN : 0);
                     enqueue_key(&kc.repeat_template);
                 }
             }

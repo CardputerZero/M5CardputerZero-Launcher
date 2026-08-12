@@ -80,23 +80,6 @@ typedef struct {
 } cp0_account_info_t;
 
 typedef struct {
-    char status[64];
-    float yaw;
-    float pitch;
-    float roll;
-    float acc_x;
-    float acc_y;
-    float acc_z;
-    float gyr_x;
-    float gyr_y;
-    float gyr_z;
-    float mag_x;
-    float mag_y;
-    float mag_z;
-    int sensor_ready;
-} cp0_compass_info_t;
-
-typedef struct {
     int initialized;
     int hw_ready;
     int tx_mode;
@@ -117,8 +100,6 @@ typedef struct {
 
 typedef void *cp0_watcher_t;
 typedef int cp0_pid_t;
-typedef void (*cp0_compass_read_cb_t)(int code, const cp0_compass_info_t *info, void *user);
-
 typedef enum {
     CP0_SUDO_RESULT_SUCCESS = 0,
     CP0_SUDO_RESULT_AUTH_FAILED,
@@ -145,16 +126,26 @@ int cp0_dir_watch_poll(cp0_watcher_t watcher);
 void cp0_dir_watch_stop(cp0_watcher_t watcher);
 
 int cp0_network_list(cp0_netif_info_t *entries, int max_entries, int *out_count);
+typedef enum {
+    CP0_WIFI_ERROR_INVALID = -1,
+    CP0_WIFI_ERROR_RADIO_OFF = -2,
+    CP0_WIFI_ERROR_AUTH = -3,
+    CP0_WIFI_ERROR_NOT_FOUND = -4,
+    CP0_WIFI_ERROR_IP_CONFIG = -5,
+    CP0_WIFI_ERROR_SERVICE = -6,
+    CP0_WIFI_ERROR_TIMEOUT = -7,
+} cp0_wifi_error_t;
 int cp0_wifi_status_read(cp0_wifi_status_t *status);
 int cp0_wifi_scan(cp0_wifi_ap_t *entries, int max_entries);
 int cp0_wifi_connect(const char *ssid, const char *password);
+int cp0_wifi_connect_hidden(const char *ssid, const char *password);
 int cp0_wifi_profile_forget(const char *ssid);
 int cp0_wifi_profile_exists(const char *ssid);
 int cp0_wifi_disconnect_active(void);
 int cp0_wifi_radio_enabled(void);
 int cp0_wifi_radio_set_enabled(int enabled);
 
-int cp0_process_exec_blocking(const char *exec_path, volatile int *home_key_flag, int keep_root);
+int cp0_process_exec_blocking(const char *exec_path, int keep_root);
 cp0_pid_t cp0_process_spawn(const char *exec_path, int keep_root);
 void cp0_process_stop(cp0_pid_t pid);
 int cp0_process_check_lock(const char *lock_path, int *holder_pid);
@@ -205,8 +196,6 @@ int cp0_time_set(const char *timestamp);
 int cp0_time_ntp_get(void);
 int cp0_time_ntp_set(int enable);
 int cp0_bq27220_calibrate(int command_index);
-int cp0_compass_read(cp0_compass_read_cb_t callback, void *user);
-int cp0_compass_calibrate(void);
 cp0_battery_info_t cp0_battery_read(void);
 int cp0_backlight_read(void);
 int cp0_backlight_max(void);

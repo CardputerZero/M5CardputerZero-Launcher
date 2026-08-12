@@ -8,9 +8,9 @@ int main()
     EscHoldLifecycleModel model;
     assert(model.press(1000));
     assert(!model.press(1400));
-    auto decision = model.poll(2499, true, true);
+    auto decision = model.poll(1499, true, true);
     assert(!decision.show_hint && !decision.force_home);
-    decision = model.poll(2500, true, true);
+    decision = model.poll(1500, true, true);
     assert(decision.show_hint && !decision.force_home);
     model.clear_hint_ownership();
     decision = model.poll(2600, true, true);

@@ -21,6 +21,9 @@ public:
     ProcessExecutor &operator=(const ProcessExecutor &) = delete;
 
     CommandResult run(const std::vector<std::string> &arguments);
+    CommandResult run_with_secret_input(const std::vector<std::string> &arguments,
+                                        const std::string &secret,
+                                        int timeout_ms = 30000);
     void wait(unsigned int seconds) const;
     void shutdown() noexcept;
     bool shutdown_requested() const;

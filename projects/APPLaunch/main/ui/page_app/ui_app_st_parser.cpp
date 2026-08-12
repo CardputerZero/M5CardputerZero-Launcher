@@ -22,6 +22,7 @@ void UISTPage::reset_terminal()
     scrollback_offset_ = 0;
     mode_ = MODE_WRAP;
     parse_state_ = ParseState::Normal;
+    utf8_decoder_.reset();
     cursor_visible_mode_ = true;
     csi_reset();
     for (auto &row : screen_)
@@ -40,8 +41,40 @@ void UISTPage::clear_region(int x1, int y1, int x2, int y2)
 
     Glyph blank = blank_glyph();
     for (int y = y1; y <= y2; ++y) {
-        for (int x = x1; x <= x2; ++x) screen_[y][x] = blank;
+        for (int x = x1; x <= x2; ++x) {
+            if (screen_[y][x].continuation && x > 0) screen_[y][x - 1] = blank;
+            if (screen_[y][x].columns == 2 && x + 1 < term_cols_) screen_[y][x + 1] = blank;
+            screen_[y][x] = blank;
+        }
+        normalize_wide_row(y);
         dirty_row(y);
+    }
+}
+
+void UISTPage::normalize_wide_row(int row)
+{
+    if (row < 0 || row >= term_rows_) return;
+    Glyph blank = blank_glyph();
+    auto &line = screen_[row];
+    for (int x = 0; x < term_cols_; ++x) {
+        if (line[x].continuation) {
+            if (x == 0 || line[x - 1].columns != 2 || line[x - 1].continuation)
+                line[x] = blank;
+            continue;
+        }
+        if (line[x].columns == 2) {
+            if (x + 1 >= term_cols_) {
+                line[x] = blank;
+                continue;
+            }
+            Glyph continuation = line[x];
+            continuation.u = ' ';
+            continuation.combining_count = 0;
+            continuation.columns = 0;
+            continuation.continuation = true;
+            line[x + 1] = continuation;
+            ++x;
+        }
     }
 }
 
@@ -110,6 +143,7 @@ void UISTPage::insert_blank(int count)
         line[x] = line[x - count];
     Glyph blank = blank_glyph();
     for (int x = cursor_.x; x < cursor_.x + count; ++x) line[x] = blank;
+    normalize_wide_row(cursor_.y);
     dirty_row(cursor_.y);
 }
 
@@ -120,12 +154,26 @@ void UISTPage::delete_chars(int count)
     for (int x = cursor_.x; x < term_cols_ - count; ++x) line[x] = line[x + count];
     Glyph blank = blank_glyph();
     for (int x = term_cols_ - count; x < term_cols_; ++x) line[x] = blank;
+    normalize_wide_row(cursor_.y);
     dirty_row(cursor_.y);
 }
 
 void UISTPage::put_rune(uint32_t rune)
 {
-    if (mode_ & MODE_INSERT) insert_blank(1);
+    int width = terminal_codepoint_width(rune);
+    if (width == 0) {
+        int base_x = cursor_.x - 1;
+        if (base_x >= 0 && screen_[cursor_.y][base_x].continuation) --base_x;
+        if (base_x >= 0) {
+            Glyph &base = screen_[cursor_.y][base_x];
+            if (base.combining_count < base.combining.size())
+                base.combining[base.combining_count++] = rune;
+            dirty_row(cursor_.y);
+            return;
+        }
+        width = 1;
+    }
+    if (mode_ & MODE_INSERT) insert_blank(width);
     if (cursor_.x >= term_cols_) {
         if (mode_ & MODE_WRAP) {
             cursor_.x = 0;
@@ -134,19 +182,46 @@ void UISTPage::put_rune(uint32_t rune)
             cursor_.x = term_cols_ - 1;
         }
     }
+    if (width == 2 && cursor_.x == term_cols_ - 1) {
+        if (mode_ & MODE_WRAP) {
+            cursor_.x = 0;
+            newline(false);
+        } else {
+            width = 1;
+        }
+    }
 
+    auto &line = screen_[cursor_.y];
+    if (line[cursor_.x].continuation && cursor_.x > 0)
+        line[cursor_.x - 1] = blank_glyph();
+    if (line[cursor_.x].columns == 2 && cursor_.x + 1 < term_cols_)
+        line[cursor_.x + 1] = blank_glyph();
     Glyph glyph = cursor_.attr;
     glyph.u = rune;
-    screen_[cursor_.y][cursor_.x] = glyph;
+    glyph.columns = static_cast<uint8_t>(width);
+    glyph.continuation = false;
+    line[cursor_.x] = glyph;
+    if (width == 2) {
+        Glyph continuation = glyph;
+        continuation.u = ' ';
+        continuation.combining_count = 0;
+        continuation.columns = 0;
+        continuation.continuation = true;
+        line[cursor_.x + 1] = continuation;
+    }
     dirty_row(cursor_.y);
-    ++cursor_.x;
+    cursor_.x += width;
 }
 
 void UISTPage::control_code(uint8_t code)
 {
     switch (code) {
     case '\t': put_tab(); break;
-    case '\b': cursor_.x = std::max(0, cursor_.x - 1); break;
+    case '\b':
+        cursor_.x = std::max(0, cursor_.x - 1);
+        if (cursor_.x > 0 && screen_[cursor_.y][cursor_.x].continuation)
+            --cursor_.x;
+        break;
     case '\r': cursor_.x = 0; break;
     case '\n':
     case '\v':
@@ -387,6 +462,12 @@ void UISTPage::process_bytes(const char *data, int length)
 {
     for (int index = 0; index < length; ++index) {
         uint8_t code = static_cast<uint8_t>(data[index]);
+        if (parse_state_ == ParseState::Normal && utf8_decoder_.pending()) {
+            const TerminalUtf8Result decoded = utf8_decoder_.feed(code);
+            if (decoded.emitted) put_rune(decoded.codepoint);
+            if (decoded.retry_byte) --index;
+            continue;
+        }
         if (parse_state_ == ParseState::Osc) {
             if (code == 0x07) {
                 parse_state_ = ParseState::Normal;
@@ -433,9 +514,11 @@ void UISTPage::process_bytes(const char *data, int length)
             parse_state_ = ParseState::Esc;
         else if (code < 0x20 || code == 0x7f)
             control_code(code);
-        else
+        else if (code < 0x80)
             put_rune(code);
+        else {
+            const TerminalUtf8Result decoded = utf8_decoder_.feed(code);
+            if (decoded.emitted) put_rune(decoded.codepoint);
+        }
     }
 }
-
-

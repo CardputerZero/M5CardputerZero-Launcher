@@ -37,6 +37,12 @@
 #ifndef KEY_BRIGHTNESSUP
 #define KEY_BRIGHTNESSUP 225
 #endif
+#ifndef KEY_SYSRQ
+#define KEY_SYSRQ 99
+#endif
+#ifndef KEY_PRINT
+#define KEY_PRINT 210
+#endif
 
 namespace {
 
@@ -72,7 +78,8 @@ GlobalHintAction GlobalHintPolicy::action_for(const GlobalHintKeyInput &input) c
     if (!input.pressed)
         return GlobalHintAction::NONE;
 
-    if (input.key_code == KEY_S && input.control && input.alt)
+    if (input.key_code == KEY_SYSRQ || input.key_code == KEY_PRINT ||
+        (input.key_code == KEY_S && input.control && input.alt))
         return GlobalHintAction::TAKE_SCREENSHOT;
 
     if (input.key_code == KEY_FN)
@@ -84,4 +91,18 @@ GlobalHintAction GlobalHintPolicy::action_for(const GlobalHintKeyInput &input) c
     }
 
     return GlobalHintAction::NONE;
+}
+
+std::string GlobalHintScreenshotPolicy::saved_file_message(
+    const std::string &path, const std::string &home_directory)
+{
+    std::string display_path = path;
+    if (!home_directory.empty() && display_path.compare(0, home_directory.size(), home_directory) == 0)
+        display_path.replace(0, home_directory.size(), "~");
+
+    const std::size_t separator = display_path.find_last_of('/');
+    if (separator == std::string::npos)
+        return "Screenshot saved\n" + display_path;
+    return "Saved: " + display_path.substr(separator + 1) + "\n" +
+           display_path.substr(0, separator);
 }

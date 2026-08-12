@@ -160,9 +160,8 @@ static void enqueue_key(const struct key_item *src) {
     struct key_item *elm = malloc(sizeof(*elm));
     *elm = *src;
 
-    if (elm->key_code == KEY_ESC) {
-        LVGL_HOME_KEY_FLAG = elm->key_state;
-    }
+    if (elm->key_code == KEY_ESC)
+        cp0_esc_state_write(elm->key_state);
 
     if (LVGL_RUN_FLAGE) {
         pthread_mutex_lock(&keyboard_mutex);
@@ -180,7 +179,7 @@ Key global state:
 | --- | --- |
 | `keyboard_queue` | Queue of `key_item` events waiting for LVGL consumption |
 | `keyboard_mutex` | Queue lock |
-| `LVGL_HOME_KEY_FLAG` | Current ESC state; used by long-press return / process-kill logic when an external app is running |
+| `cp0_esc_state_*` | Atomic ESC-state C ABI used by long-press return and process-kill logic |
 | `LVGL_RUN_FLAGE` | Whether LVGL accepts input; external apps may set it to 0 while running |
 | `LV_EVENT_KEYBOARD` | Custom LVGL event id |
 
@@ -337,7 +336,7 @@ LVGL_RUN_FLAGE = 0;
 lv_indev_set_group(indev, NULL);
 lv_timer_enable(false);
 
-int ret = cp0_process_exec_blocking(exec.c_str(), &LVGL_HOME_KEY_FLAG, keep_root ? 1 : 0);
+int ret = cp0_process_exec_blocking(exec.c_str(), keep_root ? 1 : 0);
 
 lv_timer_enable(true);
 launch_page_->show_home_screen();
@@ -347,7 +346,7 @@ LVGL_RUN_FLAGE = 1;
 Meaning:
 
 - While an external process is running, APPLaunch pauses the LVGL timer and stops receiving normal keyboard queue events.
-- ESC state still updates `LVGL_HOME_KEY_FLAG`, which is used by the external-process return logic.
+- Keyboard input updates ESC through `cp0_esc_state_write()`; external-process logic reads it through `cp0_esc_state_read()`.
 - After the external process exits, the home screen, input group, and LVGL timer are restored.
 
 ## 11. Input Group Switching

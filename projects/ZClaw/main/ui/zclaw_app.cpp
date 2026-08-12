@@ -159,6 +159,7 @@ private:
         context.approval_pending = approvals_.pending();
         context.setup_retry_pending =
             settings_workflow_.setup_retry_pending();
+        context.setup_in_flight = settings_workflow_.setup_in_flight();
         context.settings_open = settings_ui_.is_open();
         context.settings_view = settings_ui_.state().view();
 

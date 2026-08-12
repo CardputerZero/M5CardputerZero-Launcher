@@ -2,6 +2,8 @@
 
 #include <cstdint>
 
+#include "cp0_esc_exit_policy.hpp"
+
 struct EscHoldPollDecision
 {
     bool show_hint = false;
@@ -13,8 +15,8 @@ struct EscHoldPollDecision
 class EscHoldLifecycleModel
 {
 public:
-    static constexpr uint32_t HINT_DELAY_MS = 1500;
-    static constexpr uint32_t FORCE_HOME_DELAY_MS = 3000;
+    static constexpr uint32_t HINT_DELAY_MS = cp0_esc_exit_policy::HINT_DELAY_MS;
+    static constexpr uint32_t FORCE_HOME_DELAY_MS = cp0_esc_exit_policy::TERMINATE_DELAY_MS;
 
     bool press(uint32_t now);
     bool release();

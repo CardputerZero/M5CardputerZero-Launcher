@@ -5,6 +5,11 @@
 
 namespace cp0_sudo {
 
+inline std::vector<std::string> invalidation_command()
+{
+    return {"/usr/bin/sudo", "-k"};
+}
+
 inline std::vector<std::string> validation_command()
 {
     return {"/usr/bin/sudo", "-S", "-v"};

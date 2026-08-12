@@ -32,19 +32,15 @@ public:
         try {
         const std::string cmd = arg.empty() ? "" : arg.front();
         if (cmd == "ExecBlocking") {
-            uintptr_t pointer = 0;
             bool keep_root = false;
             const auto *exec_path = cp0_process_api_contract::argument_at(arg, 1);
-            const auto *pointer_text = cp0_process_api_contract::argument_at(arg, 2);
-            const auto *keep_root_text = cp0_process_api_contract::argument_at(arg, 3);
-            if (!cp0_process_api_contract::has_exact_arguments(arg, 4) || !exec_path ||
-                exec_path->empty() || !pointer_text || !keep_root_text ||
-                !cp0_process_api_contract::parse_pointer(*pointer_text, pointer) ||
+            const auto *keep_root_text = cp0_process_api_contract::argument_at(arg, 2);
+            if (!cp0_process_api_contract::has_exact_arguments(arg, 3) || !exec_path ||
+                exec_path->empty() || !keep_root_text ||
                 !cp0_process_api_contract::parse_bool(*keep_root_text, keep_root))
                 return invalid(callback);
             report(callback,
-                   cp0_external_app_runner::run(
-                       exec_path->c_str(), reinterpret_cast<volatile int *>(pointer), keep_root),
+                   cp0_external_app_runner::run(exec_path->c_str(), keep_root),
                    "");
         } else if (cmd == "Spawn") {
             bool keep_root = false;
@@ -106,9 +102,14 @@ public:
         } else if (cmd == "AdbStatus") {
             if (!cp0_process_api_contract::has_exact_arguments(arg, 1)) return invalid(callback);
             std::string output;
-            const int result = cp0_process_commands::capture_argv(
+            const int active_result = cp0_process_commands::capture_argv(
                 {"systemctl", "is-active", "adbd.service"}, output);
-            report(callback, 0, result == 0 ? "adbd=active\n" : "adbd=inactive\n");
+            std::string enabled_output;
+            const int enabled_result = cp0_process_commands::capture_argv(
+                {"systemctl", "is-enabled", "adbd.service"}, enabled_output);
+            output = active_result == 0 ? "adbd=active\n" : "adbd=inactive\n";
+            output += enabled_result == 0 ? "enabled=enabled\n" : "enabled=disabled\n";
+            report(callback, 0, output);
         } else if (cmd == "DesktopExecIsSafe") {
             const auto *exec = cp0_process_api_contract::argument_at(arg, 1);
             if (!cp0_process_api_contract::has_exact_arguments(arg, 2) || !exec || exec->empty())
@@ -118,8 +119,7 @@ public:
             report(callback, safe ? 0 : -1, reason);
         } else if (cmd == "Shutdown") {
             if (!cp0_process_api_contract::has_exact_arguments(arg, 1)) return invalid(callback);
-            system_shutdown();
-            report(callback, 0, "");
+            report(callback, system_shutdown(), "");
         } else if (cmd == "Reboot") {
             if (!cp0_process_api_contract::has_exact_arguments(arg, 1)) return invalid(callback);
             system_reboot();
@@ -140,15 +140,16 @@ public:
         }
     }
 
-    void system_shutdown()
+    int system_shutdown()
     {
 #if defined(_WIN32)
         std::printf("[CP0] shutdown (emulator exit)\n");
         std::exit(0);
 #else
         std::printf("[CP0] shutdown\n");
-        const std::vector<std::string> argv = {"sudo", "poweroff"};
-        cp0_process_commands::run_argv(argv, true);
+        cp0_backlight_write(0);
+        const std::vector<std::string> argv = {"systemctl", "poweroff", "-i"};
+        return cp0_process_commands::run_argv(argv, false);
 #endif
     }
 
@@ -200,12 +201,11 @@ extern "C" void init_process(void)
     });
 }
 
-extern "C" int cp0_process_exec_blocking(const char *exec_path, volatile int *home_key_flag, int keep_root)
+extern "C" int cp0_process_exec_blocking(const char *exec_path, int keep_root)
 {
     return cp0_process_api_contract::invoke_c_api([&] {
-        return ProcessSystem::api_simple({"ExecBlocking", exec_path ? exec_path : "",
-                                          std::to_string(reinterpret_cast<uintptr_t>(home_key_flag)),
-                                          std::to_string(keep_root)});
+        return ProcessSystem::api_simple(
+            {"ExecBlocking", exec_path ? exec_path : "", std::to_string(keep_root)});
     });
 }
 

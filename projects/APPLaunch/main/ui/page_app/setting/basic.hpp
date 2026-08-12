@@ -43,10 +43,13 @@ class Speaker
 public:
     void append(UISetupPage &page, std::vector<MenuItem> &menu);
     void enter_volume_adjust(UISetupPage &page);
-    void apply_value(UISetupPage &page);
+    bool preview_value(UISetupPage &page);
+    void cancel_preview(UISetupPage &page);
+    bool apply_value(UISetupPage &page);
 
 private:
     int vol_val_ = 39;
+    bool preview_active_ = false;
 };
 
 class Camera

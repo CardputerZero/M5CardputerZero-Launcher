@@ -35,14 +35,10 @@ public:
         shutdown_requested_ = false;
     }
 
-    bool confirm_shutdown(bool reading_valid, bool charging, uint32_t now)
+    bool take_shutdown_due(uint32_t now)
     {
         if (!shutdown_due(now))
             return false;
-        if (!reading_valid || charging) {
-            warning_ = LowBatteryWarning::None;
-            return false;
-        }
         shutdown_requested_ = true;
         return true;
     }

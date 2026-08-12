@@ -49,6 +49,11 @@ bool SshConnectionModel::erase_last()
 
 bool SshConnectionModel::valid() const
 {
+    return validate().error == Error::NONE;
+}
+
+SshConnectionModel::Validation SshConnectionModel::validate() const
+{
     const std::string &host = values_[static_cast<size_t>(Field::HOST)];
     const std::string &port = values_[static_cast<size_t>(Field::PORT)];
     const std::string &user = values_[static_cast<size_t>(Field::USER)];
@@ -58,10 +63,27 @@ bool SshConnectionModel::valid() const
                    return std::isspace(character) != 0;
                });
     };
-    if (host.empty() || invalid_identity(host) || invalid_identity(user)) return false;
-    if (port.empty()) return true;
+    if (host.empty()) return {Error::EMPTY_HOST, Field::HOST, "Host is required"};
+    if (invalid_identity(host)) return {Error::INVALID_HOST, Field::HOST, "Invalid host"};
+    if (invalid_identity(user)) return {Error::INVALID_USER, Field::USER, "Invalid user"};
+    if (port.empty()) return {Error::NONE, Field::HOST, ""};
     unsigned int number = 0;
-    return launcher_ui::integer_parse::complete(port, 1U, 65535U, number);
+    if (!launcher_ui::integer_parse::complete(port, 1U, 65535U, number))
+        return {Error::INVALID_PORT, Field::PORT, "Port must be 1-65535"};
+    return {Error::NONE, Field::HOST, ""};
+}
+
+bool SshConnectionModel::set_values(std::string host, std::string port, std::string user)
+{
+    if (host.size() > MAX_FIELD_BYTES || port.size() > MAX_FIELD_BYTES ||
+        user.size() > MAX_FIELD_BYTES) return false;
+    const auto previous = values_;
+    values_ = {std::move(host), std::move(port), std::move(user)};
+    if (!valid()) {
+        values_ = previous;
+        return false;
+    }
+    return true;
 }
 
 std::list<std::string> SshConnectionModel::arguments() const

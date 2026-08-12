@@ -4,6 +4,7 @@
 #include "lvgl/lvgl.h"
 #include "sdl_lvgl.h"
 #include "../cp0_keyboard_key_contract.h"
+#include "cp0_keyboard_navigation_contract.h"
 #include "../cp0_keyboard_input_lifecycle.h"
 #include "../cp0_keyboard_queue.h"
 #include "../cp0_keyboard_text.h"
@@ -15,6 +16,7 @@
 
 #include "input_keys.h"
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -47,6 +49,21 @@ __attribute__((weak)) void ui_global_hint_on_key(const struct key_item *elm)
 static cp0_keyboard_key_handler_t global_key_handler;
 typedef int (*cp0_sdl_keyboard_filter_t)(const struct key_item *item);
 static cp0_sdl_keyboard_filter_t keyboard_filter;
+static volatile int lvgl_keypad_intercept;
+static atomic_int keyboard_input_context = KBD_INPUT_CONTEXT_NAVIGATION;
+
+void cp0_keyboard_set_input_context(cp0_keyboard_input_context_t context)
+{
+    if (context < KBD_INPUT_CONTEXT_NAVIGATION || context > KBD_INPUT_CONTEXT_GAME)
+        context = KBD_INPUT_CONTEXT_NAVIGATION;
+    atomic_store_explicit(&keyboard_input_context, context, memory_order_release);
+}
+
+cp0_keyboard_input_context_t cp0_keyboard_get_input_context(void)
+{
+    return (cp0_keyboard_input_context_t)atomic_load_explicit(
+        &keyboard_input_context, memory_order_acquire);
+}
 
 void cp0_keyboard_set_global_key_handler(cp0_keyboard_key_handler_t handler)
 {
@@ -56,6 +73,16 @@ void cp0_keyboard_set_global_key_handler(cp0_keyboard_key_handler_t handler)
 void cp0_sdl_keyboard_set_filter(cp0_sdl_keyboard_filter_t filter)
 {
     keyboard_filter = filter;
+}
+
+void cp0_keyboard_set_lvgl_keypad_intercept(int intercept)
+{
+    lvgl_keypad_intercept = intercept != 0;
+}
+
+int cp0_keyboard_get_lvgl_keypad_intercept(void)
+{
+    return lvgl_keypad_intercept;
 }
 
 static uint32_t cp0_evdev_process_key(uint16_t code)
@@ -276,6 +303,8 @@ static uint32_t cp0_sdl_scancode_to_linux_key(SDL_Scancode scancode)
         return KEY_F11;
     case SDL_SCANCODE_F12:
         return KEY_F12;
+    case SDL_SCANCODE_PRINTSCREEN:
+        return KEY_SYSRQ;
     case SDL_SCANCODE_INSERT:
         return KEY_INSERT;
     case SDL_SCANCODE_HOME:
@@ -319,7 +348,6 @@ static uint32_t cp0_sdl_scancode_to_linux_key(SDL_Scancode scancode)
 
 struct keyboard_queue_t keyboard_queue;
 pthread_mutex_t keyboard_mutex = PTHREAD_MUTEX_INITIALIZER;
-volatile int LVGL_HOME_KEY_FLAG = 0;
 volatile int LVGL_RUN_FLAGE = 1;
 volatile uint32_t LV_EVENT_KEYBOARD;
 
@@ -360,6 +388,8 @@ int cp0_keyboard_inject(uint32_t key_code, int key_state, uint32_t mods)
     item.key_code = key_code;
     item.key_state = key_state;
     item.mods = mods;
+    item.input_context = cp0_keyboard_get_input_context();
+    item.semantic_key = cp0_keyboard_semantic_key(key_code, item.input_context);
     const char *control = cp0_keyboard_control_utf8(key_code);
     if (control) snprintf(item.utf8, sizeof(item.utf8), "%s", control);
     snprintf(item.sym_name, sizeof(item.sym_name), "RPC_%u", key_code);
@@ -393,6 +423,9 @@ static void cp0_sdl_fill_key_meta(cp0_sdl_keyboard_t *kbd, const SDL_KeyboardEve
     memset(&kbd->current, 0, sizeof(kbd->current));
     kbd->current_scancode = scancode;
     kbd->current.key_code = cp0_sdl_scancode_to_linux_key(scancode);
+    kbd->current.input_context = cp0_keyboard_get_input_context();
+    kbd->current.semantic_key = cp0_keyboard_semantic_key(
+        kbd->current.key_code, kbd->current.input_context);
     kbd->current.keysym = (uint32_t)sym;
     kbd->current.mods = 0;
     kbd->current.key_state = event->repeat ? KBD_KEY_REPEATED : KBD_KEY_PRESSED;
@@ -463,11 +496,13 @@ static void cp0_sdl_keyboard_read(lv_indev_t *indev, lv_indev_data_t *data)
 {
     (void)indev;
 
+    data->key = 0;
     data->state = LV_INDEV_STATE_RELEASED;
     data->continue_reading = false;
 
     struct key_item *elm = cp0_keyboard_queue_pop();
     if (elm) {
+        const int intercept = lvgl_keypad_intercept;
 
         int swallowed = keyboard_filter
             ? keyboard_filter(elm)
@@ -487,13 +522,16 @@ static void cp0_sdl_keyboard_read(lv_indev_t *indev, lv_indev_data_t *data)
             else
                 ui_global_hint_on_key(elm);
 
-            data->key = cp0_evdev_process_key(elm->key_code);
-            if (data->key)
-                data->state = (lv_indev_state_t)elm->key_state;
+            if (!intercept) {
+                const uint32_t semantic_key = elm->semantic_key
+                                                  ? elm->semantic_key
+                                                  : elm->key_code;
+                data->key = cp0_evdev_process_key(semantic_key);
+                if (data->key)
+                    data->state = (lv_indev_state_t)elm->key_state;
+            }
         }
-        if (data->key || swallowed) {
-            data->continue_reading = cp0_keyboard_queue_has_data();
-        }
+        data->continue_reading = cp0_keyboard_queue_has_data();
         free(elm);
     }
 }

@@ -29,6 +29,7 @@ UILaunchPage *page_from_event(lv_event_t *event)
 
 void UILaunchPage::show_home_screen()
 {
+    stop_startup_presentation();
     if (!screen()) return;
     SLOGI("[HOME] loading launcher home screen");
     use_bold_home_title_font();
@@ -87,6 +88,16 @@ void UILaunchPage::load_home_screen()
 void UILaunchPage::finish_startup_delay()
 {
     show_home_screen();
+}
+
+void UILaunchPage::stop_startup_presentation()
+{
+    // Returning from an app must not leave a startup callback capable of
+    // replacing the home screen with the boot logo or GIF.
+    startup_gif_done_ = true;
+    stop_startup_delay();
+    // Audio readiness is independent of the splash lifetime. Keep its bounded
+    // retry alive after home appears; the destructor still owns and stops it.
     release_startup_screen(startup_logo_scr_);
     release_startup_screen(startup_gif_);
 }

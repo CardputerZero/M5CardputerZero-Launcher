@@ -46,6 +46,7 @@ struct KeyRouteContext {
     bool input_open = false;
     bool approval_pending = false;
     bool setup_retry_pending = false;
+    bool setup_in_flight = false;
     bool settings_open = false;
     SettingsView settings_view = SettingsView::Main;
 };
@@ -61,6 +62,7 @@ enum class KeyActionType {
     InputMoveRight,
     InputMoveUp,
     InputMoveDown,
+    InputToggleSecretVisibility,
     InputClose,
     InputSubmit,
     ApprovalMoveLeft,

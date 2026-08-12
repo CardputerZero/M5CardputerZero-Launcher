@@ -8,6 +8,8 @@
 
 #include "ui.h"
 
+#include <cstring>
+
 namespace {
 
 constexpr uint32_t kShowDurationMs = 1500;
@@ -15,6 +17,7 @@ constexpr uint32_t kBackgroundColor = 0x1F3A5F;
 constexpr uint32_t kTextColor = 0xFFFFFF;
 constexpr lv_coord_t kWidth = 280;
 constexpr lv_coord_t kHeight = 22;
+constexpr lv_coord_t kMultilineHeight = 38;
 constexpr lv_coord_t kTopOffset = 4;
 
 } // namespace
@@ -56,6 +59,9 @@ bool LauncherToast::ensure_created() noexcept
     lv_obj_set_style_text_font(
         label_, launcher_fonts().get("AlibabaPuHuiTi-3-55-Regular.ttf", 12,
                                     LV_FREETYPE_FONT_STYLE_BOLD), 0);
+    lv_obj_set_width(label_, kWidth - 12);
+    lv_label_set_long_mode(label_, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(label_, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(label_);
     lv_obj_add_flag(container_, LV_OBJ_FLAG_HIDDEN);
     return true;
@@ -74,6 +80,8 @@ void LauncherToast::show(const char *text) noexcept
         return;
 
     lv_label_set_text(label_, text ? text : "");
+    lv_obj_set_height(container_, text && std::strchr(text, '\n') ? kMultilineHeight : kHeight);
+    lv_obj_center(label_);
     lv_obj_align(container_, LV_ALIGN_TOP_MID, 0, kTopOffset);
     lv_obj_move_foreground(container_);
     lv_obj_clear_flag(container_, LV_OBJ_FLAG_HIDDEN);
@@ -89,6 +97,12 @@ void LauncherToast::show(const char *text) noexcept
     } catch (...) {
         hide();
     }
+}
+
+void LauncherToast::show_persistent(const char *text) noexcept
+{
+    show(text);
+    if (hide_timer_) lv_timer_pause(hide_timer_);
 }
 
 void LauncherToast::hide()

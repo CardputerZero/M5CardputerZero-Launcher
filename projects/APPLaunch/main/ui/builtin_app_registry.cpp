@@ -60,9 +60,9 @@ constexpr BuiltinAppRegistration BUILTIN_APPS[] = {
      nullptr, false, true, false, append_page_app<UIGamePage>},
     {{"Settings", "setting_100.png", "app_Setting", false, true},
      nullptr, false, true, false, append_page_app<UISetupPage>},
-    {{"Math", "math_100.png", "app_Math", true, false},
+    {{"Calculator", "math_100.png", "app_Math", true, false},
      "@calculator_exec", false, true, false, nullptr},
-    {{"LORA", "lora_100.png", "app_LoRa", true, false},
+    {{"LoRa", "lora_100.png", "app_LoRa", true, false},
      nullptr, false, true, false, append_page_app<UILoraPage>},
 #if defined(__linux__) && !defined(HAL_PLATFORM_SDL)
     {{"IP_PANEL", "ip_panel_100.png", "app_IP_Panel", true, false},

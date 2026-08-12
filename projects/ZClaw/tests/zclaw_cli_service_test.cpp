@@ -55,6 +55,17 @@ int main()
     assert(ends_with(start_commands.commands[1], {"service", "start"}));
     assert(sleeps.empty());
 
+    FakeCommands restart_commands;
+    restart_commands.results = {{0, "restarted"}};
+    assert(make_service(&restart_commands, &sleeps).restart_service(&error));
+    assert(restart_commands.commands.size() == 1);
+    assert(ends_with(restart_commands.commands[0], {"service", "restart"}));
+
+    FakeCommands restart_failure;
+    restart_failure.results = {{1, "service unavailable"}};
+    assert(!make_service(&restart_failure, &sleeps).restart_service(&error));
+    assert(error == "service restart failed:\nservice unavailable");
+
     FakeCommands install_failure;
     install_failure.results = {{1, "permission denied"}};
     assert(!make_service(&install_failure, &sleeps).start_service(&error));

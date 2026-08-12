@@ -10,6 +10,7 @@ ProviderEditField provider_edit_field_for_row(int row)
     case 2: return ProviderEditField::Model;
     case 3: return ProviderEditField::Uri;
     case 4: return ProviderEditField::ApiKey;
+    case 5: return ProviderEditField::WireApi;
     default: return ProviderEditField::None;
     }
 }
@@ -22,6 +23,7 @@ const char *provider_field_name(ProviderEditField field)
     case ProviderEditField::Model: return "Model";
     case ProviderEditField::Uri: return "URI";
     case ProviderEditField::ApiKey: return "API Key";
+    case ProviderEditField::WireApi: return "API Type";
     case ProviderEditField::None: return "";
     }
     return "";
@@ -37,6 +39,7 @@ std::string *provider_field_value(ProviderConfig *provider, ProviderEditField fi
     case ProviderEditField::Model: return &provider->model;
     case ProviderEditField::Uri: return &provider->uri;
     case ProviderEditField::ApiKey: return &provider->api_key;
+    case ProviderEditField::WireApi: return &provider->wire_api;
     case ProviderEditField::None: return nullptr;
     }
     return nullptr;
@@ -52,8 +55,10 @@ SetupEditField setup_edit_field_for_row(const ProviderConfig &provider, int sele
         return SetupEditField::Uri;
     if (provider.family != "ollama" && selected_row == row++)
         return SetupEditField::ApiKey;
-    if (provider.family == "custom" && selected_row == row)
+    if (provider.family == "custom" && selected_row == row++)
         return SetupEditField::Model;
+    if (provider.family == "custom" && selected_row == row)
+        return SetupEditField::WireApi;
     return SetupEditField::None;
 }
 
@@ -63,6 +68,7 @@ const char *setup_field_name(SetupEditField field)
     case SetupEditField::Uri: return "API URL";
     case SetupEditField::ApiKey: return "API Key";
     case SetupEditField::Model: return "API Model Name";
+    case SetupEditField::WireApi: return "API Type";
     case SetupEditField::None: return "";
     }
     return "";
@@ -76,6 +82,7 @@ std::string *setup_field_value(ProviderConfig *provider, SetupEditField field)
     case SetupEditField::Uri: return &provider->uri;
     case SetupEditField::ApiKey: return &provider->api_key;
     case SetupEditField::Model: return &provider->model;
+    case SetupEditField::WireApi: return &provider->wire_api;
     case SetupEditField::None: return nullptr;
     }
     return nullptr;
@@ -94,6 +101,12 @@ SetupValidation validate_setup_provider(const ProviderConfig &provider)
             return {false, 3, "API Model Name is required."};
     }
     return {};
+}
+
+void toggle_wire_api(ProviderConfig *provider)
+{
+    if (provider)
+        provider->wire_api = provider->wire_api == "responses" ? "completions" : "responses";
 }
 
 }  // namespace zclaw

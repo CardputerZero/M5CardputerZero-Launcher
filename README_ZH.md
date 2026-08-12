@@ -50,6 +50,7 @@ launcher/
 │   │   ├── SConstruct          # 项目编译脚本
 │   │   ├── *_config_defaults.mk # 设备、SDL2 与交叉编译配置
 │   │   └── main/ui/            # 聊天 UI、客户端、初始化与运行时字体
+│   ├── LaunchWizard/           # 首次启动向导（标准 CMake/CTest + SDK SCons）
 │   ├── Calculator/             # 计算器
 │   ├── AppStore/               # 应用商店
 │   └── HelloWorld/             # Hello World 示例

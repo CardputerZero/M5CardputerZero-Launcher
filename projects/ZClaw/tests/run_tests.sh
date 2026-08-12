@@ -12,6 +12,11 @@ test_filter="${ZCLAW_TEST_FILTER:-}"
 tests_run=0
 mkdir -p "$build_dir"
 
+"$cxx" -std=c++17 -Wall -Wextra -Werror -I"$ui_dir" \
+    "$test_dir/zclaw_secret_input_model_test.cpp" \
+    -o "$build_dir/zclaw_secret_input_model_test"
+"$build_dir/zclaw_secret_input_model_test"
+
 build_and_run()
 {
     name=$1
@@ -139,6 +144,23 @@ build_and_run zclaw_cli_service_test \
     "$ui_dir/zclaw_cli_config_model.cpp" \
     "$ui_dir/zclaw_cli_output_model.cpp" \
     "$ui_dir/zclaw_cli_service.cpp" \
+    "$ui_dir/zclaw_path_model.cpp" \
+    "$ui_dir/zclaw_paths.cpp" \
+    "$ui_dir/zclaw_process_executor.cpp" \
+    "$ui_dir/zclaw_process_runner.cpp" \
+    "$ui_dir/zclaw_quickstart_model.cpp" \
+    "$ui_dir/zclaw_risk_profile_model.cpp" \
+    "$ui_dir/zclaw_risk_profile_store.cpp" \
+    "$ui_dir/zclaw_text.cpp"
+
+build_and_run zclaw_local_setup_backend_test \
+    "$test_dir/zclaw_local_setup_backend_test.cpp" \
+    "$ui_dir/zclaw_atomic_file.cpp" \
+    "$ui_dir/zclaw_cli_config_model.cpp" \
+    "$ui_dir/zclaw_cli_output_model.cpp" \
+    "$ui_dir/zclaw_cli_service.cpp" \
+    "$ui_dir/zclaw_directory_sync.cpp" \
+    "$ui_dir/zclaw_local_cli_service.cpp" \
     "$ui_dir/zclaw_path_model.cpp" \
     "$ui_dir/zclaw_paths.cpp" \
     "$ui_dir/zclaw_process_executor.cpp" \

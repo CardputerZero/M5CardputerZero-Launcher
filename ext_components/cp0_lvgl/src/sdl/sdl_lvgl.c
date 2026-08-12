@@ -50,9 +50,6 @@ static uint64_t enabled_features(void)
 #ifdef CONFIG_CP0_LVGL_INIT_BQ27220
     features |= CP0_INIT_FEATURE_BQ27220;
 #endif
-#ifdef CONFIG_CP0_LVGL_INIT_IMU
-    features |= CP0_INIT_FEATURE_IMU;
-#endif
 #ifdef CONFIG_CP0_LVGL_INIT_SAVED_SETTINGS
     features |= CP0_INIT_FEATURE_SAVED_SETTINGS;
 #endif
@@ -135,11 +132,6 @@ static int run_init_step(cp0_init_step_t step)
     case CP0_INIT_STEP_BQ27220:
 #ifdef CONFIG_CP0_LVGL_INIT_BQ27220
         init_bq27220();
-#endif
-        break;
-    case CP0_INIT_STEP_IMU:
-#ifdef CONFIG_CP0_LVGL_INIT_IMU
-        init_imu();
 #endif
         break;
     case CP0_INIT_STEP_SAVED_SETTINGS:

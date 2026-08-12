@@ -29,7 +29,7 @@ static const struct cp0_keyboard_keymap_entry default_keymap[] = {
     {51, "ampersand", "&"},
     {52, "asterisk", "*"},
     {53, "parenleft", "("},
-    {54, "parenright", ")"},
+    {94, "parenright", ")"},
     {55, "asciitilde", "~"},
     {69, "grave", "`"},
     {70, "underscore", "_"},

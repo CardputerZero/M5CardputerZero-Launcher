@@ -10,9 +10,9 @@
  * Global shortcut dispatcher and transient on-screen hints.
  *
  * Behavior:
- *   (a) ESC held continuously for >= 1.5s -> show
- *       "Hold ESC 3s to return home" for ~1.5s. Short taps (released
- *       before 1.5s) show nothing, so a quick "back" press inside
+ *   (a) ESC held continuously for >= 0.5s -> show
+ *       "Hold ESC 3s to return home". Short taps (released
+ *       before 0.5s) show nothing, so a quick "back" press inside
  *       an app no longer flashes the return-home toast.
  *   (b) Single press of SHIFT (Aa / KEY_LEFTSHIFT) or SYM (physical
  *       "SYM" key on the M5 CardputerZero; currently best-effort mapped)
@@ -38,9 +38,12 @@
 #include "esc_hold_hint_controller.h"
 #include "model/global_hint_policy.hpp"
 
+#include <atomic>
+
 #include "input_keys.h"
 
 #include <string>
+#include <utility>
 
 #define MEDIA_OSD_STEP      5
 
@@ -50,12 +53,12 @@ static void show_hint(const char *text)
     launcher_toast().show(text);
 }
 
-static int ensure_screenshot_dir(const char *scr_dir)
+static int ensure_user_dir(const std::string &dir)
 {
     int result = -1;
     try {
         cp0_signal_filesystem_api(
-            {"EnsureDirForUser", scr_dir ? scr_dir : ""},
+            {"EnsureDirForUser", dir},
             [&](int code, std::string) { result = code; });
     } catch (...) {
     }
@@ -63,6 +66,20 @@ static int ensure_screenshot_dir(const char *scr_dir)
 }
 
 namespace ui_global_hint {
+
+namespace {
+std::atomic<bool> g_external_esc_hint_visible{false};
+}
+
+bool external_esc_hint_visible() noexcept
+{
+    return g_external_esc_hint_visible.load(std::memory_order_acquire);
+}
+
+void reset_external_esc_hint() noexcept
+{
+    g_external_esc_hint_visible.store(false, std::memory_order_release);
+}
 
 void shutdown()
 {
@@ -111,14 +128,25 @@ void on_key(const struct key_item *elm) noexcept
             launcher_media_osd().show_mute(launcher_media_controls::toggle_mute());
             return;
         case GlobalHintAction::TAKE_SCREENSHOT: {
-            const std::string scr_dir = launcher_platform::path("home_dir") + "/Screenshots";
-            const int ensure_result = ensure_screenshot_dir(scr_dir.c_str());
+            const std::string pictures_dir = launcher_platform::path("home_dir") + "/Pictures";
+            const std::string scr_dir = pictures_dir + "/Screenshots";
+            const int ensure_result = ensure_user_dir(pictures_dir) == 0
+                ? ensure_user_dir(scr_dir)
+                : -1;
             int result = -1;
+            std::string saved_path;
             if (GlobalHintScreenshotPolicy::should_save(ensure_result))
-                cp0_signal_screenshot_api({"Save", scr_dir}, [&](int code, std::string) {
+                cp0_signal_screenshot_api({"Save", scr_dir}, [&](int code, std::string data) {
                     result = code;
+                    if (code == 0) saved_path = std::move(data);
                 });
-            show_hint(GlobalHintScreenshotPolicy::result_message(ensure_result, result));
+            if (ensure_result == 0 && result == 0 && !saved_path.empty()) {
+                const std::string message = GlobalHintScreenshotPolicy::saved_file_message(
+                    saved_path, launcher_platform::path("home_dir"));
+                show_hint(message.c_str());
+            } else {
+                show_hint(GlobalHintScreenshotPolicy::result_message(ensure_result, result));
+            }
             return;
         }
         case GlobalHintAction::SHOW_LOCK_HINT:
@@ -137,4 +165,10 @@ void on_key(const struct key_item *elm) noexcept
 extern "C" void ui_global_hint_on_key(const struct key_item *elm) noexcept
 {
     ui_global_hint::on_key(elm);
+}
+
+extern "C" void ui_external_esc_hint(int visible) noexcept
+{
+    ui_global_hint::g_external_esc_hint_visible.store(
+        visible != 0, std::memory_order_release);
 }

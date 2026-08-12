@@ -32,6 +32,12 @@ public:
     template <typename Cancel, typename Worker>
     bool start(Cancel &&cancel, Worker &&worker)
     {
+        return start(std::forward<Cancel>(cancel), std::forward<Worker>(worker), [] {});
+    }
+
+    template <typename Cancel, typename Worker, typename Failure>
+    bool start(Cancel &&cancel, Worker &&worker, Failure &&failure)
+    {
         auto entry = std::make_unique<Entry>();
         try {
             entry->cancel = std::forward<Cancel>(cancel);
@@ -42,18 +48,37 @@ public:
         Entry *raw = entry.get();
         std::unique_lock<std::mutex> lock(mutex_);
         if (!accepting_ || joining_) return false;
+        std::vector<std::thread> finished;
+        for (auto it = entries_.begin(); it != entries_.end();) {
+            if ((*it)->finished) {
+                if ((*it)->worker.joinable())
+                    finished.push_back(std::move((*it)->worker));
+                it = entries_.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        lock.unlock();
+        for (auto &thread : finished) thread.join();
+        lock.lock();
+        if (!accepting_ || joining_) return false;
         ++active_;
         entries_.push_back(std::move(entry));
         try {
             raw->worker = std::thread(
-                [this, task = std::forward<Worker>(worker)]() mutable noexcept {
+                [this, raw, task = std::forward<Worker>(worker),
+                 on_failure = std::forward<Failure>(failure)]() mutable noexcept {
                     current_registry_ = this;
                     try {
                         task();
                     } catch (...) {
+                        try {
+                            on_failure();
+                        } catch (...) {
+                        }
                     }
                     current_registry_ = nullptr;
-                    worker_finished();
+                    worker_finished(raw);
                 });
         } catch (...) {
             entries_.pop_back();
@@ -125,6 +150,12 @@ public:
         return active_;
     }
 
+    std::size_t tracked() const noexcept
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return entries_.size();
+    }
+
     bool is_current_worker() const noexcept
     {
         return current_registry_ == this;
@@ -134,11 +165,13 @@ private:
     struct Entry {
         std::function<void()> cancel;
         std::thread worker;
+        bool finished = false;
     };
 
-    void worker_finished() noexcept
+    void worker_finished(Entry *entry) noexcept
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (entry) entry->finished = true;
         --active_;
         idle_.notify_all();
     }

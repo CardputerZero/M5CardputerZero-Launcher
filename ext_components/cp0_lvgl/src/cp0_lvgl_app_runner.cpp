@@ -99,13 +99,6 @@ void wait_for_lvgl()
 #endif
 }
 
-void stop_imu() noexcept
-{
-#ifdef CONFIG_CP0_LVGL_INIT_IMU
-    deinit_imu();
-#endif
-}
-
 void stop_audio() noexcept
 {
 #ifdef CONFIG_CP0_LVGL_INIT_AUDIO
@@ -192,7 +185,7 @@ int cp0_lvgl_run(Cp0LvglRunOptions options)
         }
         lv_timer_handler_set_resume_cb(nullptr, nullptr);
         cp0::runner::shutdown_services(
-            stop_sudo, stop_rpc, stop_camera, stop_imu, stop_audio, stop_pty,
+            stop_sudo, stop_rpc, stop_camera, stop_audio, stop_pty,
             deinit_input, deinit_wifi, stop_lora, deinit_battery, lv_deinit);
         std::lock_guard<std::mutex> lock(runner_mutex);
         semaphore_ready = false;

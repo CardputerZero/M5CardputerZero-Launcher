@@ -17,9 +17,8 @@ int main()
         [&] { order.push_back(7); },
         [&] { order.push_back(8); },
         [&] { order.push_back(9); },
-        [&] { order.push_back(10); },
-        [&] { order.push_back(11); });
-    assert((order == std::vector<int>{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}));
+        [&] { order.push_back(10); });
+    assert((order == std::vector<int>{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}));
 
     order.clear();
     cp0::runner::shutdown_services(
@@ -37,15 +36,15 @@ int main()
         },
         [&] {
             order.push_back(4);
-            throw std::runtime_error("imu shutdown");
-        },
-        [&] {
-            order.push_back(5);
             throw std::runtime_error("input shutdown");
         },
         [&] {
-            order.push_back(6);
+            order.push_back(5);
             throw std::runtime_error("wifi shutdown");
+        },
+        [&] {
+            order.push_back(6);
+            throw std::runtime_error("lora shutdown");
         },
         [&] {
             order.push_back(7);
@@ -53,16 +52,12 @@ int main()
         },
         [&] {
             order.push_back(8);
-            throw std::runtime_error("lora shutdown");
-        },
-        [&] {
-            order.push_back(9);
             throw std::runtime_error("battery shutdown");
         },
         [&] {
-            order.push_back(10);
+            order.push_back(9);
             throw std::runtime_error("last service shutdown");
         },
-        [&] { order.push_back(11); });
-    assert((order == std::vector<int>{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}));
+        [&] { order.push_back(10); });
+    assert((order == std::vector<int>{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}));
 }

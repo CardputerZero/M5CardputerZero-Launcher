@@ -323,7 +323,7 @@ APPLAUNCH_LINUX_KEYBOARD_DEVICE=/dev/input/eventX sudo /usr/share/APPLaunch/bin/
 2. `LVGL_RUN_FLAGE = 0` を設定します。
 3. LVGL 入力グループを解除します。
 4. `lv_timer_enable(false)` で LVGL タイマーを一時停止します。
-5. `cp0_process_exec_blocking(exec, &LVGL_HOME_KEY_FLAG, keep_root)` を呼びます。
+5. `cp0_process_exec_blocking(exec, keep_root)` を呼びます。ESC 状態は原子的な `cp0_esc_state_*` API で受け渡します。
 6. 子プロセス終了後、タイマーを再有効化し、ホーム入力グループをバインドし、`launch_page_->show_home_screen()` でホーム画面を復元し、Loading を非表示にします。
 
 ### 6.2 まず子プロセスがまだ実行中か確認

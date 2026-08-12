@@ -49,8 +49,9 @@ public:
             report(callback, -1, cp0::screenshot::invalid_request_message());
             return;
         }
-        int ret = save_to_bmp(request.directory.c_str());
-        report(callback, ret, ret == 0 ? "screenshot saved\n" : "screenshot failed\n");
+        std::string filename;
+        int ret = save_to_bmp(request.directory.c_str(), filename);
+        report(callback, ret, ret == 0 ? filename : "screenshot failed\n");
     }
 
 private:
@@ -59,8 +60,9 @@ private:
         cp0::callback::invoke(callback, code, data);
     }
 
-    static int save_to_bmp(const char *dir)
+    static int save_to_bmp(const char *dir, std::string &saved_path)
     {
+        saved_path.clear();
         if (mkdir_p(dir) != 0)
             return -1;
 
@@ -101,6 +103,7 @@ private:
                     ret = -8;
                 } else {
                     std::printf("[SDL SCREENSHOT] Saved screenshot: %s\n", filename.c_str());
+                    saved_path = filename;
                 }
             }
         }

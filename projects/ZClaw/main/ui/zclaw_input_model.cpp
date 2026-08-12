@@ -4,6 +4,11 @@
 
 namespace zclaw {
 
+bool input_is_single_line(InputMode mode)
+{
+    return mode != InputMode::Chat;
+}
+
 InputSubmission input_submission(InputMode mode, std::string value)
 {
     InputSubmission submission;

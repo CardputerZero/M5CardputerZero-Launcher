@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 python3 "$(dirname "$0")/test_store_cache_sync.py"
+python3 "$(dirname "$0")/test_wifi_view_lifecycle_contract.py"
+python3 "$(dirname "$0")/test_bluetooth_power_contract.py"
+python3 "$(dirname "$0")/test_external_framebuffer_ownership.py"
 PYTHONPATH="$(dirname "$0")/..${PYTHONPATH:+:$PYTHONPATH}" \
     python3 "$(dirname "$0")/test_config_default_file.py"
 build_dir="${TMPDIR:-/tmp}/applaunch-tests"
@@ -46,6 +49,7 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
 "$build_dir/test_developer_page_model"
 "$(dirname "$0")/test_cardputer_adb.sh"
 python3 "$(dirname "$0")/test_adb_packaging.py"
+python3 "$(dirname "$0")/test_updater_packaging.py"
 python3 "$(dirname "$0")/test_appstore_packaging.py"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$(dirname "$0")/../main/include" \
@@ -65,6 +69,11 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/../main/ui/model/snake_game_model.cpp" \
     -o "$build_dir/test_snake_game_model"
 "$build_dir/test_snake_game_model"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
+    "$(dirname "$0")/test_game_input_action.cpp" \
+    -o "$build_dir/test_game_input_action"
+"$build_dir/test_game_input_action"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/test_snake_view_contract.cpp" \
     -o "$build_dir/test_snake_view_contract"
@@ -113,6 +122,7 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -o "$build_dir/test_tank_battle_model"
 "$build_dir/test_tank_battle_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
     "$(dirname "$0")/test_setup_page_model.cpp" \
     "$(dirname "$0")/../main/ui/model/setup_page_model.cpp" \
     -o "$build_dir/test_setup_page_model"
@@ -122,6 +132,7 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -o "$build_dir/test_setup_view_build_contract"
 "$build_dir/test_setup_view_build_contract"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
     "$(dirname "$0")/test_setup_page_access_policy.cpp" \
     "$(dirname "$0")/../main/ui/page_app/setting/setup_page_access_policy.cpp" \
     -o "$build_dir/test_setup_page_access_policy"
@@ -147,10 +158,26 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -o "$build_dir/test_screensaver_model"
 "$build_dir/test_screensaver_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
     "$(dirname "$0")/test_esc_hold_lifecycle_model.cpp" \
     "$(dirname "$0")/../main/ui/model/esc_hold_lifecycle_model.cpp" \
     -o "$build_dir/test_esc_hold_lifecycle_model"
 "$build_dir/test_esc_hold_lifecycle_model"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    "$(dirname "$0")/test_esc_ui_watchdog.cpp" \
+    -o "$build_dir/test_esc_ui_watchdog"
+"$build_dir/test_esc_ui_watchdog"
+${CC:-cc} -std=c11 -Wall -Wextra -Werror \
+    -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
+    -c "$(dirname "$0")/../../../ext_components/cp0_lvgl/src/cp0_esc_state.c" \
+    -o "$build_dir/cp0_esc_state.o"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -pthread \
+    -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
+    "$(dirname "$0")/test_esc_ui_watchdog_recovery.cpp" \
+    "$build_dir/cp0_esc_state.o" \
+    "$(dirname "$0")/../main/ui/esc_ui_watchdog.cpp" \
+    -o "$build_dir/test_esc_ui_watchdog_recovery"
+"$build_dir/test_esc_ui_watchdog_recovery"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/test_launcher_navigation_model.cpp" \
     "$(dirname "$0")/../main/ui/model/launcher_navigation_model.cpp" \
@@ -165,6 +192,15 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/../main/ui/model/launcher_media_model.cpp" \
     -o "$build_dir/test_launcher_media_model"
 "$build_dir/test_launcher_media_model"
+
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
+    -I"$(dirname "$0")/../../../SDK/github_source/eventpp/include" \
+    "$(dirname "$0")/test_launcher_media_controls.cpp" \
+    "$(dirname "$0")/../main/ui/launcher_media_controls.cpp" \
+    "$(dirname "$0")/../main/ui/model/launcher_media_model.cpp" \
+    -o "$build_dir/test_launcher_media_controls"
+"$build_dir/test_launcher_media_controls"
 
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
@@ -187,3 +223,8 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/../main/ui/model/st_key_encoder.cpp" \
     -o "$build_dir/test_st_key_encoder"
 "$build_dir/test_st_key_encoder"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    "$(dirname "$0")/test_terminal_unicode.cpp" \
+    "$(dirname "$0")/../main/ui/model/terminal_unicode.cpp" \
+    -o "$build_dir/test_terminal_unicode"
+"$build_dir/test_terminal_unicode"

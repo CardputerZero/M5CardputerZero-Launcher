@@ -10,6 +10,7 @@
 #include "../launcher_ui_app_page.hpp"
 #include "../model/page_timer_lifecycle.hpp"
 #include "../model/st_page_contract.hpp"
+#include "../model/terminal_unicode.hpp"
 #include "cp0_lvgl_app.h"
 #include "input_keys.h"
 #include <algorithm>
@@ -84,6 +85,10 @@ class UISTPage : public AppPage
 
     struct Glyph {
         uint32_t u = ' ';
+        std::array<uint32_t, 2> combining{};
+        uint8_t combining_count = 0;
+        uint8_t columns = 1;
+        bool continuation = false;
         uint16_t attr = ATTR_NULL;
         uint32_t fg = DEFAULT_FG;
         uint32_t bg = DEFAULT_BG;
@@ -108,6 +113,7 @@ class UISTPage : public AppPage
     struct SegmentData {
         std::string text;
         int x = 0;
+        int columns = 0;
         uint32_t fg = DEFAULT_FG;
         uint32_t bg = DEFAULT_BG;
     };
@@ -139,6 +145,7 @@ private:
     uint16_t mode_ = MODE_WRAP;
 
     ParseState parse_state_ = ParseState::Normal;
+    TerminalUtf8Decoder utf8_decoder_;
     bool csi_private_ = false;
     bool csi_secondary_ = false;
     int csi_params_[16] = {};
@@ -170,7 +177,7 @@ private:
     std::chrono::time_point<std::chrono::steady_clock> home_hold_start_{};
 
     static int clamp(int v, int lo, int hi);
-    static char printable(uint32_t u);
+    static std::string printable(uint32_t u);
     static lv_color_t palette(uint32_t color);
     static const lv_font_t *terminal_font();
     static uint32_t xterm256_to_palette(int color);
@@ -199,6 +206,7 @@ private:
 
     void reset_terminal();
     void clear_region(int x1, int y1, int x2, int y2);
+    void normalize_wide_row(int row);
     void move_to(int x, int y);
     void scroll_up(int top, int bottom, int count);
     void scroll_down(int top, int bottom, int count);

@@ -58,9 +58,6 @@ config CP0_LVGL_INIT_SETTINGS
 config CP0_LVGL_INIT_BQ27220
     bool "Initialize BQ27220 service"
     default n
-config CP0_LVGL_INIT_IMU
-    bool "Initialize IMU service"
-    default n
 config CP0_LVGL_INIT_SAVED_SETTINGS
     bool "Apply saved LVGL settings"
     default n

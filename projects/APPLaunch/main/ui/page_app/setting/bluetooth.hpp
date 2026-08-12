@@ -30,6 +30,7 @@ public:
     void enter_alias(UISetupPage &page);
     void build_alias_view(UISetupPage &page);
     void handle_alias_key(UISetupPage &page, uint32_t key);
+    void handle_power_warning_key(UISetupPage &page, uint32_t key);
     void enter_scan(UISetupPage &page);
     void build_list(UISetupPage &page);
     void handle_list_key(UISetupPage &page, uint32_t key);
@@ -43,9 +44,11 @@ public:
     void do_scan(UISetupPage &page);
 
 private:
+    bool require_power_enabled(UISetupPage &page);
     void alias_update_display();
     void rebuild_rows();
     void show_action(UISetupPage &page, const char *message, uint32_t color = 0x58A6FF);
+    bool show_power_warning(UISetupPage &page);
     void activate_selected(UISetupPage &page);
     void remove_selected(UISetupPage &page);
     void start_failure_feedback(UISetupPage &page);

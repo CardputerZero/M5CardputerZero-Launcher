@@ -42,7 +42,7 @@ bool same_provider(const ProviderConfig &left, const ProviderConfig &right)
 {
     return left.alias == right.alias && left.family == right.family &&
            left.model == right.model && left.uri == right.uri &&
-           left.api_key == right.api_key;
+           left.api_key == right.api_key && left.wire_api == right.wire_api;
 }
 
 }  // namespace
@@ -159,9 +159,11 @@ int main()
     assert(settings_presentation.rows[3].value == "WS");
 
     settings_presentation = zclaw::present_setup(custom);
-    assert(settings_presentation.rows.size() == 5);
+    assert(settings_presentation.rows.size() == 6);
     assert(settings_presentation.rows[0].value == "Custom");
-    assert(settings_presentation.rows[4].title == "Confirm");
+    assert(settings_presentation.rows[4].title == "API Type");
+    assert(settings_presentation.rows[4].value == "completions");
+    assert(settings_presentation.rows[5].title == "Confirm");
     settings_presentation = zclaw::present_setup(ollama);
     assert(settings_presentation.rows.size() == 2);
 
@@ -176,8 +178,9 @@ int main()
     assert(settings_presentation.rows[0].title == original[0].alias);
     assert(settings_presentation.rows[1].title == original[1].alias);
     settings_presentation = zclaw::present_provider_detail(original[0]);
-    assert(settings_presentation.rows.size() == 5);
+    assert(settings_presentation.rows.size() == 6);
     assert(settings_presentation.rows[4].value == "set");
+    assert(settings_presentation.rows[5].title == "API Type");
     assert(zclaw::present_setup_progress().rows.empty());
 
     assert(::setenv("HOME", dir, 1) == 0);

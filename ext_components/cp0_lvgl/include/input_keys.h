@@ -78,6 +78,7 @@
 #define KEY_F12             88
 #define KEY_KPENTER         96
 #define KEY_RIGHTCTRL       97
+#define KEY_SYSRQ           99
 #define KEY_RIGHTALT        100
 #define KEY_HOME            102
 #define KEY_UP              103

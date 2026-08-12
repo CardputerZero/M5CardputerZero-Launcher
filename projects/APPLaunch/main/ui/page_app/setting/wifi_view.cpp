@@ -1,6 +1,7 @@
 #define APP_PAGE_IMPLEMENTATION_UNIT
 #include "../ui_app_setup.hpp"
 #include "setup_page_access.hpp"
+#include "keyboard_input.h"
 
 namespace setting {
 
@@ -46,6 +47,11 @@ void commit_view(lv_obj_t *container, lv_obj_t *view)
 }
 
 } // namespace
+
+WiFiListView::~WiFiListView()
+{
+    unmount();
+}
 
 void WiFiListView::reset_objects()
 {
@@ -235,15 +241,54 @@ bool WiFi::show_error(UISetupPage &page, const char *message)
     return true;
 }
 
+bool WiFi::show_power_warning(UISetupPage &page)
+{
+    SetupPageAccess access(page);
+    lv_obj_t *container = access.content_container();
+    lv_obj_t *view = begin_view(container);
+    if (!view) return false;
+
+    lv_obj_t *dialog = lv_obj_create(view);
+    if (!dialog) {
+        lv_obj_delete(view);
+        return false;
+    }
+    lv_obj_set_size(dialog, 280, 92);
+    lv_obj_center(dialog);
+    lv_obj_set_style_radius(dialog, 4, LV_PART_MAIN);
+    lv_obj_set_style_border_width(dialog, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(dialog, lv_color_hex(0xFFAA00), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dialog, lv_color_hex(0x171717), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(dialog, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(dialog, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *title = create_label(dialog, "WiFi power is off", 12, 10, 0xFFAA00,
+                                   &lv_font_montserrat_14);
+    lv_obj_t *message = create_label(dialog, "Turn on Power before scanning.", 12, 36,
+                                     0xCCCCCC, &lv_font_montserrat_12);
+    lv_obj_t *hint = create_label(dialog, "OK", 246, 68, 0x58A6FF,
+                                  &lv_font_montserrat_12);
+    if (!title || !message || !hint) {
+        lv_obj_delete(view);
+        return false;
+    }
+    commit_view(container, view);
+    lv_refr_now(nullptr);
+    return true;
+}
+
 bool WiFi::show_forget_confirmation(UISetupPage &page, const std::string &ssid)
 {
-    lv_obj_t *container = SetupPageAccess(page).content_container();
+    SetupPageAccess access(page);
+    lv_obj_t *container = access.content_container();
     lv_obj_t *view = begin_view(container);
     if (!view) return false;
     char message[128];
     snprintf(message, sizeof(message), "Forget '%s'?", ssid.c_str());
     if (!create_label(view, message, 8, 50, 0xFFAA00, &lv_font_montserrat_14) ||
-        !create_label(view, "OK:confirm  ESC:cancel", 8, 75, 0x888888,
+        !create_label(view, "OK:confirm  ESC:cancel", 8,
+                      access.content_height() - 14, 0x888888,
                       &lv_font_montserrat_10)) {
         lv_obj_delete(view);
         return false;
@@ -253,11 +298,18 @@ bool WiFi::show_forget_confirmation(UISetupPage &page, const std::string &ssid)
     return true;
 }
 
+WiFiPasswordView::~WiFiPasswordView()
+{
+    unmount();
+}
+
 void WiFiPasswordView::reset_objects()
 {
+    cp0_keyboard_set_lvgl_keypad_intercept(0);
     root_ = nullptr;
     input_ = nullptr;
     hint_ = nullptr;
+    password_visible_ = false;
 }
 
 void WiFiPasswordView::root_delete_cb(lv_event_t *event) noexcept
@@ -294,28 +346,204 @@ bool WiFiPasswordView::show(UISetupPage &page, const std::string &ssid)
         !create_label(view, "Password:", 10, 35, 0xCCCCCC, &lv_font_montserrat_12))
         return fail();
 
-    lv_obj_t *input = create_label(view, "_", 90, 35, 0xFFFFFF, &lv_font_montserrat_14);
+    lv_obj_t *input = lv_textarea_create(view);
     if (!input) return fail();
-    lv_obj_set_width(input, 200);
-    lv_label_set_long_mode(input, LV_LABEL_LONG_CLIP);
+    lv_obj_remove_style_all(input);
+    lv_obj_set_pos(input, 88, 29);
+    lv_obj_set_size(input, 210, 30);
+    lv_textarea_set_one_line(input, true);
+    lv_textarea_set_max_length(input, SetupWifiPasswordModel::MAX_PASSWORD_BYTES);
+    lv_textarea_set_password_bullet(input, "*");
+    lv_textarea_set_password_show_time(input, 0);
+    lv_textarea_set_password_mode(input, true);
+    lv_textarea_set_text(input, "");
+    lv_obj_set_style_text_font(input, &lv_font_montserrat_14, LV_PART_MAIN);
+    lv_obj_set_style_text_color(input, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(input, lv_color_hex(0x181818), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(input, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_color(input, lv_color_hex(0x58A6FF), LV_PART_MAIN);
+    lv_obj_set_style_border_width(input, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(input, 3, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(input, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(input, 6, LV_PART_MAIN);
+    lv_obj_set_style_pad_top(input, 4, LV_PART_MAIN);
+    lv_obj_set_style_pad_bottom(input, 2, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(input, LV_OPA_TRANSP, LV_PART_CURSOR);
+    lv_obj_set_style_border_color(input, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
+    lv_obj_set_style_border_width(input, 2, LV_PART_CURSOR);
+    lv_obj_set_style_border_side(input, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
+    lv_obj_set_style_anim_duration(input, 400, LV_PART_CURSOR);
+    lv_obj_add_state(input, LV_STATE_FOCUSED);
 
-    lv_obj_t *hint = create_label(view, "Type pw, OK:connect, ESC:cancel", 10, 65,
-                                  0x555555, &lv_font_montserrat_10);
+    lv_obj_t *hint = create_label(view, "ALT:show  OK:connect  ESC:cancel", 10,
+                                  access.content_height() - 14, 0x555555,
+                                  &lv_font_montserrat_10);
     if (!hint) return fail();
 
     commit_view(container, view);
     input_ = input;
     hint_ = hint;
+    password_visible_ = false;
+    cp0_keyboard_set_lvgl_keypad_intercept(1);
     access.set_view(SetupViewState::WIFI_PW);
     return true;
 }
 
-void WiFiPasswordView::update_password(const std::string &display)
+void WiFiPasswordView::update_password(const std::string &password)
 {
-    if (input_) lv_label_set_text(input_, display.c_str());
+    if (!input_) return;
+    lv_textarea_set_text(input_, password.c_str());
+    lv_textarea_set_cursor_pos(input_, LV_TEXTAREA_CURSOR_LAST);
+}
+
+void WiFiPasswordView::toggle_password_visibility()
+{
+    if (!input_) return;
+    password_visible_ = !password_visible_;
+    lv_textarea_set_password_mode(input_, !password_visible_);
+    set_hint(password_visible_
+        ? "ALT:hide  OK:connect  ESC:cancel"
+        : "ALT:show  OK:connect  ESC:cancel");
 }
 
 void WiFiPasswordView::set_hint(const char *text, uint32_t color)
+{
+    if (!hint_) return;
+    lv_label_set_text(hint_, text ? text : "");
+    lv_obj_set_style_text_color(hint_, lv_color_hex(color), LV_PART_MAIN);
+}
+
+WiFiSsidView::~WiFiSsidView()
+{
+    unmount();
+}
+
+void WiFiSsidView::reset_objects()
+{
+    cp0_keyboard_set_lvgl_keypad_intercept(0);
+    root_ = nullptr;
+    ssid_input_ = nullptr;
+    password_input_ = nullptr;
+    hint_ = nullptr;
+    password_visible_ = false;
+}
+
+void WiFiSsidView::root_delete_cb(lv_event_t *event) noexcept
+{
+    if (!event || lv_event_get_target(event) != lv_event_get_current_target(event)) return;
+    auto *view = static_cast<WiFiSsidView *>(lv_event_get_user_data(event));
+    if (view && lv_event_get_target(event) == view->root_) view->reset_objects();
+}
+
+void WiFiSsidView::unmount()
+{
+    if (root_) lv_obj_delete(root_);
+    reset_objects();
+}
+
+bool WiFiSsidView::show(UISetupPage &page)
+{
+    unmount();
+    SetupPageAccess access(page);
+    lv_obj_t *container = access.content_container();
+    lv_obj_t *view = begin_view(container);
+    if (!view) return false;
+    root_ = view;
+    lv_obj_add_event_cb(view, root_delete_cb, LV_EVENT_DELETE, this);
+    auto fail = [&] {
+        if (root_) lv_obj_delete(root_);
+        reset_objects();
+        return false;
+    };
+    if (!create_label(view, "Add Hidden WiFi", 10, 4, 0x58A6FF,
+                      &lv_font_montserrat_12) ||
+        !create_label(view, "SSID", 10, 25, 0xCCCCCC, &lv_font_montserrat_10) ||
+        !create_label(view, "PASSWORD", 10, 59, 0xCCCCCC, &lv_font_montserrat_10))
+        return fail();
+
+    auto create_input = [&](int y, uint32_t max_length) {
+        lv_obj_t *input = lv_textarea_create(view);
+        if (!input) return static_cast<lv_obj_t *>(nullptr);
+        lv_obj_remove_style_all(input);
+        lv_obj_set_pos(input, 82, y);
+        lv_obj_set_size(input, 216, 28);
+        lv_textarea_set_one_line(input, true);
+        lv_textarea_set_max_length(input, max_length);
+        lv_textarea_set_text(input, "");
+        lv_obj_set_style_text_font(input, &lv_font_montserrat_14, LV_PART_MAIN);
+        lv_obj_set_style_text_color(input, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(input, lv_color_hex(0x181818), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(input, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_color(input, lv_color_hex(0x444444), LV_PART_MAIN);
+        lv_obj_set_style_border_width(input, 1, LV_PART_MAIN);
+        lv_obj_set_style_radius(input, 3, LV_PART_MAIN);
+        lv_obj_set_style_pad_left(input, 6, LV_PART_MAIN);
+        lv_obj_set_style_pad_top(input, 3, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(input, LV_OPA_TRANSP, LV_PART_CURSOR);
+        lv_obj_set_style_border_color(input, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
+        lv_obj_set_style_border_width(input, 2, LV_PART_CURSOR);
+        lv_obj_set_style_border_side(input, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
+        lv_obj_set_style_anim_duration(input, 400, LV_PART_CURSOR);
+        return input;
+    };
+    lv_obj_t *ssid_input = create_input(18, SetupWifiSsidModel::MAX_SSID_BYTES);
+    lv_obj_t *password_input = create_input(52, SetupWifiPasswordModel::MAX_PASSWORD_BYTES);
+    if (!ssid_input || !password_input) return fail();
+    lv_textarea_set_password_bullet(password_input, "*");
+    lv_textarea_set_password_show_time(password_input, 0);
+    lv_textarea_set_password_mode(password_input, true);
+
+    lv_obj_t *hint = create_label(view, "TAB:switch  ALT:show  OK:connect", 10,
+                                  access.content_height() - 14, 0x555555,
+                                  &lv_font_montserrat_10);
+    if (!hint) return fail();
+    commit_view(container, view);
+    ssid_input_ = ssid_input;
+    password_input_ = password_input;
+    hint_ = hint;
+    password_visible_ = false;
+    set_focus(0);
+    cp0_keyboard_set_lvgl_keypad_intercept(1);
+    access.set_view(SetupViewState::WIFI_SSID);
+    return true;
+}
+
+void WiFiSsidView::update_ssid(const std::string &ssid)
+{
+    if (!ssid_input_) return;
+    lv_textarea_set_text(ssid_input_, ssid.c_str());
+    lv_textarea_set_cursor_pos(ssid_input_, LV_TEXTAREA_CURSOR_LAST);
+}
+
+void WiFiSsidView::update_password(const std::string &password)
+{
+    if (!password_input_) return;
+    lv_textarea_set_text(password_input_, password.c_str());
+    lv_textarea_set_cursor_pos(password_input_, LV_TEXTAREA_CURSOR_LAST);
+}
+
+void WiFiSsidView::set_focus(int focus)
+{
+    if (!ssid_input_ || !password_input_) return;
+    lv_obj_t *focused = focus == 0 ? ssid_input_ : password_input_;
+    lv_obj_t *unfocused = focus == 0 ? password_input_ : ssid_input_;
+    lv_obj_add_state(focused, LV_STATE_FOCUSED);
+    lv_obj_remove_state(unfocused, LV_STATE_FOCUSED);
+    lv_obj_set_style_border_color(focused, lv_color_hex(0x58A6FF), LV_PART_MAIN);
+    lv_obj_set_style_border_color(unfocused, lv_color_hex(0x444444), LV_PART_MAIN);
+}
+
+void WiFiSsidView::toggle_password_visibility()
+{
+    if (!password_input_) return;
+    password_visible_ = !password_visible_;
+    lv_textarea_set_password_mode(password_input_, !password_visible_);
+    set_hint(password_visible_
+        ? "TAB:switch  ALT:hide  OK:connect"
+        : "TAB:switch  ALT:show  OK:connect");
+}
+
+void WiFiSsidView::set_hint(const char *text, uint32_t color)
 {
     if (!hint_) return;
     lv_label_set_text(hint_, text ? text : "");

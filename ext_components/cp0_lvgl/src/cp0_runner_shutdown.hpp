@@ -6,7 +6,6 @@ extern "C" void deinit_battery(void);
 extern "C" void deinit_audio(void) noexcept;
 extern "C" void deinit_camera(void) noexcept;
 extern "C" void deinit_input(void);
-extern "C" void deinit_imu(void);
 extern "C" void deinit_lora(void) noexcept;
 extern "C" void deinit_pty(void) noexcept;
 extern "C" void deinit_rpc(void) noexcept;
@@ -15,13 +14,13 @@ extern "C" void deinit_wifi(void);
 
 namespace cp0::runner {
 
-template <typename StopSudo, typename StopRpc, typename StopCamera, typename StopImu,
+template <typename StopSudo, typename StopRpc, typename StopCamera,
           typename StopAudio, typename StopPty, typename StopInput, typename StopWifi,
           typename StopLora, typename StopBattery,
           typename DeinitializeLvgl>
 void shutdown_services(StopSudo &&stop_sudo, StopRpc &&stop_rpc,
-                       StopCamera &&stop_camera, StopImu &&stop_imu,
-                       StopAudio &&stop_audio, StopPty &&stop_pty,
+                       StopCamera &&stop_camera, StopAudio &&stop_audio,
+                       StopPty &&stop_pty,
                        StopInput &&stop_input, StopWifi &&stop_wifi,
                        StopLora &&stop_lora, StopBattery &&stop_battery,
                        DeinitializeLvgl &&deinitialize_lvgl) noexcept
@@ -36,10 +35,6 @@ void shutdown_services(StopSudo &&stop_sudo, StopRpc &&stop_rpc,
     }
     try {
         std::forward<StopCamera>(stop_camera)();
-    } catch (...) {
-    }
-    try {
-        std::forward<StopImu>(stop_imu)();
     } catch (...) {
     }
     try {

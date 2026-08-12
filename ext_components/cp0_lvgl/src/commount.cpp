@@ -54,10 +54,12 @@ extern "C" int cp0_wifi_scan(cp0_wifi_ap_t *entries, int max_entries)
         return 0;
     std::fill_n(entries, static_cast<size_t>(max_entries), cp0_wifi_ap_t{});
     const int request_limit = std::min(max_entries, CP0_WIFI_AP_MAX);
-    int count = 0;
+    int count = CP0_WIFI_ERROR_SERVICE;
     cp0::signal::invoke_noexcept([&] { cp0_signal_wifi_api({"Scan", std::to_string(request_limit)}, [&](int code, std::string data) {
-        if (code < 0)
+        if (code < 0) {
+            count = code;
             return;
+        }
         count = cp0::network::decode_scan_payload(data, entries, max_entries);
     }); });
     return count;
@@ -69,6 +71,14 @@ extern "C" int cp0_wifi_connect(const char *ssid, const char *password)
         return -1;
     return password && password[0] ? wifi_command({"Connect", ssid, password})
                                    : wifi_command({"Connect", ssid});
+}
+
+extern "C" int cp0_wifi_connect_hidden(const char *ssid, const char *password)
+{
+    if (!ssid || !ssid[0])
+        return -1;
+    return password && password[0] ? wifi_command({"ConnectHidden", ssid, password})
+                                   : wifi_command({"ConnectHidden", ssid});
 }
 
 extern "C" int cp0_wifi_profile_forget(const char *ssid)
@@ -128,6 +138,16 @@ static void saved_volume_write(int val)
     });
 }
 
+static void saved_gpio_write(const char *name)
+{
+    const int value = config_get_int(name, -1);
+    if (value != 0 && value != 1)
+        return;
+    cp0::signal::invoke_noexcept([&] {
+        cp0_signal_settings_api({"GpioSet", name, std::to_string(value)}, nullptr);
+    });
+}
+
 extern "C" void init_lvgl_saved_settings()
 {
     int saved_bright = config_get_int("brightness", -1);
@@ -137,4 +157,7 @@ extern "C" void init_lvgl_saved_settings()
     int saved_vol = config_get_int("volume", -1);
     if (saved_vol >= 0)
         saved_volume_write(saved_vol);
+
+    saved_gpio_write("extport_usb");
+    saved_gpio_write("extport_5vout");
 }

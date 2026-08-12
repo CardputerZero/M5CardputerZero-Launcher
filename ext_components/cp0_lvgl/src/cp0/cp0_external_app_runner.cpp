@@ -1,5 +1,7 @@
 #include "cp0_external_app_runner.hpp"
 
+#include "cp0_esc_exit_policy.hpp"
+#include "cp0_esc_state.h"
 #include "../cp0_external_process_group.hpp"
 #include "cp0_process_commands.hpp"
 
@@ -18,6 +20,7 @@
 
 extern "C" void __attribute__((weak)) keyboard_pause(void) {}
 extern "C" void __attribute__((weak)) keyboard_resume(void) {}
+extern "C" void __attribute__((weak)) ui_external_esc_hint(int visible) { (void)visible; }
 
 namespace cp0_external_app_runner {
 namespace {
@@ -28,13 +31,19 @@ const char *keyboard_device()
     return configured ? configured : "/dev/input/by-path/platform-3f804000.i2c-event";
 }
 
+std::uint64_t monotonic_ms()
+{
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+}
+
 } // namespace
 
-int run(const char *command, volatile int *home_key_flag, bool keep_root)
+int run(const char *command, bool keep_root)
 {
 #if defined(_WIN32)
     (void)command;
-    (void)home_key_flag;
     (void)keep_root;
     return -1;
 #else
@@ -73,12 +82,7 @@ int run(const char *command, volatile int *home_key_flag, bool keep_root)
                  static_cast<int>(pid),
                  subreaper ? 1 : 0);
 
-    auto esc_down_since = std::chrono::steady_clock::time_point{};
-    auto term_start = std::chrono::steady_clock::time_point{};
-    bool esc_down = false;
-    bool raw_esc_down = false;
-    bool term_sent = false;
-    bool kill_sent = false;
+    cp0_esc_exit_policy::StateMachine esc_policy;
     bool leader_reaped = false;
     int status = 0;
 
@@ -90,42 +94,28 @@ int run(const char *command, volatile int *home_key_flag, bool keep_root)
         while (read(keyboard_fd, &event, sizeof(event)) == static_cast<ssize_t>(sizeof(event))) {
             if (event.type == EV_KEY && event.code == KEY_ESC) {
                 if (event.value == 1)
-                    raw_esc_down = true;
+                    cp0_esc_state_write(1);
                 else if (event.value == 0)
-                    raw_esc_down = false;
+                    cp0_esc_state_write(0);
             }
         }
 
-        const bool esc_now = raw_esc_down || (home_key_flag && *home_key_flag);
-        if (esc_now && !esc_down) {
-            esc_down = true;
-            esc_down_since = std::chrono::steady_clock::now();
-        } else if (!esc_now) {
-            esc_down = false;
+        const bool esc_now = cp0_esc_state_read() != 0;
+        const auto decision = esc_policy.update(monotonic_ms(), esc_now);
+        if (decision.show_hint) ui_external_esc_hint(1);
+        if (decision.hide_hint) ui_external_esc_hint(0);
+        if (decision.send_terminate) {
+            std::fprintf(stderr, "[process] ESC timeout: SIGTERM pgid=%d\n", static_cast<int>(pid));
+            killpg(pid, SIGTERM);
         }
-
-        if (esc_down && !term_sent) {
-            const auto held_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                     std::chrono::steady_clock::now() - esc_down_since)
-                                     .count();
-            if (held_ms >= 3000) {
-                term_sent = true;
-                term_start = std::chrono::steady_clock::now();
-                std::fprintf(stderr, "[process] ESC timeout: SIGTERM pgid=%d\n", static_cast<int>(pid));
-                killpg(pid, SIGTERM);
-            }
-        }
-        if (term_sent && !kill_sent &&
-            std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::steady_clock::now() - term_start)
-                    .count() >= 2) {
-            kill_sent = true;
+        if (decision.send_kill) {
             std::fprintf(stderr, "[process] grace timeout: SIGKILL pgid=%d\n", static_cast<int>(pid));
             killpg(pid, SIGKILL);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
+    if (esc_policy.finish().hide_hint) ui_external_esc_hint(0);
     cp0_process_group::reap_available(pid, pid, status, leader_reaped);
     std::fprintf(stderr,
                  "[process] external app group drained pgid=%d leader_reaped=%d\n",
@@ -133,6 +123,7 @@ int run(const char *command, volatile int *home_key_flag, bool keep_root)
                  leader_reaped ? 1 : 0);
     close(keyboard_fd);
     keyboard_resume();
+    cp0_esc_state_reset();
     std::printf("[cp0] Returned to launcher\n");
     std::fflush(stdout);
     return WIFEXITED(status) ? WEXITSTATUS(status) : -1;

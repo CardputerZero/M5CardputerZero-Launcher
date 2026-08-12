@@ -7,6 +7,7 @@
 #include "helloworld.hpp"
 
 #include "input_keys.h"
+#include "cp0_keyboard_navigation_contract.h"
 
 #include <cstdint>
 
@@ -159,8 +160,9 @@ void UIIpPanelPage::activate(int index)
 void UIIpPanelPage::handle_key(lv_event_t *event)
 {
     uint32_t key = lv_event_get_key(event);
-    if (key == LV_KEY_LEFT || key == KEY_F) selected_button_ = (selected_button_ + 4) % 5;
-    else if (key == LV_KEY_RIGHT || key == KEY_X) selected_button_ = (selected_button_ + 1) % 5;
+    key = cp0_keyboard_navigation_alias(key);
+    if (key == LV_KEY_LEFT || key == KEY_LEFT) selected_button_ = (selected_button_ + 4) % 5;
+    else if (key == LV_KEY_RIGHT || key == KEY_RIGHT) selected_button_ = (selected_button_ + 1) % 5;
     else if (key == LV_KEY_ENTER) activate(selected_button_);
     else if (key == LV_KEY_ESC && navigate_home) navigate_home();
     update_ui();

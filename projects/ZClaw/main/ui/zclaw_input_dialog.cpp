@@ -2,6 +2,7 @@
 
 #include "zclaw_fonts.hpp"
 #include "zclaw_theme.h"
+#include "keyboard_input.h"
 
 namespace zclaw {
 namespace {
@@ -26,15 +27,20 @@ void InputDialog::open_chat(const FontManager *fonts)
 }
 
 void InputDialog::open_text(const FontManager *fonts, const std::string &placeholder,
-                            const std::string &initial_text, InputMode mode)
+                            const std::string &initial_text, InputMode mode,
+                            bool secret)
 {
     mode_ = mode;
+    secret_ = secret;
+    secret_revealed_ = false;
     open(fonts);
     if (!textarea_)
         return;
     lv_textarea_set_placeholder_text(textarea_, placeholder.c_str());
+    lv_textarea_set_password_mode(textarea_, secret_);
     lv_textarea_set_text(textarea_, initial_text.c_str());
     lv_textarea_set_cursor_pos(textarea_, LV_TEXTAREA_CURSOR_LAST);
+    keep_single_line_cursor_visible();
 }
 
 void InputDialog::close()
@@ -65,8 +71,10 @@ std::string InputDialog::text() const
 
 void InputDialog::append(const char *utf8)
 {
-    if (textarea_ && utf8 && utf8[0])
+    if (textarea_ && utf8 && utf8[0]) {
         lv_textarea_add_text(textarea_, utf8);
+        keep_single_line_cursor_visible();
+    }
 }
 
 void InputDialog::insert_newline()
@@ -77,26 +85,34 @@ void InputDialog::insert_newline()
 
 void InputDialog::erase_before_cursor()
 {
-    if (textarea_)
+    if (textarea_) {
         lv_textarea_delete_char(textarea_);
+        keep_single_line_cursor_visible();
+    }
 }
 
 void InputDialog::erase_after_cursor()
 {
-    if (textarea_)
+    if (textarea_) {
         lv_textarea_delete_char_forward(textarea_);
+        keep_single_line_cursor_visible();
+    }
 }
 
 void InputDialog::move_left()
 {
-    if (textarea_)
+    if (textarea_) {
         lv_textarea_cursor_left(textarea_);
+        keep_single_line_cursor_visible();
+    }
 }
 
 void InputDialog::move_right()
 {
-    if (textarea_)
+    if (textarea_) {
         lv_textarea_cursor_right(textarea_);
+        keep_single_line_cursor_visible();
+    }
 }
 
 void InputDialog::move_up()
@@ -111,11 +127,20 @@ void InputDialog::move_down()
         lv_textarea_cursor_down(textarea_);
 }
 
+void InputDialog::toggle_secret_visibility()
+{
+    if (!textarea_ || !secret_)
+        return;
+    secret_revealed_ = !secret_revealed_;
+    lv_textarea_set_password_mode(textarea_, !secret_revealed_);
+}
+
 void InputDialog::open(const FontManager *fonts)
 {
     if (is_open() || !fonts)
         return;
 
+    const bool single_line = input_is_single_line(mode_);
     dialog_ = lv_msgbox_create(lv_layer_top());
     lv_obj_add_event_cb(dialog_, dialog_deleted, LV_EVENT_DELETE, this);
     lv_obj_set_size(dialog_, 300, kDialogHeight);
@@ -136,9 +161,9 @@ void InputDialog::open(const FontManager *fonts)
     lv_obj_clear_flag(content, LV_OBJ_FLAG_SCROLLABLE);
 
     textarea_ = lv_textarea_create(content);
+    lv_textarea_set_one_line(textarea_, single_line);
     lv_obj_set_size(textarea_, 290, kDialogHeight - 10);
     lv_textarea_set_placeholder_text(textarea_, "Type your message...");
-    lv_textarea_set_one_line(textarea_, false);
     lv_textarea_set_cursor_click_pos(textarea_, false);
     lv_obj_set_style_radius(textarea_, 8, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(textarea_, lv_color_hex(theme::kPanel), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -154,7 +179,7 @@ void InputDialog::open(const FontManager *fonts)
         lv_style_set_border_color(&cursor_style_, lv_color_hex(theme::kPurple));
         lv_style_set_border_side(&cursor_style_, LV_BORDER_SIDE_LEFT);
         lv_style_set_border_width(&cursor_style_, 2);
-        lv_style_set_pad_left(&cursor_style_, -2);
+        lv_style_set_pad_left(&cursor_style_, -4);
         lv_style_set_pad_right(&cursor_style_, 0);
         cursor_style_initialized_ = true;
     }
@@ -162,6 +187,30 @@ void InputDialog::open(const FontManager *fonts)
     lv_obj_add_state(textarea_, LV_STATE_FOCUSED);
     lv_obj_send_event(textarea_, LV_EVENT_FOCUSED, nullptr);
     lv_textarea_set_cursor_pos(textarea_, LV_TEXTAREA_CURSOR_LAST);
+    cp0_keyboard_set_lvgl_keypad_intercept(1);
+}
+
+void InputDialog::keep_single_line_cursor_visible()
+{
+    if (!textarea_ || !lv_textarea_get_one_line(textarea_))
+        return;
+
+    lv_obj_update_layout(textarea_);
+    lv_obj_t *label = lv_textarea_get_label(textarea_);
+    lv_point_t cursor{};
+    lv_label_get_letter_pos(label, lv_textarea_get_cursor_pos(textarea_), &cursor);
+
+    constexpr lv_coord_t kCaretMargin = 4;
+    const lv_coord_t viewport_width = lv_obj_get_content_width(textarea_);
+    const lv_coord_t scroll_left = lv_obj_get_scroll_left(textarea_);
+    if (cursor.x < scroll_left + kCaretMargin) {
+        lv_obj_scroll_to_x(textarea_, cursor.x - kCaretMargin, LV_ANIM_OFF);
+    }
+    else if (cursor.x + kCaretMargin > scroll_left + viewport_width) {
+        lv_obj_scroll_to_x(textarea_,
+                           cursor.x + kCaretMargin - viewport_width,
+                           LV_ANIM_OFF);
+    }
 }
 
 void InputDialog::dialog_deleted(lv_event_t *event)
@@ -174,8 +223,11 @@ void InputDialog::dialog_deleted(lv_event_t *event)
 
 void InputDialog::release_dialog()
 {
+    cp0_keyboard_set_lvgl_keypad_intercept(0);
     dialog_ = nullptr;
     textarea_ = nullptr;
+    secret_ = false;
+    secret_revealed_ = false;
     mode_ = InputMode::Chat;
 }
 

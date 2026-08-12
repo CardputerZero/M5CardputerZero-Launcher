@@ -72,7 +72,7 @@ The asynchronous callback:
 3. Forces a refresh.
 4. Releases the active page holder.
 
-Holding ESC for the configured interval calls `Launch::esc_force_home_cb()` for an active internal page. External process cancellation is handled through the shared process API and home-key flag passed to `ExecBlocking`.
+Holding ESC for the configured interval calls `Launch::esc_force_home_cb()` for an active internal page. External process cancellation reads the atomic ESC state through the `cp0_esc_state_*` C ABI; `ExecBlocking` does not receive a shared-memory address.
 
 ## 6. Debugging Checkpoints
 

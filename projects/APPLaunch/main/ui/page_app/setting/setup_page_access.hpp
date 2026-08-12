@@ -82,6 +82,7 @@ public:
     int gpio_get(const char *name) const;
 
     void set_view(SetupViewState view);
+    void select_sub(int index, int item_count);
     bool enter_help();
     bool leave_help();
     SetupViewState view() const;

@@ -13,11 +13,18 @@
 #include <time.h>
 
 static cp0_keyboard_key_handler_t global_key_handler;
+static int lvgl_keypad_intercept;
 
 void cp0_keyboard_set_global_key_handler(cp0_keyboard_key_handler_t handler)
 {
     global_key_handler = handler;
 }
+
+void cp0_keyboard_set_lvgl_keypad_intercept(int intercept)
+{ lvgl_keypad_intercept = intercept != 0; }
+
+int cp0_keyboard_get_lvgl_keypad_intercept(void)
+{ return lvgl_keypad_intercept; }
 
 int cp0_process_run_sudo(const char *password, const char *const *argv)
 { (void)password; (void)argv; return -1; }
@@ -86,8 +93,8 @@ const char *hal_path_store_sync_cmd(void) { return ""; }
 const char *hal_path_images_dir(void) { return "/images"; }
 const char *hal_path_audio_dir(void) { return "/audio"; }
 
-int hal_process_exec_blocking(const char *exec_path, volatile int *home_key_flag, int keep_root)
-{ (void)exec_path; (void)home_key_flag; (void)keep_root; return -1; }
+int hal_process_exec_blocking(const char *exec_path, int keep_root)
+{ (void)exec_path; (void)keep_root; return -1; }
 hal_pid_t hal_process_spawn(const char *exec_path, int keep_root)
 { (void)exec_path; (void)keep_root; return -1; }
 void hal_process_stop(hal_pid_t pid) { (void)pid; }

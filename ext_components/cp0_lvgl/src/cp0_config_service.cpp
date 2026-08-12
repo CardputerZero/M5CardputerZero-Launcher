@@ -126,6 +126,7 @@ void ConfigService::api_call(Arguments arguments, Callback callback)
         return;
     }
     if (command == "Save") {
+        std::lock_guard<std::mutex> mutation_lock(mutation_mutex_);
         Entries snapshot;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -135,10 +136,55 @@ void ConfigService::api_call(Arguments arguments, Callback callback)
         report(callback, result, result == 0 ? "ok" : "save failed");
         return;
     }
+    if (command == "SetManyAndSave") {
+        std::lock_guard<std::mutex> mutation_lock(mutation_mutex_);
+        if (arguments.size() < 3 || arguments.size() % 2 == 0) {
+            report(callback, -1, "invalid config transaction" + error_suffix_);
+            return;
+        }
+        Entries candidate;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            candidate = entries_;
+        }
+        auto set_candidate = [&](const std::string &key, const std::string &value) {
+            if (key.empty()) return false;
+            const std::string bounded_key = key.substr(0, kMaxKeyLength);
+            const std::string bounded_value = value.substr(0, kMaxValueLength);
+            for (auto &entry : candidate) {
+                if (entry.first == bounded_key) {
+                    entry.second = bounded_value;
+                    return true;
+                }
+            }
+            if (candidate.size() >= kMaxEntries) return false;
+            candidate.emplace_back(bounded_key, bounded_value);
+            return true;
+        };
+        auto it = std::next(arguments.begin());
+        while (it != arguments.end()) {
+            const std::string key = *it++;
+            const std::string value = *it++;
+            if (!set_candidate(key, value)) {
+                report(callback, -1, "invalid config transaction" + error_suffix_);
+                return;
+            }
+        }
+        const int result = save(candidate);
+        if (result == 0) {
+            std::lock_guard<std::mutex> lock(mutex_);
+            entries_ = std::move(candidate);
+        }
+        report(callback, result, result == 0 ? "ok" : "save failed");
+        return;
+    }
 
     int result_code = 0;
     std::string result_data;
     {
+        std::unique_lock<std::mutex> mutation_lock;
+        if (command == "SetInt" || command == "SetStr")
+            mutation_lock = std::unique_lock<std::mutex>(mutation_mutex_);
         std::lock_guard<std::mutex> lock(mutex_);
         if (command == "GetInt") {
             const int fallback = parse_legacy_integer(argument_at(arguments, 2), 0);

@@ -1,10 +1,25 @@
 #!/bin/sh
 set -eu
+build_dir="${TMPDIR:-/tmp}/cp0-lvgl-tests"
+mkdir -p "$build_dir"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -pthread \
+    "$(dirname "$0")/test_update_job.cpp" -o "$build_dir/test_update_job"
+"$build_dir/test_update_job"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -pthread \
+    "$(dirname "$0")/test_launcher_updater.cpp" -o "$build_dir/test_launcher_updater"
+"$build_dir/test_launcher_updater"
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 binary="${TMPDIR:-/tmp}/cp0_lvgl_test_async_utils.$$"
 init_plan_object="${TMPDIR:-/tmp}/cp0_lvgl_test_init_plan.$$"
-trap 'rm -f "$binary" "$init_plan_object"' EXIT HUP INT TERM
+esc_state_object="${TMPDIR:-/tmp}/cp0_esc_state.$$.$$.o"
+gc_sections_flag="-Wl,--gc-sections"
+if [ "$(uname -s)" = "Darwin" ]; then
+    gc_sections_flag="-Wl,-dead_strip"
+fi
+trap 'rm -f "$binary" "$init_plan_object" "$esc_state_object"' EXIT HUP INT TERM
+"${CC:-cc}" -std=c11 -Wall -Wextra -Werror -I"$root/include" \
+    -c "$root/src/cp0_esc_state.c" -o "$esc_state_object"
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
     -I"$root/src" "$root/tests/test_c_api_boundary.cpp" -o "$binary"
@@ -12,6 +27,10 @@ trap 'rm -f "$binary" "$init_plan_object"' EXIT HUP INT TERM
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
     -I"$root/src" "$root/tests/test_audio_runtime_lifecycle.cpp" -o "$binary"
+"$binary"
+
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
+    -I"$root/src" "$root/tests/test_audio_quiet_period_gate.cpp" -o "$binary"
 "$binary"
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
@@ -52,6 +71,16 @@ trap 'rm -f "$binary" "$init_plan_object"' EXIT HUP INT TERM
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
     -I"$root/src" "$root/tests/test_font_cache_policy.cpp" -o "$binary"
+"$binary"
+
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
+    -I"$root/include" -I"$root/src/cp0" \
+    "$root/tests/test_wifi_error_policy.cpp" -o "$binary"
+"$binary"
+
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
+    -I"$root/include" \
+    "$root/tests/test_bounded_task_registry.cpp" -o "$binary"
 "$binary"
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
@@ -177,6 +206,14 @@ trap 'rm -f "$binary" "$init_plan_object"' EXIT HUP INT TERM
     "$root/tests/test_network_api_contract.cpp" -o "$binary"
 "$binary"
 
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
+    -ffunction-sections -fdata-sections "$gc_sections_flag" \
+    -I"$root/include" -I"$root/src" -I"$root/src/cp0" \
+    -I"$root/../../SDK/github_source/eventpp/include" \
+    "$root/src/cp0/cp0_process_commands.cpp" \
+    "$root/tests/test_process_command_timeout.cpp" -o "$binary"
+"$binary"
+
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
     -I"$root/src" "$root/tests/test_callback_result.cpp" -o "$binary"
 "$binary"
@@ -203,8 +240,13 @@ if [ "$(uname -s)" = "Linux" ]; then
     "$binary"
 fi
 
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
+    -I"$root/include" "$root/tests/test_esc_exit_policy.cpp" -o "$binary"
+"$binary"
+
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
-    -I"$root/src" \
+    -I"$root/include" -I"$root/src" \
+    "$esc_state_object" \
     "$root/src/sdl/sdl_external_app_runner.cpp" \
     "$root/tests/test_sdl_external_app_runner.cpp" -o "$binary"
 "$binary"
@@ -266,10 +308,6 @@ fi
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
     -I"$root/src" "$root/tests/test_runner_service_shutdown.cpp" -o "$binary"
-"$binary"
-
-"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
-    -I"$root/src" "$root/tests/test_imu_worker_contract.cpp" -o "$binary"
 "$binary"
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
@@ -365,12 +403,6 @@ fi
     "$root/tests/test_pty_runtime.cpp" -lutil -o "$binary"
 "$binary"
 
-"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
-    -I"$root/include" -I"$root/src" \
-    "$root/src/cp0_imu_codec.cpp" \
-    "$root/tests/test_imu_codec.cpp" -o "$binary"
-"$binary"
-
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
     -I"$root/include" -I"$root/src" \
     "$root/src/cp0_config_service.cpp" \
@@ -417,6 +449,16 @@ fi
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -pthread \
     -I"$root/include" -I"$root/src" \
     "$root/src/cp0_keyboard_text.c" \
+    "$root/src/cp0_esc_state.c" \
     "$root/src/cp0_keyboard_queue.c" \
     "$root/tests/test_keyboard_contract.c" -o "$binary"
+"$binary"
+
+"${CC:-cc}" -std=c11 -Wall -Wextra -Werror -pthread -fsanitize=thread -g \
+    -I"$root/include" "$root/src/cp0_esc_state.c" \
+    "$root/tests/test_esc_state_tsan.c" -o "$binary"
+TSAN_OPTIONS="halt_on_error=1" "$binary"
+
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
+    -I"$root/include" "$root/tests/test_keyboard_input_context.cpp" -o "$binary"
 "$binary"

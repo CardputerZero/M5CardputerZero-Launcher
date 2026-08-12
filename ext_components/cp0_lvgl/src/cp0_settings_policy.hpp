@@ -24,6 +24,7 @@ enum class PowerOutput {
     Unknown,
     Grove5V,
     Ext5V,
+    Backlight,
 };
 
 Command command_from(const Arguments &arguments);
@@ -43,6 +44,8 @@ bool parse_integer_file_line(std::string_view text,
                              int maximum,
                              int &value);
 bool parse_switch_response(std::string_view text, int &value);
+std::string gpiochip_path_from_debug_line(std::string_view line,
+                                          std::string_view controller_name);
 
 PowerOutput power_output_from_name(const std::string &name);
 int switch_value(int value);

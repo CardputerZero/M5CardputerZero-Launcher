@@ -39,6 +39,12 @@ int main()
     assert(zclaw::setup_edit_field_for_row(custom, 1) == zclaw::SetupEditField::Uri);
     assert(zclaw::setup_edit_field_for_row(custom, 2) == zclaw::SetupEditField::ApiKey);
     assert(zclaw::setup_edit_field_for_row(custom, 3) == zclaw::SetupEditField::Model);
+    assert(zclaw::setup_edit_field_for_row(custom, 4) == zclaw::SetupEditField::WireApi);
+    assert(custom.wire_api == "completions");
+    zclaw::toggle_wire_api(&custom);
+    assert(custom.wire_api == "responses");
+    zclaw::toggle_wire_api(&custom);
+    assert(custom.wire_api == "completions");
     validation = zclaw::validate_setup_provider(custom);
     assert(!validation.valid && validation.row == 2);
     custom.api_key = "key";
@@ -56,6 +62,7 @@ int main()
     assert(zclaw::validate_setup_provider(ollama).valid);
 
     assert(zclaw::provider_edit_field_for_row(3) == zclaw::ProviderEditField::Uri);
+    assert(zclaw::provider_edit_field_for_row(5) == zclaw::ProviderEditField::WireApi);
     std::string *editable_uri =
         zclaw::provider_field_value(&custom, zclaw::ProviderEditField::Uri);
     assert(editable_uri);

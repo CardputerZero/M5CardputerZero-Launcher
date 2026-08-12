@@ -32,6 +32,7 @@ struct Request {
     int auth_attempts = 0;
     int auth_timeout_ms = 0;
     int exec_timeout_ms = 0;
+    int queue_timeout_ms = 0;
     int64_t deadline_ms = 0;
     std::atomic<bool> cancel_requested{false};
     bool authentication_complete = false;
@@ -91,6 +92,7 @@ private:
         bool completion = false;
     };
     std::vector<Action> start_next_locked(int64_t now_ms);
+    void expire_queued_locked(int64_t now_ms);
     std::vector<Action> promote_reservations_locked(int64_t now_ms);
     void terminal_locked(std::shared_ptr<Request> request,
                          cp0_sudo_result_t result, int exit_code);

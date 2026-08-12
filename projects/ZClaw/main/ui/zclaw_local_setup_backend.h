@@ -23,6 +23,7 @@ public:
     bool apply_config(UiConfig *config, const ProviderConfig &provider,
                       std::string *error) const override;
     bool start_service(std::string *error) const override;
+    bool restart_service(std::string *error) const override;
     std::string generate_pairing_code() const override;
 
 private:

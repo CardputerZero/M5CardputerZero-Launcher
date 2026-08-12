@@ -31,11 +31,30 @@ int main()
     assert(account.username == "--");
     assert(account.hostname == "--");
 
-    assert(version_label("abc123") == "Version: abc123");
+    assert(version_label("1.2.3") == "Version: 1.2.3");
     assert(version_label("") == "Version: --");
-    assert(std::string(update_request(UpdateAction::CheckSystem)) == "AptUpdateBackground");
+    assert(build_label("2026-07-28", "stable", "abc123") ==
+           "Build: 2026-07-28 stable (abc123)");
+    assert(std::string(update_request(UpdateAction::CheckSystem)) == "AptUpdateStart");
     assert(std::string(update_request(UpdateAction::UpdateLauncher)) ==
-           "UpdateLauncherBackground");
+           "UpdateLauncherStart");
+    assert(update_job_label(UpdateAction::CheckSystem, 0, "running") ==
+           "Refreshing package lists...");
+    assert(update_job_label(UpdateAction::UpdateLauncher, 0, "running") ==
+           "Checking launcher update...\nLauncher may restart");
+    assert(update_job_label(UpdateAction::CheckSystem, 0, "succeeded:completed") ==
+           "Package lists refreshed");
+    assert(update_job_label(UpdateAction::CheckSystem, 1, "failed:apt-update:1") ==
+           "System check failed");
+    assert(update_job_label(UpdateAction::UpdateLauncher, 1,
+                            "failed:incompatible:1") == "No compatible update");
+    assert(update_job_label(UpdateAction::UpdateLauncher, 1,
+                            "failed:version-not-newer:1") == "Launcher is up to date");
+    assert(update_job_label(UpdateAction::UpdateLauncher, 1,
+                            "failed:download-package:1") == "Update download failed");
+    assert(launcher_state_label("downloading") == "Updating: downloading");
+    assert(launcher_state_label("succeeded:0.6.32") == "Launcher is up to date");
+    assert(launcher_state_label("failed:incompatible") == "No compatible update");
 
     assert(extport_toggle_value(false, true, true));
     assert(!extport_toggle_value(true, false, true));

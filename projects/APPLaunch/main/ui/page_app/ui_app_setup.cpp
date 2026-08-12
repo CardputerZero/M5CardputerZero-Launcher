@@ -36,7 +36,34 @@ void UISetupPage::play_enter()
 
 void UISetupPage::play_back()
 {
-    play_audio_file(snd_back_);
+    cp0_signal_audio_api({"SystemSoundPlay", "1"}, nullptr);
+}
+
+void UISetupPage::schedule_volume_preview()
+{
+    stop_volume_preview_timer();
+    volume_preview_timer_ = lv_timer_create(volume_preview_timer_cb, 180, this);
+    if (volume_preview_timer_)
+        lv_timer_set_repeat_count(volume_preview_timer_, 1);
+}
+
+void UISetupPage::stop_volume_preview_timer()
+{
+    if (!volume_preview_timer_) return;
+    lv_timer_delete(volume_preview_timer_);
+    volume_preview_timer_ = nullptr;
+}
+
+void UISetupPage::volume_preview_timer_cb(lv_timer_t *timer) noexcept
+{
+    try {
+        auto *page = timer ? static_cast<UISetupPage *>(lv_timer_get_user_data(timer)) : nullptr;
+        if (!page || timer != page->volume_preview_timer_ || !page->lifecycle_.active())
+            return;
+        page->volume_preview_timer_ = nullptr;
+        page->play_enter();
+    } catch (...) {
+    }
 }
 
 int UISetupPage::config_get_int(const char *key, int default_val)
@@ -163,17 +190,17 @@ void UISetupPage::enter_confirm_action(const char *title, std::function<void()> 
     transition_enter_level();
 }
 
-void UISetupPage::apply_value_selection()
+bool UISetupPage::apply_value_selection()
 {
-    if (val_title_ == "Brightness" || val_title_ == "DarkTime")
+    if (val_title_ == "Brightness" || val_title_ == "DarkTime") {
         screen_.apply_value(*this);
-    else if (val_title_ == "Volume")
-        speaker_.apply_value(*this);
-    else if (val_title_ == "Resolution")
+    } else if (val_title_ == "Volume") {
+        return speaker_.apply_value(*this);
+    } else if (val_title_ == "Resolution") {
         camera_.apply_value(*this);
-    else if (val_title_ == "BQ Calib")
+    } else if (val_title_ == "BQ Calib") {
         info_.apply_bq_calibrate(*this);
-    else if (val_title_ == "Reboot?" || val_title_ == "Shutdown?" || val_title_ == "Run Setup?") {
+    } else if (val_title_ == "Reboot?" || val_title_ == "Shutdown?" || val_title_ == "Run Setup?") {
         confirm_controller_.resolve(val_sel_idx_ == 0);
     } else if (confirm_controller_.active()) {
         confirm_controller_.resolve(val_sel_idx_ == 0);
@@ -181,4 +208,5 @@ void UISetupPage::apply_value_selection()
                val_title_ == "Hour" || val_title_ == "Minute" || val_title_ == "Second") {
         rtc_.apply_value(*this);
     }
+    return true;
 }

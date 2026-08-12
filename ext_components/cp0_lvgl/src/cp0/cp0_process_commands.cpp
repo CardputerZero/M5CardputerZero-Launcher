@@ -5,8 +5,12 @@
 #include "../cp0_sync_signal.hpp"
 
 #include <cerrno>
+#include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <thread>
 #include <utility>
 
 #if !defined(_WIN32)
@@ -14,6 +18,8 @@
 #include <grp.h>
 #include <pwd.h>
 #include <sys/wait.h>
+#include <poll.h>
+#include <signal.h>
 #include <unistd.h>
 #endif
 
@@ -224,6 +230,87 @@ int capture_argv(const std::vector<std::string> &argv, std::string &output)
         output.append(buffer, static_cast<size_t>(count));
     close(output_pipe[0]);
     return wait_for_child(pid, false);
+#endif
+}
+
+int capture_argv_with_timeout(const std::vector<std::string> &argv,
+                              std::string &output, int timeout_ms,
+                              const std::atomic<bool> *cancel)
+{
+    output.clear();
+#if defined(_WIN32)
+    (void)argv;
+    (void)timeout_ms;
+    (void)cancel;
+    return -1;
+#else
+    if (argv.empty() || argv[0].empty() || timeout_ms <= 0)
+        return -EINVAL;
+    int output_pipe[2];
+    if (pipe(output_pipe) != 0) return -errno;
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(output_pipe[0]);
+        close(output_pipe[1]);
+        return -errno;
+    }
+    if (pid == 0) {
+        setpgid(0, 0);
+        close(output_pipe[0]);
+        dup2(output_pipe[1], STDOUT_FILENO);
+        dup2(output_pipe[1], STDERR_FILENO);
+        if (output_pipe[1] > STDERR_FILENO) close(output_pipe[1]);
+        auto raw = make_argv(argv);
+        execvp(raw[0], raw.data());
+        _exit(127);
+    }
+    close(output_pipe[1]);
+    setpgid(pid, pid);
+    const auto deadline = std::chrono::steady_clock::now() +
+        std::chrono::milliseconds(timeout_ms);
+    bool timed_out = false;
+    bool cancelled = false;
+    for (;;) {
+        if (cancel && cancel->load()) {
+            cancelled = true;
+            break;
+        }
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now()).count();
+        if (remaining <= 0) {
+            timed_out = true;
+            break;
+        }
+        pollfd descriptor{output_pipe[0], POLLIN | POLLHUP, 0};
+        const int ready = poll(&descriptor, 1, static_cast<int>(std::min<int64_t>(remaining, 100)));
+        if (ready < 0 && errno != EINTR) break;
+        if (ready > 0 && (descriptor.revents & (POLLIN | POLLHUP))) {
+            char buffer[256];
+            const ssize_t count = read(output_pipe[0], buffer, sizeof(buffer));
+            if (count > 0) {
+                if (output.size() < 8192)
+                    output.append(buffer, std::min<std::size_t>(
+                        static_cast<std::size_t>(count), 8192 - output.size()));
+            } else if (count == 0) {
+                break;
+            } else if (errno != EINTR && errno != EAGAIN) {
+                break;
+            }
+        }
+    }
+    if (timed_out || cancelled) {
+        kill(-pid, SIGTERM);
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        kill(-pid, SIGKILL);
+    }
+    close(output_pipe[0]);
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {}
+    if (cancelled) return -ECANCELED;
+    if (timed_out) return -ETIMEDOUT;
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
+    return -EIO;
 #endif
 }
 

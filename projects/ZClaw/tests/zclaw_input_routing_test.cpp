@@ -13,6 +13,10 @@ int main()
 {
     using zclaw::InputMode;
     using zclaw::InputSubmissionAction;
+    assert(!zclaw::input_is_single_line(InputMode::Chat));
+    assert(zclaw::input_is_single_line(InputMode::SetupEdit));
+    assert(zclaw::input_is_single_line(InputMode::ProviderEdit));
+    assert(zclaw::input_is_single_line(InputMode::PairingCode));
     zclaw::InputSubmission submission =
         zclaw::input_submission(InputMode::Chat, "hello");
     assert(submission.action == InputSubmissionAction::SendChat);
@@ -94,6 +98,8 @@ int main()
            KeyActionType::InputClose);
     assert(routed(context, KeyPhase::Released, Key::Enter).type ==
            KeyActionType::InputSubmit);
+    assert(routed(context, KeyPhase::Released, Key::Tab).type ==
+           KeyActionType::InputToggleSecretVisibility);
     assert(routed(context, KeyPhase::Released, Key::Enter, true).type ==
            KeyActionType::None);
     assert(routed(context, KeyPhase::Released, Key::Down).type ==
@@ -118,6 +124,10 @@ int main()
 
     context.approval_pending = false;
     context.settings_open = true;
+    context.setup_in_flight = true;
+    assert(routed(context, KeyPhase::Released, Key::Tab).type ==
+           KeyActionType::None);
+    context.setup_in_flight = false;
     context.setup_retry_pending = true;
     assert(routed(context, KeyPhase::Released, Key::Enter).type ==
            KeyActionType::SetupRetryActivate);

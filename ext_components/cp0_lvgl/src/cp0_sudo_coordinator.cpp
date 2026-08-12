@@ -43,6 +43,9 @@ std::vector<Action> Coordinator::commit_reserved(uint64_t id, int64_t now_ms)
     std::lock_guard<std::mutex> lock(mutex_);
     auto ready = reservation_ready_.find(id);
     if (ready == reservation_ready_.end()) return {};
+    auto request = requests_.find(id);
+    if (request != requests_.end() && request->second->queue_timeout_ms > 0)
+        request->second->deadline_ms = now_ms + request->second->queue_timeout_ms;
     ready->second = true;
     return promote_reservations_locked(now_ms);
 }
@@ -81,6 +84,10 @@ std::vector<Action> Coordinator::start_next_locked(int64_t now_ms)
             terminal_locked(request, CP0_SUDO_RESULT_CANCELLED, -ECANCELED);
             continue;
         }
+        if (request->deadline_ms > 0 && now_ms >= request->deadline_ms) {
+            terminal_locked(request, CP0_SUDO_RESULT_TIMED_OUT, -ETIMEDOUT);
+            continue;
+        }
         current_ = request;
         request->state = State::PROMPT;
         request->deadline_ms = request->auth_timeout_ms > 0
@@ -108,6 +115,8 @@ std::vector<Action> Coordinator::enqueue(std::shared_ptr<Request> request, int64
     if (!accepting_ || !request || requests_.count(request->id) || terminals_.count(request->id))
         return {};
     request->state = State::QUEUED;
+    request->deadline_ms = request->queue_timeout_ms > 0
+        ? now_ms + request->queue_timeout_ms : 0;
     requests_[request->id] = request;
     queue_.push_back(request);
     return start_next_locked(now_ms);
@@ -276,9 +285,24 @@ void Coordinator::worker_complete(uint64_t id, cp0_sudo_result_t result, int exi
     terminal_locked(it->second, result, exit_code);
 }
 
+void Coordinator::expire_queued_locked(int64_t now_ms)
+{
+    for (auto it = queue_.begin(); it != queue_.end();) {
+        const auto &request = *it;
+        if (request->deadline_ms > 0 && now_ms >= request->deadline_ms) {
+            auto expired = request;
+            it = queue_.erase(it);
+            terminal_locked(expired, CP0_SUDO_RESULT_TIMED_OUT, -ETIMEDOUT);
+        } else {
+            ++it;
+        }
+    }
+}
+
 std::vector<Action> Coordinator::tick(int64_t now_ms, Budget budget)
 {
     std::lock_guard<std::mutex> lock(mutex_);
+    expire_queued_locked(now_ms);
     std::vector<Action> actions;
     while (!controls_.empty()) {
         actions.push_back(std::move(controls_.front()));

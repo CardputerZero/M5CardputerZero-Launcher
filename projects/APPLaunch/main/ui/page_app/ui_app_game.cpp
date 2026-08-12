@@ -139,30 +139,31 @@ void UIGamePage::event_handler(lv_event_t *e)
     }
     if (launcher_ui::events::is_key_released(e))
     {
-        uint32_t key = launcher_ui::events::keyboard_key(e);
+        const GameInputAction action =
+            game_input_action(launcher_ui::events::keyboard_item(e));
 
         switch (state_)
         {
         case STATE_READY:
-            handle_ready_key(key);
+            handle_ready_key(action);
             break;
         case STATE_PLAYING:
-            handle_playing_key(key);
+            handle_playing_key(action);
             break;
         case STATE_GAME_OVER:
-            handle_gameover_key(key);
+            handle_gameover_key(action);
             break;
         }
     }
 }
 
-void UIGamePage::handle_ready_key(uint32_t key)
+void UIGamePage::handle_ready_key(GameInputAction action)
 {
-    switch (key) {
-    case KEY_ENTER:
+    switch (action) {
+    case GameInputAction::CONFIRM:
         game_start();
         break;
-    case KEY_ESC:
+    case GameInputAction::CANCEL:
         if (navigate_home) navigate_home();
         break;
     default:
@@ -170,29 +171,29 @@ void UIGamePage::handle_ready_key(uint32_t key)
     }
 }
 
-void UIGamePage::handle_playing_key(uint32_t key)
+void UIGamePage::handle_playing_key(GameInputAction action)
 {
-    switch (key) {
-    case KEY_UP:
+    switch (action) {
+    case GameInputAction::UP:
         model_.queue_direction(SnakeGameModel::Direction::UP);
         break;
-    case KEY_DOWN:
+    case GameInputAction::DOWN:
         model_.queue_direction(SnakeGameModel::Direction::DOWN);
         break;
-    case KEY_LEFT:
+    case GameInputAction::LEFT:
         model_.queue_direction(SnakeGameModel::Direction::LEFT);
         break;
-    case KEY_RIGHT:
+    case GameInputAction::RIGHT:
         model_.queue_direction(SnakeGameModel::Direction::RIGHT);
         break;
-    case KEY_ESC:
+    case GameInputAction::CANCEL:
         // Pause and quit
         game_timer_.stop();
         state_ = STATE_READY;
         if (game_area_) lv_obj_clean(game_area_);
         render_layer_ = nullptr;
         overlay_lbl_ = nullptr;
-        show_overlay("Press OK to Start");
+        show_overlay("F/X/Z/C: Move\nOK: Start  ESC: Quit");
         model_.reset();
         update_score_label();
         break;
@@ -201,14 +202,14 @@ void UIGamePage::handle_playing_key(uint32_t key)
     }
 }
 
-void UIGamePage::handle_gameover_key(uint32_t key)
+void UIGamePage::handle_gameover_key(GameInputAction action)
 {
-    switch (key) {
-    case KEY_ENTER:
+    switch (action) {
+    case GameInputAction::CONFIRM:
         clear_overlay();
         game_start();
         break;
-    case KEY_ESC:
+    case GameInputAction::CANCEL:
         if (navigate_home) navigate_home();
         break;
     default:

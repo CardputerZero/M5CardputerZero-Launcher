@@ -11,6 +11,7 @@ enum class ApiCommand {
     Status,
     Scan,
     Connect,
+    ConnectHidden,
     Disconnect,
     ProfileForget,
     ProfileExists,
