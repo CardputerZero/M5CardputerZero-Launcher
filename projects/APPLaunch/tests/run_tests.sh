@@ -2,6 +2,7 @@
 set -eu
 python3 "$(dirname "$0")/test_store_cache_sync.py"
 python3 "$(dirname "$0")/test_wifi_view_lifecycle_contract.py"
+python3 "$(dirname "$0")/test_carousel_border_contract.py"
 python3 "$(dirname "$0")/test_bluetooth_power_contract.py"
 python3 "$(dirname "$0")/test_external_framebuffer_ownership.py"
 PYTHONPATH="$(dirname "$0")/..${PYTHONPATH:+:$PYTHONPATH}" \
