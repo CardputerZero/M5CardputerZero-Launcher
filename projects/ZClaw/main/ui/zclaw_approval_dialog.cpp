@@ -6,6 +6,15 @@
 
 namespace zclaw {
 
+namespace {
+
+lv_coord_t centered_y(lv_coord_t container_height, lv_coord_t item_height)
+{
+    return (container_height - item_height) / 2;
+}
+
+}  // namespace
+
 ApprovalDialog::~ApprovalDialog()
 {
     close();
@@ -27,23 +36,28 @@ void ApprovalDialog::show(const FontManager *fonts,
     lv_obj_move_foreground(dialog_);
 
     widgets::box(dialog_, 0, 0, 236, 20, theme::kPanel, 8);
-    widgets::label(dialog_, "Permission", 10, 5, 120, 12, fonts->font_12(), theme::kText);
-    widgets::label(dialog_, "Esc", 194, 6, 28, 10, fonts->font_10(), theme::kDim,
+    const lv_coord_t title_height = lv_font_get_line_height(fonts->font_12());
+    const lv_coord_t text_height = lv_font_get_line_height(fonts->font_10());
+    widgets::label(dialog_, "Permission", 10, centered_y(20, title_height),
+                   120, title_height, fonts->font_12(), theme::kText);
+    widgets::label(dialog_, "Esc", 194, centered_y(20, text_height),
+                   28, text_height, fonts->font_10(), theme::kDim,
                    LV_TEXT_ALIGN_RIGHT);
-    widgets::label(dialog_, request.tool, 12, 27, 212, 14,
+    widgets::label(dialog_, request.tool, 12, 23, 212, title_height,
                    fonts->font_12(), theme::kText);
-    widgets::label(dialog_, request.summary, 12, 45, 212, 30,
+    widgets::label(dialog_, request.summary, 12, 42, 212, text_height * 2,
                    fonts->font_10(), theme::kMuted);
-    widgets::box(dialog_, 0, 78, 236, 1, theme::kPanelLine);
+    widgets::box(dialog_, 0, 80, 236, 1, theme::kPanelLine);
 
     static constexpr const char *labels[] = {"Yes", "Always", "No"};
     static constexpr uint32_t colors[] = {theme::kOnline, theme::kPurple, theme::kDim};
     for (int index = 0; index < 3; ++index) {
-        buttons_[index] = widgets::box(dialog_, 12 + index * 72, 86, 68, 17,
+        buttons_[index] = widgets::box(dialog_, 12 + index * 72, 85, 68, 20,
                                        theme::kPanel, 5);
         lv_obj_set_style_border_width(buttons_[index], 1,
                                       LV_PART_MAIN | LV_STATE_DEFAULT);
-        widgets::label(buttons_[index], labels[index], 0, 4, 68, 10,
+        widgets::label(buttons_[index], labels[index], 0,
+                       centered_y(20, text_height), 68, text_height,
                        fonts->font_10(), colors[index], LV_TEXT_ALIGN_CENTER);
     }
     update_selection(selected_index);
@@ -79,7 +93,8 @@ void ApprovalDialog::update_selection(int selected_index)
             continue;
         const bool selected = index == selected_index;
         lv_obj_set_style_bg_color(buttons_[index],
-                                  lv_color_hex(selected ? 0x2B2B4A : theme::kPanel),
+                                  lv_color_hex(selected ? theme::kSelectedPanel
+                                                        : theme::kPanel),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
         lv_obj_set_style_border_color(buttons_[index],
                                       lv_color_hex(selected ? theme::kText : theme::kPanelLine),

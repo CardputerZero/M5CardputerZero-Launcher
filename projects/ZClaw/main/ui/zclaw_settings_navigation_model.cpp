@@ -50,6 +50,8 @@ SettingsActivation settings_activation(const SettingsActivationContext &context)
             return {SettingsActivationAction::ShowAuthorization};
         if (context.selected_row == 2)
             return {SettingsActivationAction::ShowProviders};
+        if (context.selected_row == 5)
+            return {SettingsActivationAction::ToggleUiSounds};
         return {};
     case SettingsView::Providers: {
         const int item = context.provider_scroll + context.selected_row;

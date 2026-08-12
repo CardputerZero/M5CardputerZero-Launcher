@@ -27,11 +27,15 @@ void StartupView::show_network_check(lv_obj_t *parent, const FontManager *fonts)
     overlay_ = widgets::box(parent, 0, 0, kScreenWidth, kScreenHeight, theme::kBackground);
     lv_obj_add_event_cb(overlay_, overlay_deleted, LV_EVENT_DELETE, this);
     lv_obj_move_foreground(overlay_);
-    widgets::label(overlay_, "ZCLAW", 16, 24, 288, 20, fonts_->font_12(), theme::kPurple,
+    const lv_coord_t title_height = lv_font_get_line_height(fonts_->font_12());
+    const lv_coord_t text_height = lv_font_get_line_height(fonts_->font_10());
+    widgets::label(overlay_, "ZCLAW", 16, 24, 288, title_height,
+                   fonts_->font_12(), theme::kPurple,
                    LV_TEXT_ALIGN_CENTER);
-    title_ = widgets::label(overlay_, "Checking network...", 16, 68, 288, 20,
+    title_ = widgets::label(overlay_, "Checking network...", 16, 68, 288,
+                            title_height,
                             fonts_->font_12(), theme::kText, LV_TEXT_ALIGN_CENTER);
-    detail_ = widgets::label(overlay_, "Please wait", 16, 96, 288, 16,
+    detail_ = widgets::label(overlay_, "Please wait", 16, 96, 288, text_height,
                              fonts_->font_10(), theme::kMuted, LV_TEXT_ALIGN_CENTER);
 }
 
@@ -44,9 +48,11 @@ void StartupView::show_offline(const std::string &error)
     const std::string detail = error.empty() ? "Check Wi-Fi and try again." :
                                "Check Wi-Fi and try again.\n" + error;
     lv_label_set_text(detail_, detail.c_str());
-    lv_obj_set_height(detail_, 34);
+    const lv_coord_t text_height = lv_font_get_line_height(fonts_->font_10());
+    lv_obj_set_height(detail_, text_height * 2);
     if (!action_)
-        action_ = widgets::label(overlay_, "OK  EXIT", 16, 142, 288, 14,
+        action_ = widgets::label(overlay_, "OK  EXIT", 16, 140, 288,
+                                 text_height,
                                  fonts_->font_10(), theme::kPurple, LV_TEXT_ALIGN_CENTER);
 }
 

@@ -4,6 +4,7 @@
 #include "zclaw_async_service.h"
 #include "zclaw_chat_view.h"
 #include "zclaw_runtime_state.h"
+#include "zclaw_sound_effects.h"
 #include "zclaw_ui_config_manager.h"
 
 #include <utility>
@@ -12,9 +13,10 @@ namespace zclaw {
 
 ChatWorkflow::ChatWorkflow(UiConfigManager &config, ChatView &chat,
                            AsyncService &async_service,
-                           ApprovalCoordinator &approvals, OpenSetup open_setup)
+                           ApprovalCoordinator &approvals, SoundEffects &sounds,
+                           OpenSetup open_setup)
     : config_(config), chat_(chat), async_service_(async_service),
-      approvals_(approvals), open_setup_(std::move(open_setup)),
+      approvals_(approvals), sounds_(sounds), open_setup_(std::move(open_setup)),
       lifetime_(std::make_shared<CallbackLifetime<ChatWorkflow>>(this))
 {
 }
@@ -52,18 +54,22 @@ void ChatWorkflow::request_reply(const std::string &message)
             config_.config(), message, approvals_.handler(),
             [lifetime](OperationResult result) {
                 lifetime->invoke([&result](ChatWorkflow &workflow) {
-                    workflow.finish_request(std::move(result.text));
+                    workflow.finish_request(std::move(result));
                 });
             })) {
         request_in_flight_ = false;
         chat_.append_assistant_message("Could not start webhook request.");
+        sounds_.play(SoundCue::Error);
+        return;
     }
+    sounds_.play(SoundCue::Send);
 }
 
-void ChatWorkflow::finish_request(std::string text)
+void ChatWorkflow::finish_request(OperationResult result)
 {
     request_in_flight_ = false;
-    chat_.append_assistant_message(text);
+    chat_.append_assistant_message(result.text);
+    sounds_.play(sound_cue_for_result(result.ok));
 }
 
 }  // namespace zclaw

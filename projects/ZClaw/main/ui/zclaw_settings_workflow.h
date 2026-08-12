@@ -16,13 +16,15 @@ class FontManager;
 class InputDialog;
 class ProviderManager;
 class SettingsCoordinator;
+class SoundEffects;
 class UiConfigManager;
 
 class SettingsWorkflow {
 public:
     SettingsWorkflow(ProviderManager &providers, UiConfigManager &config,
                      SettingsCoordinator &settings, InputDialog &input,
-                     FontManager &fonts, ChatView &chat, AsyncService &async_service);
+                     FontManager &fonts, ChatView &chat, AsyncService &async_service,
+                     SoundEffects &sounds);
 
     bool setup_in_flight() const;
     bool setup_retry_pending() const;
@@ -41,7 +43,9 @@ public:
 
 private:
     ProviderManager &providers_;
+    UiConfigManager &config_;
     SettingsCoordinator &settings_;
+    SoundEffects &sounds_;
     AuthorizationWorkflow authorization_;
     ProviderWorkflow provider_workflow_;
     SetupWorkflow setup_;

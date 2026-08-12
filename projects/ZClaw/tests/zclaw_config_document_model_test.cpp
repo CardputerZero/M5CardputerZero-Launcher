@@ -45,6 +45,7 @@ int main()
     config.webhook_secret = "hook\\secret";
     config.bearer_token = "token";
     config.setup_complete = true;
+    config.ui_sounds_enabled = false;
     const zclaw::UiConfig parsed_config = zclaw::parse_ui_config_document(
         "ignored\nunknown\tvalue\n" + zclaw::make_ui_config_document(config));
     assert(parsed_config.webhook_url == config.webhook_url);
@@ -52,11 +53,13 @@ int main()
     assert(parsed_config.webhook_secret == config.webhook_secret);
     assert(parsed_config.bearer_token == config.bearer_token);
     assert(parsed_config.setup_complete);
+    assert(!parsed_config.ui_sounds_enabled);
 
     const zclaw::UiConfig defaults =
         zclaw::parse_ui_config_document("agent_alias\t\nsetup_complete\ttrue\n");
     assert(defaults.agent_alias == "zclaw");
     assert(!defaults.setup_complete);
+    assert(defaults.ui_sounds_enabled);
 
     assert(!zclaw::parse_provider_config_document_checked(
         "alias\\q\tfamily\tmodel\turi\tkey\n", &checked_providers));
@@ -77,6 +80,8 @@ int main()
         "agent_alias\tfirst\nagent_alias\tsecond\n", &checked_config));
     assert(!zclaw::parse_ui_config_document_checked(
         "agent_alias\tbad\\qvalue\n", &checked_config));
+    assert(!zclaw::parse_ui_config_document_checked(
+        "agent_alias\tvalid\nui_sounds_enabled\tyes\n", &checked_config));
     const zclaw::UiConfig lenient_config = zclaw::parse_ui_config_document(
         "agent_alias\tbad\\qvalue\nagent_alias\tsecond\n");
     assert(lenient_config.agent_alias == "second");

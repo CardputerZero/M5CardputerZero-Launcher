@@ -11,6 +11,15 @@
 
 namespace zclaw {
 
+namespace {
+
+lv_coord_t centered_y(lv_coord_t container_height, lv_coord_t item_height)
+{
+    return (container_height - item_height) / 2;
+}
+
+}  // namespace
+
 SettingsCoordinator::SettingsCoordinator(ProviderManager &providers,
                                          UiConfigManager &config,
                                          InputDialog &input, FontManager &fonts)
@@ -111,20 +120,25 @@ void SettingsCoordinator::show_setup_error(const std::string &error)
     lv_obj_set_style_border_color(setup_error_dialog_,
                                   lv_color_hex(theme::kPurple), LV_PART_MAIN);
     lv_obj_move_foreground(setup_error_dialog_);
-    widgets::label(setup_error_dialog_, "Download failed", 12, 9, 226, 14,
+    const lv_coord_t title_height = lv_font_get_line_height(fonts_.font_12());
+    const lv_coord_t text_height = lv_font_get_line_height(fonts_.font_10());
+    widgets::label(setup_error_dialog_, "Download failed", 12, 5, 226,
+                   title_height,
                    fonts_.font_12(), theme::kText);
     widgets::label(setup_error_dialog_,
                    error.empty() ? "Network connection failed." : error,
-                   12, 30, 226, 36, fonts_.font_10(), theme::kMuted);
+                   12, 25, 226, text_height * 2,
+                   fonts_.font_10(), theme::kMuted);
     static constexpr const char *labels[] = {"Retry", "Exit"};
     for (int index = 0; index < 2; ++index) {
         setup_error_buttons_[index] = widgets::box(
-            setup_error_dialog_, 22 + index * 106, 74, 96, 18,
+            setup_error_dialog_, 22 + index * 106, 73, 96, 20,
             theme::kPanel, 5);
         lv_obj_set_style_border_width(setup_error_buttons_[index], 1,
                                       LV_PART_MAIN);
-        widgets::label(setup_error_buttons_[index], labels[index], 0, 4,
-                       96, 10, fonts_.font_10(), theme::kText,
+        widgets::label(setup_error_buttons_[index], labels[index], 0,
+                       centered_y(20, text_height), 96, text_height,
+                       fonts_.font_10(), theme::kText,
                        LV_TEXT_ALIGN_CENTER);
     }
     update_setup_error_selection(0);
@@ -147,7 +161,8 @@ void SettingsCoordinator::update_setup_error_selection(int selected_index)
             continue;
         const bool selected = index == selected_index;
         lv_obj_set_style_bg_color(setup_error_buttons_[index],
-                                  lv_color_hex(selected ? 0x252542 : theme::kPanel),
+                                  lv_color_hex(selected ? theme::kSelectedPanel
+                                                        : theme::kPanel),
                                   LV_PART_MAIN);
         lv_obj_set_style_border_color(setup_error_buttons_[index],
                                       lv_color_hex(selected ? theme::kText
@@ -206,18 +221,31 @@ void SettingsCoordinator::move_selection(int delta)
     if (!is_open())
         return;
     if (state_.view() == SettingsView::SetupProviders) {
+        const PagedSelection before = state_.setup_provider_selection();
         state_.move_setup_providers(static_cast<int>(provider_preset_count()),
                                     SettingsPanel::kMaximumRows, delta);
+        const PagedSelection &after = state_.setup_provider_selection();
+        if (after.selected_index == before.selected_index &&
+            after.scroll_offset == before.scroll_offset)
+            return;
         render_setup_providers();
         return;
     }
     if (state_.view() == SettingsView::Providers) {
+        const PagedSelection before = state_.provider_selection();
         state_.move_providers(static_cast<int>(providers_.providers().size()) + 1,
                               SettingsPanel::kMaximumRows, delta);
+        const PagedSelection &after = state_.provider_selection();
+        if (after.selected_index == before.selected_index &&
+            after.scroll_offset == before.scroll_offset)
+            return;
         render_providers();
         return;
     }
+    const int selected_before = state_.selected_row();
     state_.move_rows(panel_.row_count(), delta);
+    if (state_.selected_row() == selected_before)
+        return;
     panel_.update_selection(state_.selected_row());
 }
 

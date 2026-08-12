@@ -1,4 +1,5 @@
 #include "zclaw_provider_store.h"
+#include "zclaw_sound_effects.h"
 #include "zclaw_provider_catalog.h"
 #include "zclaw_provider_manager.h"
 #include "zclaw_ui_config_store.h"
@@ -120,6 +121,14 @@ int main()
     assert(settings_controller.provider_selection().selected_index == 5);
     assert(settings_controller.provider_selection().scroll_offset == 1);
     assert(settings_controller.selected_row() == 4);
+    settings_controller.move_providers(8, 5, 99);
+    const zclaw::PagedSelection provider_bottom =
+        settings_controller.provider_selection();
+    settings_controller.move_providers(8, 5, 1);
+    assert(settings_controller.provider_selection().selected_index ==
+           provider_bottom.selected_index);
+    assert(settings_controller.provider_selection().scroll_offset ==
+           provider_bottom.scroll_offset);
     settings_controller.open_provider_detail(4);
     assert(settings_controller.provider_detail_index() == 4);
     assert(settings_controller.selected_row() == 0);
@@ -134,6 +143,19 @@ int main()
     assert(settings_controller.selected_row() == 4);
     settings_controller.move_setup_providers(6, 5, -1);
     assert(settings_controller.setup_provider_selection().selected_index == 4);
+    settings_controller.move_setup_providers(6, 5, 99);
+    const zclaw::PagedSelection setup_provider_bottom =
+        settings_controller.setup_provider_selection();
+    settings_controller.move_setup_providers(6, 5, 1);
+    assert(settings_controller.setup_provider_selection().selected_index ==
+           setup_provider_bottom.selected_index);
+    assert(settings_controller.setup_provider_selection().scroll_offset ==
+           setup_provider_bottom.scroll_offset);
+    settings_controller.reset_view(SettingsView::Main, 5);
+    settings_controller.move_rows(6, 1);
+    assert(settings_controller.selected_row() == 5);
+    settings_controller.move_rows(6, 1);
+    assert(settings_controller.selected_row() == 5);
     settings_controller.reset_view(SettingsView::Setup, 2);
     assert(settings_controller.activation(2, 3, false).action ==
            SettingsActivationAction::StartSetup);
@@ -148,15 +170,19 @@ int main()
     zclaw::SettingsPresentation settings_presentation =
         zclaw::present_settings_main(presentation_config);
     assert(settings_presentation.title == "ZClaw Settings");
-    assert(settings_presentation.rows.size() == 5);
+    assert(settings_presentation.rows.size() == 6);
     assert(settings_presentation.rows[0].value == "Run");
     assert(settings_presentation.rows[3].value == "demo-agent");
     assert(settings_presentation.rows[4].value == "Webhook");
+    assert(settings_presentation.rows[5].title == "UI Sounds");
+    assert(settings_presentation.rows[5].value == "On");
     presentation_config.setup_complete = true;
     presentation_config.bearer_token = "token";
     settings_presentation = zclaw::present_authorization(presentation_config);
     assert(settings_presentation.rows[1].value == "Saved");
     assert(settings_presentation.rows[3].value == "WS");
+    assert(zclaw::sound_cue_for_result(true) == zclaw::SoundCue::Receive);
+    assert(zclaw::sound_cue_for_result(false) == zclaw::SoundCue::Error);
 
     settings_presentation = zclaw::present_setup(custom);
     assert(settings_presentation.rows.size() == 6);

@@ -5,9 +5,6 @@
 
 #if LV_USE_FREETYPE
 #include "lvgl/src/libs/freetype/lv_freetype.h"
-#ifndef LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO
-#define LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO ((lv_freetype_font_render_mode_t)2)
-#endif
 #endif
 
 #include <cstdlib>
@@ -111,19 +108,19 @@ void FontManager::init()
         return;
 
     font_10_ = lv_freetype_font_create(
-        font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, kZClawFontSize,
+        font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP, kZClawFontSize,
         LV_FREETYPE_FONT_STYLE_NORMAL);
     font_12_ = lv_freetype_font_create(
-        font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, kZClawFontSize,
+        font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP, kZClawFontSize,
         LV_FREETYPE_FONT_STYLE_NORMAL);
 
     const std::string fallback_path = runtime_fallback_font_path();
     if (!fallback_path.empty()) {
         fallback_font_10_ = lv_freetype_font_create(
-            fallback_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, kZClawFontSize,
+            fallback_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP, kZClawFontSize,
             LV_FREETYPE_FONT_STYLE_NORMAL);
         fallback_font_12_ = lv_freetype_font_create(
-            fallback_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP_MONO, kZClawFontSize,
+            fallback_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP, kZClawFontSize,
             LV_FREETYPE_FONT_STYLE_NORMAL);
     }
     set_fallback_chain(font_10_, fallback_font_10_);
