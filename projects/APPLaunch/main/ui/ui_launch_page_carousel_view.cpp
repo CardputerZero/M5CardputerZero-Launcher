@@ -59,6 +59,7 @@ lv_obj_t *create_carousel_card(lv_obj_t *parent, const Slot &slot,
     lv_obj_set_style_bg_opa(card, LV_OPA_TRANSP, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(card, lv_color_hex(border_color), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_opa(card, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_post(card, true, LV_PART_MAIN | LV_STATE_DEFAULT);
     return card;
 }
 
@@ -224,8 +225,6 @@ void UILaunchPage::create_app_container(lv_obj_t *parent)
         lv_obj_delete(container);
         return;
     }
-    lv_obj_set_style_border_width(elements[kCardCenter], 2, LV_PART_MAIN | LV_STATE_DEFAULT);
-
     *carousel_alive_ = false;
     if (carousel_container_) lv_obj_delete(carousel_container_);
     carousel_alive_ = std::make_shared<bool>(true);
