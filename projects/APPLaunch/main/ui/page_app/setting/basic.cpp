@@ -304,14 +304,8 @@ bool Speaker::apply_value(UISetupPage &page)
 
 void Camera::append(UISetupPage &p, std::vector<MenuItem> &menu)
 {
-    bool status_received = false;
-    int status_code = -1;
-    cp0_signal_camera_api({"Status"}, [&](int code, std::string) {
-        status_received = true;
-        status_code = code;
-    });
-    if (!setup_values::camera_available_from_status(status_received, status_code)) return;
-
+    // CameraApp consumes this shared setting independently of APPLaunch's
+    // optional in-process libcamera backend, so keep it available on all builds.
     UISetupPage *page = &p;
     Camera *controller = this;
     MenuItem m;
