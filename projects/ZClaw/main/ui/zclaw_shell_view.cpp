@@ -97,11 +97,13 @@ void ShellView::create_input_bar(const FontManager *fonts,
 {
     lv_obj_t *input_bar = widgets::box(root_, 0, 148, kScreenWidth, 22,
                                        theme::kBar);
+    const lv_coord_t text_height = lv_font_get_line_height(fonts->font_10());
     widgets::box(input_bar, 0, 0, kScreenWidth, 1, theme::kPanelLine);
-    lv_obj_t *input_box = widgets::box(input_bar, 10, 3, 274, 16,
+    lv_obj_t *input_box = widgets::box(input_bar, 10, 2, 274, 18,
                                        theme::kPanel, 8);
     widgets::image(input_box, sparkles_path, 8, 3);
-    widgets::label(input_box, "Press Enter to ask", 26, 3, 180, 10,
+    widgets::label(input_box, "Press Enter to ask", 26,
+                   centered_y(18, text_height), 180, text_height,
                    fonts->font_10(), theme::kDim);
     widgets::image(input_bar, send_button_path, 292, 2);
 }

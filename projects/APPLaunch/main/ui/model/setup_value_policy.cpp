@@ -9,7 +9,7 @@ namespace {
 
 constexpr int kBrightnessPercentages[] = {100, 75, 50, 25};
 constexpr int kDarkTimes[] = {0, 10, 30, 60, 300};
-constexpr int kVolumePercentages[] = {100, 75, 50, 25, 0};
+constexpr int kVolumePercentages[] = {100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0};
 constexpr CameraResolution kCameraResolutions[] = {{1280, 720}, {640, 480}};
 
 template <typename T, int N>
@@ -70,13 +70,15 @@ int dark_time_seconds(int index)
     return kDarkTimes[clamp_index(index, array_size(kDarkTimes))];
 }
 
+int round_volume_percent(int percent)
+{
+    const int clamped = std::clamp(percent, 0, 100);
+    return std::min(100, ((clamped + 5) / 10) * 10);
+}
+
 int volume_index(int percent)
 {
-    if (percent >= 87) return 0;
-    if (percent >= 62) return 1;
-    if (percent >= 37) return 2;
-    if (percent >= 12) return 3;
-    return 4;
+    return (100 - round_volume_percent(percent)) / 10;
 }
 
 int volume_percent(int index)

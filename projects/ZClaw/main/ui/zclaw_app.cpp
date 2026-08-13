@@ -24,6 +24,7 @@
 #include "zclaw_provider_manager.h"
 #include "zclaw_settings_coordinator.h"
 #include "zclaw_settings_workflow.h"
+#include "zclaw_sound_effects.h"
 #include "zclaw_shell_view.h"
 #include "zclaw_startup_view.h"
 #include "zclaw_startup_workflow.h"
@@ -56,6 +57,7 @@ class ZClawApp : public AppPageRoot
     zclaw::AsyncService async_service_{
         ui_tasks_, std::make_shared<zclaw::LocalAsyncBackend>()};
     zclaw::FontManager fonts_;
+    zclaw::SoundEffects sounds_;
     zclaw::ShellView shell_view_;
     zclaw::InputDialog input_dialog_;
     zclaw::SettingsCoordinator settings_ui_{provider_manager_, config_manager_,
@@ -64,9 +66,10 @@ class ZClawApp : public AppPageRoot
     zclaw::ChatView chat_view_;
     zclaw::SettingsWorkflow settings_workflow_{
         provider_manager_, config_manager_, settings_ui_, input_dialog_, fonts_,
-        chat_view_, async_service_};
+        chat_view_, async_service_, sounds_};
     zclaw::ChatWorkflow chat_workflow_{
         config_manager_, chat_view_, async_service_, approvals_,
+        sounds_,
         [this] { settings_workflow_.open_setup(shell_view_.content(), true); }};
     zclaw::InputWorkflow input_workflow_{
         input_dialog_, settings_workflow_, chat_workflow_};
@@ -87,6 +90,7 @@ public:
         const std::string sparkles_path = cp0_file_path("zclaw_sparkles_10.png");
         const std::string send_button_path = cp0_file_path("zclaw_send_button_18.png");
         load_configuration();
+        sounds_.configure(config_manager_.config().ui_sounds_enabled);
         if (!shell_view_.create(root_screen_, &fonts_, avatar_path_, sparkles_path,
                                 send_button_path))
             return;

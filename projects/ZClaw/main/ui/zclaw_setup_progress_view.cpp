@@ -57,17 +57,20 @@ void SetupProgressView::show(lv_obj_t *parent, const FontManager *fonts)
     lv_obj_set_style_arc_color(spinner_, lv_color_hex(theme::kPanelLine), LV_PART_MAIN);
     lv_obj_set_style_arc_color(spinner_, lv_color_hex(theme::kPurple), LV_PART_INDICATOR);
 
-    status_label_ = widgets::label(root_, "Preparing Quickstart", 50, 28, 252, 16,
+    const lv_coord_t title_height = lv_font_get_line_height(fonts->font_12());
+    const lv_coord_t text_height = lv_font_get_line_height(fonts->font_10());
+    status_label_ = widgets::label(root_, "Preparing Quickstart", 50, 26,
+                                   252, title_height,
                                    fonts->font_12(), theme::kText);
-    detail_label_ = widgets::label(root_, "Starting...", 50, 45, 252, 14,
+    detail_label_ = widgets::label(root_, "Starting...", 50, 45, 252, text_height,
                                    fonts->font_10(), theme::kMuted);
-    url_prefix_label_ = widgets::label(root_, "URL :", 18, 64, 38, 14,
+    url_prefix_label_ = widgets::label(root_, "URL :", 18, 64, 38, text_height,
                                        fonts->font_10(), theme::kMuted);
-    url_label_ = widgets::label(root_, "", 56, 64, 246, 14,
+    url_label_ = widgets::label(root_, "", 56, 64, 246, text_height,
                                 fonts->font_10(), theme::kMuted);
-    path_prefix_label_ = widgets::label(root_, "SAVE :", 18, 79, 38, 14,
+    path_prefix_label_ = widgets::label(root_, "SAVE :", 18, 82, 38, text_height,
                                         fonts->font_10(), theme::kMuted);
-    path_label_ = widgets::label(root_, "", 56, 79, 246, 14,
+    path_label_ = widgets::label(root_, "", 56, 82, 246, text_height,
                                  fonts->font_10(), theme::kMuted);
     lv_label_set_long_mode(url_label_, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_label_set_long_mode(path_label_, LV_LABEL_LONG_SCROLL_CIRCULAR);
@@ -76,7 +79,7 @@ void SetupProgressView::show(lv_obj_t *parent, const FontManager *fonts)
     lv_obj_add_flag(url_prefix_label_, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(path_prefix_label_, LV_OBJ_FLAG_HIDDEN);
     progress_bar_ = lv_bar_create(root_);
-    lv_obj_set_pos(progress_bar_, 18, 101);
+    lv_obj_set_pos(progress_bar_, 18, 104);
     lv_obj_set_size(progress_bar_, 284, 10);
     lv_bar_set_range(progress_bar_, 0, 100);
     lv_bar_set_value(progress_bar_, 0, LV_ANIM_OFF);
@@ -84,9 +87,9 @@ void SetupProgressView::show(lv_obj_t *parent, const FontManager *fonts)
     lv_obj_set_style_radius(progress_bar_, 3, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(progress_bar_, lv_color_hex(theme::kPanel), LV_PART_MAIN);
     lv_obj_set_style_bg_color(progress_bar_, lv_color_hex(theme::kPurple), LV_PART_INDICATOR);
-    percent_label_ = widgets::label(root_, "0%", 18, 117, 70, 14,
+    percent_label_ = widgets::label(root_, "0%", 18, 117, 70, text_height,
                                     fonts->font_10(), theme::kText);
-    speed_label_ = widgets::label(root_, "", 92, 117, 210, 14,
+    speed_label_ = widgets::label(root_, "", 92, 117, 210, text_height,
                                   fonts->font_10(), theme::kMuted, LV_TEXT_ALIGN_RIGHT);
 }
 

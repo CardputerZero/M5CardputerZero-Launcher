@@ -51,9 +51,9 @@ STATIC_FILES += [(STAGED_APPLAUNCH, "APPLaunch")]
 lvgl_component = list(filter(lambda x: x['target'] == 'lvgl_component', env['COMPONENTS']))[0]
 toolchain_sysroot = os.environ.get('CONFIG_TOOLCHAIN_SYSROOT', '') or '/'
 
-# Keep ZClaw's text rendering aligned with APPLaunch: its FreeType override
-# adds a 1-bit glyph mode whose A8 output contains only fully transparent or
-# fully opaque pixels.
+# Reuse APPLaunch's FreeType implementation so both applications keep one
+# compatible LVGL font backend. ZClaw uses its normal grayscale bitmap mode;
+# the additional 1-bit mode remains available without changing that output.
 local_lvgl_override_srcs = Glob('../../APPLaunch/main/lvgl/lv_freetype*.c')
 local_lvgl_override_names = set(Path(str(src)).name for src in local_lvgl_override_srcs)
 lvgl_component['SRCS'] = [

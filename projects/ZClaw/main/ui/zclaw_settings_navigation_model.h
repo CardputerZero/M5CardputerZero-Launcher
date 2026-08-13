@@ -27,6 +27,7 @@ enum class SettingsActivationAction {
     ShowSetupProviders,
     ShowAuthorization,
     ShowProviders,
+    ToggleUiSounds,
     SelectSetupProvider,
     StartSetup,
     EditSetupField,

@@ -123,6 +123,9 @@ int main()
            SettingsActivationAction::ShowAuthorization);
     context.selected_row = 2;
     assert(zclaw::settings_activation(context).action == SettingsActivationAction::ShowProviders);
+    context.selected_row = 5;
+    assert(zclaw::settings_activation(context).action ==
+           SettingsActivationAction::ToggleUiSounds);
 
     context.view = SettingsView::Providers;
     context.provider_count = 3;

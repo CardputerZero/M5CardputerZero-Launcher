@@ -2,6 +2,8 @@
 
 #include "zclaw_provider_manager.h"
 #include "zclaw_settings_coordinator.h"
+#include "zclaw_sound_effects.h"
+#include "zclaw_ui_config_manager.h"
 
 namespace zclaw {
 
@@ -9,8 +11,9 @@ SettingsWorkflow::SettingsWorkflow(ProviderManager &providers,
                                    UiConfigManager &config,
                                    SettingsCoordinator &settings,
                                    InputDialog &input, FontManager &fonts,
-                                   ChatView &chat, AsyncService &async_service)
-    : providers_(providers), settings_(settings),
+                                   ChatView &chat, AsyncService &async_service,
+                                   SoundEffects &sounds)
+    : providers_(providers), config_(config), settings_(settings), sounds_(sounds),
       authorization_(config, settings, input, fonts, chat, async_service),
       provider_workflow_(providers, settings, input, fonts, chat),
       setup_(providers, config, settings, input, fonts, chat, async_service)
@@ -100,6 +103,16 @@ void SettingsWorkflow::activate_selection()
         settings_.state().reset_providers();
         settings_.render_providers();
         break;
+    case SettingsActivationAction::ToggleUiSounds: {
+        UiConfig candidate = config_.config();
+        candidate.ui_sounds_enabled = !candidate.ui_sounds_enabled;
+        std::string error;
+        if (!config_.update(candidate, &error))
+            break;
+        sounds_.set_enabled(candidate.ui_sounds_enabled);
+        settings_.render_main();
+        break;
+    }
     case SettingsActivationAction::SelectSetupProvider:
         setup_.select_provider(
             settings_.state().setup_provider_selection().selected_index);
