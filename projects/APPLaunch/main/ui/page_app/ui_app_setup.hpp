@@ -125,7 +125,6 @@ private:
     lv_timer_t *update_timer_ = nullptr;
     lv_timer_t *volume_preview_timer_ = nullptr;
     std::string update_job_id_;
-    int update_item_index_ = -1;
 
     static constexpr int SCREEN_W = 320;
     static constexpr int SCREEN_H = 150;

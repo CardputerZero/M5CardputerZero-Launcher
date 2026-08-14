@@ -50,7 +50,6 @@ class Update
 public:
     static void append(UISetupPage &page, std::vector<MenuItem> &menu);
     static void refresh_version_info(UISetupPage &page);
-    static void check_system_update(UISetupPage &page);
     static void update_launcher(UISetupPage &page);
 };
 
