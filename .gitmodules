@@ -10,7 +10,7 @@
 	url = https://github.com/CardputerZero/Calculator.git
 [submodule "projects/AppStore"]
 	path = projects/AppStore
-	url = https://github.com/CardputerZero/AppStore.git
+	url = git@github.com:CardputerZero/Store.git
 	branch = main
 [submodule "projects/CameraApp/main_CameraApp"]
 	path = projects/CameraApp/main_CameraApp
