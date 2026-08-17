@@ -39,9 +39,11 @@ private:
     cp0_lora_info_t lora_info_{};
 
     PageTimerLifecycle<lv_timer_t *> poll_timer_;
+    lv_timer_t *message_title_timer_ = nullptr;
     lv_obj_t *page_root_                = nullptr;
     lv_obj_t *messages_view_            = nullptr;
     lv_obj_t *message_list_             = nullptr;
+    lv_obj_t *messages_title_           = nullptr;
     lv_obj_t *empty_message_label_      = nullptr;
     lv_obj_t *empty_message_hint_label_ = nullptr;
     lv_obj_t *last_message_row_         = nullptr;
@@ -101,6 +103,11 @@ private:
     void update_info_content();
     void update_send_content();
     void scroll_to_latest(lv_anim_enable_t animation);
+    void schedule_message_title_dismissal();
+    void dismiss_message_title();
+    void cancel_message_title_animation();
+    static void message_title_anim_exec_cb(void *object, int32_t y) noexcept;
+    static void hide_message_title_after_anim_cb(lv_anim_t *animation) noexcept;
     static void view_opa_exec_cb(void *object, int32_t opacity) noexcept;
     static void hide_view_after_fade_cb(lv_anim_t *animation) noexcept;
     static void cancel_view_animation(lv_obj_t *view);
@@ -128,4 +135,5 @@ private:
     static void static_send_button_cb(lv_event_t *event) noexcept;
     static void static_key_event_cb(lv_event_t *event) noexcept;
     static void static_poll_timer_cb(lv_timer_t *timer) noexcept;
+    static void static_message_title_timer_cb(lv_timer_t *timer) noexcept;
 };

@@ -70,6 +70,7 @@ UILoraPage::~UILoraPage()
         lv_obj_remove_event_cb_with_user_data(
             root_screen_, UILoraPage::static_key_event_cb, this);
     cancel_view_animations();
+    cancel_message_title_animation();
     app_active_ = false;
     poll_timer_.stop();
     detach_delete_callbacks();
@@ -93,6 +94,7 @@ void UILoraPage::init_lora()
     lora_info_.tx_event = 0;
     model_.reset(lora_info_.hw_ready);
     render_current_view();
+    schedule_message_title_dismissal();
     if (lora_info_.hw_ready) (void)lora_app_detail::call_lora_api({"StartReceive"});
     poll_timer_.start(
         [this] {
@@ -131,6 +133,7 @@ void UILoraPage::open_send_view(uint32_t first_key)
 
 void UILoraPage::scroll_messages(int32_t amount)
 {
+    dismiss_message_title();
     if (message_list_) lv_obj_scroll_by_bounded(message_list_, 0, amount, LV_ANIM_ON);
 }
 
@@ -300,6 +303,7 @@ void UILoraPage::static_key_event_cb(lv_event_t *event) noexcept
             if (self && lv_event_get_current_target(event) == self->root_screen_) {
                 self->app_active_ = false;
                 self->poll_timer_.stop();
+                self->cancel_message_title_animation();
                 self->cancel_view_animations();
             }
             return;
@@ -322,6 +326,18 @@ void UILoraPage::static_poll_timer_cb(lv_timer_t *timer) noexcept
         if (lora_poll_callback_allowed(
                 self->poll_timer_.current(timer), self->app_active_))
             self->on_poll_timer();
+    } catch (...) {
+        self->app_active_ = false;
+    }
+}
+
+void UILoraPage::static_message_title_timer_cb(lv_timer_t *timer) noexcept
+{
+    auto *self = timer ? static_cast<UILoraPage *>(lv_timer_get_user_data(timer)) : nullptr;
+    if (!self || self->message_title_timer_ != timer) return;
+    self->message_title_timer_ = nullptr;
+    try {
+        self->dismiss_message_title();
     } catch (...) {
         self->app_active_ = false;
     }

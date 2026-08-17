@@ -12,6 +12,10 @@ namespace lora_app_detail {
 constexpr lv_coord_t kScreenWidth = 320;
 constexpr lv_coord_t kContentHeight = 150;
 constexpr uint32_t kViewTransitionMs = 150;
+constexpr uint32_t kMessageTitleHoldMs = 3200;
+constexpr uint32_t kMessageTitleHideMs = 340;
+constexpr lv_coord_t kMessageTitleShownY = -8;
+constexpr lv_coord_t kMessageTitleHiddenY = -29;
 constexpr lv_coord_t kBubbleTailWidth = 6;
 constexpr lv_coord_t kBubbleTailDrop = 3;
 
@@ -186,6 +190,70 @@ void UILoraPage::scroll_to_latest(lv_anim_enable_t animation)
     scroll_to_latest_pending_ = false;
 }
 
+void UILoraPage::schedule_message_title_dismissal()
+{
+    if (!messages_title_ || message_title_timer_ ||
+        lv_obj_has_flag(messages_title_, LV_OBJ_FLAG_HIDDEN))
+        return;
+
+    message_title_timer_ = lv_timer_create(
+        &UILoraPage::static_message_title_timer_cb, lora_app_detail::kMessageTitleHoldMs, this);
+    if (message_title_timer_)
+        lv_timer_set_repeat_count(message_title_timer_, 1);
+}
+
+void UILoraPage::cancel_message_title_animation()
+{
+    if (message_title_timer_) {
+        lv_timer_delete(message_title_timer_);
+        message_title_timer_ = nullptr;
+    }
+    if (messages_title_)
+        lv_anim_del(messages_title_, &UILoraPage::message_title_anim_exec_cb);
+}
+
+void UILoraPage::dismiss_message_title()
+{
+    if (!messages_title_ || lv_obj_has_flag(messages_title_, LV_OBJ_FLAG_HIDDEN))
+        return;
+
+    if (message_title_timer_) {
+        lv_timer_delete(message_title_timer_);
+        message_title_timer_ = nullptr;
+    }
+
+    lv_anim_del(messages_title_, &UILoraPage::message_title_anim_exec_cb);
+    lv_anim_t animation;
+    lv_anim_init(&animation);
+    lv_anim_set_var(&animation, messages_title_);
+    lv_anim_set_values(&animation, lv_obj_get_y(messages_title_),
+                       lora_app_detail::kMessageTitleHiddenY);
+    lv_anim_set_time(&animation, lora_app_detail::kMessageTitleHideMs);
+    lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+    lv_anim_set_exec_cb(&animation, &UILoraPage::message_title_anim_exec_cb);
+    lv_anim_set_user_data(&animation, messages_title_);
+    lv_anim_set_completed_cb(&animation, &UILoraPage::hide_message_title_after_anim_cb);
+    if (!lv_anim_start(&animation)) {
+        message_title_anim_exec_cb(messages_title_, lora_app_detail::kMessageTitleHiddenY);
+        set_visible(messages_title_, false);
+    }
+}
+
+void UILoraPage::message_title_anim_exec_cb(void *object, int32_t y) noexcept
+{
+    if (!object) return;
+    lv_obj_set_y(static_cast<lv_obj_t *>(object), static_cast<lv_coord_t>(y));
+}
+
+void UILoraPage::hide_message_title_after_anim_cb(lv_anim_t *animation) noexcept
+{
+    if (!animation) return;
+    auto *title = static_cast<lv_obj_t *>(lv_anim_get_user_data(animation));
+    if (!lora_animation_callback_allowed(title)) return;
+    message_title_anim_exec_cb(title, lora_app_detail::kMessageTitleHiddenY);
+    set_visible(title, false);
+}
+
 void UILoraPage::view_opa_exec_cb(void *object, int32_t opacity) noexcept
 {
     if (!lora_animation_callback_allowed(object)) return;
@@ -293,7 +361,7 @@ void UILoraPage::create_ui()
         info_status_label_, info_device_value_, info_rssi_value_, info_snr_value_,
         info_link_value_, info_diag_value_, send_input_bubble_, send_input_label_,
         send_status_label_, send_cancel_button_, send_confirm_button_, page_dots_[0],
-        page_dots_[1]};
+        page_dots_[1], messages_title_};
     for (lv_obj_t *object : persistent_children) track_owned_handle(object);
 }
 
@@ -323,10 +391,10 @@ void UILoraPage::create_messages_view()
     empty_message_hint_label_ = make_label(messages_view_, "Type anything to send", 0, 68,
                                            320, 14, &lv_font_montserrat_12,
                                            lv_color_hex(0x5FE492), LV_TEXT_ALIGN_CENTER);
-    lv_obj_t *title = make_panel(messages_view_, 108, -8, 104, 28,
-                                 lv_color_hex(0x0B0C0E), LV_OPA_COVER, 8);
-    if (title)
-        make_label(title, "Messages", 0, 8, 104, 18, &lv_font_montserrat_14,
+    messages_title_ = make_panel(messages_view_, 108, lora_app_detail::kMessageTitleShownY,
+                                 104, 28, lv_color_hex(0x0B0C0E), LV_OPA_COVER, 8);
+    if (messages_title_)
+        make_label(messages_title_, "Messages", 0, 8, 104, 18, &lv_font_montserrat_14,
                    lv_color_hex(0xE4E4E4), LV_TEXT_ALIGN_CENTER);
 }
 
@@ -447,6 +515,7 @@ void UILoraPage::detach_delete_callbacks()
 {
     lv_obj_t *objects[] = {
         message_list_, messages_view_, empty_message_label_, empty_message_hint_label_,
+        messages_title_,
         info_view_, info_status_dot_, info_status_label_, info_device_value_,
         info_rssi_value_, info_snr_value_, info_link_value_, info_diag_value_,
         send_view_, send_input_bubble_, send_input_label_, send_status_label_,
@@ -461,6 +530,10 @@ void UILoraPage::detach_delete_callbacks()
 void UILoraPage::clear_deleted_handles(lv_obj_t *deleted)
 {
     if (!deleted) return;
+    if (deleted == messages_title_) {
+        lv_anim_del(deleted, &UILoraPage::message_title_anim_exec_cb);
+        messages_title_ = nullptr;
+    }
     if (deleted == empty_message_label_) empty_message_label_ = nullptr;
     if (deleted == empty_message_hint_label_) empty_message_hint_label_ = nullptr;
     if (deleted == info_status_dot_) info_status_dot_ = nullptr;
@@ -482,8 +555,10 @@ void UILoraPage::clear_deleted_handles(lv_obj_t *deleted)
         last_message_row_ = nullptr;
     }
     if (deleted == messages_view_) {
+        cancel_message_title_animation();
         messages_view_ = nullptr;
         message_list_ = nullptr;
+        messages_title_ = nullptr;
         empty_message_label_ = nullptr;
         empty_message_hint_label_ = nullptr;
         last_message_row_ = nullptr;
@@ -538,6 +613,8 @@ void UILoraPage::clear_deleted_handles(lv_obj_t *deleted)
         page_dots_[1] = nullptr;
         active_view_ = nullptr;
         app_active_ = false;
+        cancel_message_title_animation();
+        messages_title_ = nullptr;
         poll_timer_.stop();
     }
     if (!ui_ready()) {
