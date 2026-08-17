@@ -24,8 +24,13 @@
 #include <deque>
 #include <functional>
 #include <list>
+#include <memory>
 #include <string>
 #include <utility>
+
+namespace lora_app_detail {
+struct LoraInitializationState;
+}
 
 class UILoraPage : public AppPage {
 public:
@@ -35,11 +40,13 @@ public:
 private:
     LoraPageModel model_;
     bool app_active_               = false;
+    bool initialization_pending_   = false;
     bool scroll_to_latest_pending_ = false;
     cp0_lora_info_t lora_info_{};
+    std::shared_ptr<lora_app_detail::LoraInitializationState> initialization_state_;
 
     PageTimerLifecycle<lv_timer_t *> poll_timer_;
-    lv_timer_t *message_title_timer_ = nullptr;
+    lv_timer_t *message_title_timer_    = nullptr;
     lv_obj_t *page_root_                = nullptr;
     lv_obj_t *messages_view_            = nullptr;
     lv_obj_t *message_list_             = nullptr;
@@ -74,8 +81,7 @@ private:
                                           lv_coord_t height);
 
     static lv_obj_t *make_label(lv_obj_t *parent, const char *text, lv_coord_t x, lv_coord_t y, lv_coord_t width,
-                                lv_coord_t height, const lv_font_t *font, lv_color_t color,
-                                lv_text_align_t align);
+                                lv_coord_t height, const lv_font_t *font, lv_color_t color, lv_text_align_t align);
 
     static lv_obj_t *make_divider(lv_obj_t *parent, lv_coord_t y);
 
@@ -87,8 +93,7 @@ private:
     void create_send_view();
 
     lv_obj_t *make_action_button(lv_obj_t *parent, lv_coord_t x, lv_coord_t y, lv_coord_t width, const char *text,
-                                 lv_color_t background, lv_color_t foreground,
-                                 lv_event_cb_t callback);
+                                 lv_color_t background, lv_color_t foreground, lv_event_cb_t callback);
     void create_page_indicator();
     void bind_events();
     void track_owned_handle(lv_obj_t *object);
@@ -98,6 +103,8 @@ private:
     static void static_owned_obj_delete_cb(lv_event_t *event) noexcept;
 
     void init_lora();
+    void start_lora_initialization();
+    bool consume_lora_initialization();
     bool refresh_lora_info(bool poll);
     void update_page_indicator();
     void update_info_content();
@@ -112,8 +119,7 @@ private:
     static void hide_view_after_fade_cb(lv_anim_t *animation) noexcept;
     static void cancel_view_animation(lv_obj_t *view);
     void cancel_view_animations();
-    static void animate_view_opacity(lv_obj_t *view, lv_opa_t start, lv_opa_t end,
-                                     bool hide_after_fade);
+    static void animate_view_opacity(lv_obj_t *view, lv_opa_t start, lv_opa_t end, bool hide_after_fade);
     void transition_to_view(lv_obj_t *target);
     void render_current_view();
 
