@@ -587,9 +587,16 @@ void BluetoothUiSession::toggle_power(UISetupPage &page)
             if (!context->token.complete())
                 return;
             post_to_ui(context->weak, [result_code, exit_code](auto self) {
-                if (result_code == CP0_SUDO_RESULT_SUCCESS && exit_code == 0)
+                // rfkill's exit status is not authoritative. It can report a
+                // non-zero result when the adapter is already unblocked.
+                // Verify the actual state without sudo before continuing.
+                const int blocked = rfkill_blocked();
+                if (blocked == 0)
                     self->set_power_async(1);
                 else {
+                    std::fprintf(stderr,
+                                 "Bluetooth: rfkill unblock result=%d exit=%d, state=%d\n",
+                                 result_code, exit_code, blocked);
                     self->show_action(*self->page_, "Bluetooth power change failed", 0xFF4444);
                     self->refresh_status(*self->page_);
                 }
@@ -616,9 +623,28 @@ void BluetoothUiSession::set_power_async(int on)
 
 void BluetoothUiSession::apply_power_result(int code)
 {
-    if (code != 0)
+    if (code == 0) {
+        refresh_status(*page_);
+        return;
+    }
+
+    // A failed setter result does not necessarily mean that BlueZ rejected
+    // the request; the property update can complete after the method reply.
+    // Read the authoritative adapter state before showing an error.
+    bt_api({"BtStatusGet", session_id_}, [this](auto, int status_code, std::string data) {
+        BluetoothStatusSnapshot snapshot;
+        const bool powered = status_code == 0 &&
+            BluetoothStatusSnapshot::decode(data, snapshot) && snapshot.powered;
+        if (powered) {
+            model_.apply_status(snapshot);
+            update_menu_from_status(*page_);
+            if (SetupPageAccess(*page_).is_view(SetupViewState::SUB))
+                SetupPageAccess(*page_).build_sub_view();
+            return;
+        }
         show_action(*page_, "Bluetooth power change failed", 0xFF4444);
-    refresh_status(*page_);
+        refresh_status(*page_);
+    });
 }
 
 void BluetoothUiSession::toggle_named_only(UISetupPage &page)
