@@ -172,8 +172,11 @@ void UISetupPage::rebuild_view()
     else if (view_state_ == ViewState::VALUE_SELECT) build_value_view();
     else if (view_state_ == ViewState::HELP) setting::Help::build_page(*this);
     else if (view_state_ == ViewState::WIFI_LIST) wifi_.build_list(*this);
-    else if (view_state_ == ViewState::BT_LIST) bluetooth_.build_list(*this);
-    else if (view_state_ == ViewState::BT_ALIAS) bluetooth_.build_alias_view(*this);
+    else if (view_state_ == ViewState::BT_LIST) {
+        if (bluetooth_ui_) bluetooth_ui_->build_list(*this);
+    } else if (view_state_ == ViewState::BT_ALIAS) {
+        if (bluetooth_ui_) bluetooth_ui_->build_alias_view(*this);
+    }
     else if (view_state_ == ViewState::SOUNDCARD_CARDS) soundcard_.build_cards_view(*this);
     else if (view_state_ == ViewState::SOUNDCARD_CONTROLS) soundcard_.build_controls_view(*this);
     else if (view_state_ == ViewState::SOUNDCARD_DETAIL) soundcard_.build_detail_view(*this);
