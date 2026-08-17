@@ -110,7 +110,7 @@ void UISetupPage::on_event(lv_event_t *event)
         if (released) wifi_.handle_power_warning_key(*this, key);
         break;
     case ViewState::BT_LIST:
-        if (!bluetooth_ui_) return;
+        if (!bluetooth_ui_) break;
         if (pressed && (key == KEY_UP || key == KEY_DOWN))
             bluetooth_ui_->handle_list_key(*this, key);
         else if (released && key != KEY_UP && key != KEY_DOWN)
@@ -121,6 +121,9 @@ void UISetupPage::on_event(lv_event_t *event)
         break;
     case ViewState::BT_POWER_WARNING:
         if (released && bluetooth_ui_) bluetooth_ui_->handle_power_warning_key(*this, key);
+        break;
+    case ViewState::BT_TIMEOUT:
+        if (released && bluetooth_ui_) bluetooth_ui_->handle_timeout_key(*this, key);
         break;
     case ViewState::SOUNDCARD_CARDS:
         if (pressed && (key == KEY_UP || key == KEY_DOWN))
@@ -204,6 +207,8 @@ void UISetupPage::handle_main_key(uint32_t key)
             int sub_count = static_cast<int>(item.sub_items.size());
             model_.enter_sub(sub_count, ROW_CENTER);
             build_sub_view();
+            if (item.label == "Bluetooth" && bluetooth_ui_)
+                bluetooth_ui_->on_sub_view_created(*this);
         }
         break;
     }
@@ -249,12 +254,14 @@ void UISetupPage::handle_sub_key(uint32_t key)
     case KEY_LEFT:
         play_back();
         info_.stop_timer();
-        if (item.label == "Bluetooth")
-            release_bluetooth_ui();
         if (item.label == "RTC" && rtc_.is_dirty()) {
             rtc_.show_write_confirm(*this);
             break;
         }
+        // Leaving the Bluetooth sub-menu tears down its backend session
+        // (BtSessionDeinit) before returning to the main menu.
+        if (item.label == "Bluetooth")
+            release_bluetooth_ui();
         model_.leave_to_main();
         build_main_view();
         break;

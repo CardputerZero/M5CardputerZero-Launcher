@@ -220,6 +220,18 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -o "$build_dir/test_bluetooth_page_model"
 "$build_dir/test_bluetooth_page_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$(dirname "$0")/../main/ui" \
+    "$(dirname "$0")/test_bluetooth_ui_model.cpp" \
+    "$(dirname "$0")/../main/ui/model/bluetooth_ui_model.cpp" \
+    "$(dirname "$0")/../main/ui/model/bluetooth_page_model.cpp" \
+    -o "$build_dir/test_bluetooth_ui_model"
+"$build_dir/test_bluetooth_ui_model"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$(dirname "$0")/../main/ui" \
+    "$(dirname "$0")/test_async_timeout_guard.cpp" \
+    -o "$build_dir/test_async_timeout_guard"
+"$build_dir/test_async_timeout_guard"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
     "$(dirname "$0")/test_st_key_encoder.cpp" \
     "$(dirname "$0")/../main/ui/model/st_key_encoder.cpp" \

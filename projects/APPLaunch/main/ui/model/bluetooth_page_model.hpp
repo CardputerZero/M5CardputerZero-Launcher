@@ -12,6 +12,8 @@ struct BluetoothDeviceState
     std::string name;
     bool paired = false;
     bool connected = false;
+    int rssi = 0;
+    bool trusted = false;
 };
 
 struct BluetoothWireStatus

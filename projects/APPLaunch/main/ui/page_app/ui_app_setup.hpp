@@ -9,7 +9,7 @@
 #include "setting/basic.hpp"
 #include "../model/rtc_state_model.hpp"
 #include "../model/adb_state.hpp"
-#include "setting/bluetooth.hpp"
+#include "setting/bluetooth_ui_session.hpp"
 #include "setting/developer.hpp"
 #include "setting/info.hpp"
 #include "setting/menu_types.hpp"
@@ -95,11 +95,8 @@ private:
     setting::Info info_;
     setting::Developer developer_;
     setting::RTC rtc_;
-    std::unique_ptr<setting::BluetoothUiSession> bluetooth_ui_;
+    std::shared_ptr<setting::BluetoothUiSession> bluetooth_ui_;
     setting::SoundCard soundcard_;
-
-    setting::BluetoothUiSession &ensure_bluetooth_ui();
-    void release_bluetooth_ui();
 
     SetupPageModel model_;
     Cp0KeyboardInputContextScope input_context_scope_;
@@ -154,6 +151,12 @@ private:
 
     // ==================== Menu init ====================
     void menu_init();
+
+    // Bluetooth session lifecycle. The session owns all asynchronous backend
+    // work; release_bluetooth_ui() synchronously tears it down before LVGL
+    // objects are freed.
+    setting::BluetoothUiSession *ensure_bluetooth_ui();
+    void release_bluetooth_ui();
 
     int find_menu(const char *label);
 

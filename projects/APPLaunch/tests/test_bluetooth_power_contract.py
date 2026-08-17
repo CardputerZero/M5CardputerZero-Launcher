@@ -2,9 +2,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HEADER = (ROOT / "main/ui/page_app/setting/bluetooth.hpp").read_text(encoding="utf-8")
-CONTROLLER = (ROOT / "main/ui/page_app/setting/bluetooth.cpp").read_text(encoding="utf-8")
-SERVICE = (ROOT / "main/ui/page_app/setting/bluetooth_service.cpp").read_text(encoding="utf-8")
+HEADER = (ROOT / "main/ui/page_app/setting/bluetooth_ui_session.hpp").read_text(encoding="utf-8")
+CONTROLLER = (ROOT / "main/ui/page_app/setting/bluetooth_ui_session.cpp").read_text(encoding="utf-8")
+VIEW = (ROOT / "main/ui/page_app/setting/bluetooth_ui_session_view.cpp").read_text(encoding="utf-8")
 INPUT = (ROOT / "main/ui/page_app/ui_app_setup_input.cpp").read_text(encoding="utf-8")
 
 
@@ -15,13 +15,20 @@ def body_between(source: str, start_signature: str, next_signature: str) -> str:
 
 
 def test_power_dependent_entries_use_shared_guard():
+    # Every power-dependent entry point funnels through require_power_enabled().
     entries = (
-        (CONTROLLER, "void Bluetooth::enter_devices", "void Bluetooth::enter_alias"),
-        (CONTROLLER, "void Bluetooth::enter_alias", "void Bluetooth::handle_alias_key"),
-        (CONTROLLER, "void Bluetooth::enter_scan", "bool Bluetooth::require_power_enabled"),
-        (SERVICE, "void Bluetooth::toggle_discoverable", "void Bluetooth::start_scan_timer"),
-        (SERVICE, "void Bluetooth::start_scan_timer", "void Bluetooth::scan_timer_cb"),
-        (SERVICE, "void Bluetooth::resume_scan_discovery", "void Bluetooth::stop_scan_timer"),
+        (CONTROLLER, "void BluetoothUiSession::enter_devices",
+         "void BluetoothUiSession::enter_connected"),
+        (CONTROLLER, "void BluetoothUiSession::enter_scan",
+         "void BluetoothUiSession::enter_scan_sub"),
+        (CONTROLLER, "void BluetoothUiSession::enter_alias",
+         "void BluetoothUiSession::handle_alias_key"),
+        (CONTROLLER, "void BluetoothUiSession::toggle_discoverable",
+         "void BluetoothUiSession::activate_selected"),
+        (CONTROLLER, "void BluetoothUiSession::activate_selected",
+         "void BluetoothUiSession::finish_device_action"),
+        (CONTROLLER, "void BluetoothUiSession::remove_selected",
+         "void BluetoothUiSession::handle_list_key"),
     )
     for source, start, end in entries:
         assert "require_power_enabled(" in body_between(source, start, end)
@@ -30,72 +37,47 @@ def test_power_dependent_entries_use_shared_guard():
 def test_disabled_power_shows_warning_and_returns_to_power():
     guard = body_between(
         CONTROLLER,
-        "bool Bluetooth::require_power_enabled",
-        "void Bluetooth::handle_power_warning_key",
+        "void BluetoothUiSession::require_power_enabled",
+        "void BluetoothUiSession::toggle_power",
     )
-    assert "get_status().powered != 0" in guard
     assert "SetupViewState::BT_POWER_WARNING" in guard
     assert "show_power_warning(page)" in guard
 
     handler = body_between(
         CONTROLLER,
-        "void Bluetooth::handle_power_warning_key",
-        "void Bluetooth::rebuild_rows",
+        "void BluetoothUiSession::handle_power_warning_key",
+        "void BluetoothUiSession::require_power_enabled",
     )
     assert "access.set_view(SetupViewState::SUB)" in handler
     assert "access.select_sub(0, 6)" in handler
     assert "case ViewState::BT_POWER_WARNING:" in INPUT
-    assert "bluetooth_.handle_power_warning_key(*this, key)" in INPUT
+    assert "bluetooth_ui_->handle_power_warning_key(*this, key)" in INPUT
     assert "require_power_enabled" in HEADER
 
-    watchdog = body_between(
-        SERVICE,
-        "void Bluetooth::scan_timer_cb",
-        "void Bluetooth::suspend_scan_discovery",
-    )
-    resume = watchdog.index("resume_scan_discovery()")
-    state_check = watchdog.index("is_view(SetupViewState::BT_LIST)", resume)
-    overwrite = watchdog.index("show_action", resume)
-    assert resume < state_check < overwrite
+
+def test_session_protocol_and_weak_delivery():
+    # The backend is driven exclusively through session-scoped commands.
+    for command in (
+        "BtSessionInit", "BtSessionDeinit", "BtStatusGet",
+        "BtConnectedListInit", "BtConnectedListGet", "BtConnectedListDeinit",
+        "BtScanOn", "BtScanOff",
+    ):
+        assert command in CONTROLLER
+    # Worker-thread completions are marshalled through a weak_ptr, never a
+    # naked UISetupPage* captured by the backend.
+    assert "weak_from_this()" in CONTROLLER
+    assert "post_to_ui" in CONTROLLER
 
 
-def test_background_actions_are_joined_and_lvgl_dispatch_is_locked():
-    shutdown = body_between(
-        CONTROLLER,
-        "void Bluetooth::shutdown",
-        "lv_result_t Bluetooth::queue_lvgl_async",
-    )
-    assert "action_operation_.shutdown()" in shutdown
-    assert "action_tasks_.join_all()" in shutdown
-    assert shutdown.index("action_operation_.shutdown()") < shutdown.index("action_tasks_.join_all()")
-
-    dispatch = body_between(
-        CONTROLLER,
-        "lv_result_t Bluetooth::queue_lvgl_async",
-        "void Bluetooth::append",
-    )
-    assert "lv_lock()" in dispatch
-    assert "lv_async_call(callback, user_data)" in dispatch
-    assert "lv_unlock()" in dispatch
-    assert dispatch.index("lv_lock()") < dispatch.index("lv_async_call(callback, user_data)")
-    assert dispatch.index("lv_async_call(callback, user_data)") < dispatch.index("lv_unlock()")
-
-    action = body_between(
-        CONTROLLER,
-        "void Bluetooth::activate_selected",
-        "void Bluetooth::remove_selected",
-    )
-    assert "action_tasks_.start(" in action
-    worker = action[action.index("action_tasks_.start("):action.index("}))", action.index("action_tasks_.start("))]
-    assert "lv_" not in worker
-    assert "action_result_timer_cb" in action
-    assert ".detach()" not in action
-    assert "Bluetooth::queue_lvgl_async(" in SERVICE
-    assert "Cp0BoundedTaskRegistry action_tasks_;" in HEADER
-    assert "lv_timer_t *action_result_timer_" in HEADER
+def test_no_synchronous_api_int():
+    # The old synchronous helper that returned a default value immediately must
+    # be gone from the Bluetooth UI.
+    assert "api_int" not in CONTROLLER
+    assert "api_int" not in VIEW
 
 
 if __name__ == "__main__":
     test_power_dependent_entries_use_shared_guard()
     test_disabled_power_shows_warning_and_returns_to_power()
-    test_background_actions_are_joined_and_lvgl_dispatch_is_locked()
+    test_session_protocol_and_weak_delivery()
+    test_no_synchronous_api_int()

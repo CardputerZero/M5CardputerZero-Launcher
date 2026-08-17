@@ -2,6 +2,8 @@
 #include "../ui_app_setup.hpp"
 #include "setup_page_access.hpp"
 
+#include <cstdio>
+
 namespace setting {
 
 void BluetoothUiSession::build_alias_view(UISetupPage &page)
@@ -41,7 +43,8 @@ void BluetoothUiSession::build_alias_view(UISetupPage &page)
 
 void BluetoothUiSession::alias_update_display()
 {
-    if (!alias_input_lbl_) return;
+    if (!alias_input_lbl_)
+        return;
     const std::string display = model_.alias_input() + "_";
     lv_label_set_text(alias_input_lbl_, display.c_str());
 }
@@ -52,13 +55,15 @@ void BluetoothUiSession::build_list(UISetupPage &page)
     const SetupLayout layout = access.layout();
     lv_obj_t *container = access.content_container();
     lv_obj_clean(container);
-    rebuild_rows();
 
-    const cp0_bt_status_t status = get_status();
+    const BluetoothStatusSnapshot &status = model_.status();
+    const bool scanning = model_.sub_page() == BluetoothSubPage::SCAN;
+
     char title_text[96];
     snprintf(title_text, sizeof(title_text), "%s: %s  %.24s",
-             model_.list_mode() == BluetoothListMode::SCAN ? "Scan" : "Connected",
-             status.powered ? "On" : "Off", status.address[0] ? status.address : "--");
+             scanning ? "Scan" : "Connected",
+             status.powered ? "On" : "Off",
+             status.address.empty() ? "--" : status.address.c_str());
     lv_obj_t *title = lv_label_create(container);
     lv_label_set_text(title, title_text);
     lv_obj_set_pos(title, 8, 2);
@@ -74,7 +79,7 @@ void BluetoothUiSession::build_list(UISetupPage &page)
         lv_obj_t *empty = lv_label_create(container);
         if (!status.powered)
             lv_label_set_text(empty, "Bluetooth is off. Enable Power first.");
-        else if (model_.list_mode() == BluetoothListMode::SCAN)
+        else if (scanning)
             lv_label_set_text(empty, "Scanning...");
         else
             lv_label_set_text(empty, "No connected devices.");
@@ -90,13 +95,17 @@ void BluetoothUiSession::build_list(UISetupPage &page)
     const int hint_y = layout.content_height - 14;
     constexpr int list_bottom_gap = 8;
     int visible_count = (hint_y - list_bottom_gap - list_y) / row_step;
-    if (visible_count < 1) visible_count = 1;
+    if (visible_count < 1)
+        visible_count = 1;
     int offset = model_.list_selection() - visible_count / 2;
-    if (offset < 0) offset = 0;
+    if (offset < 0)
+        offset = 0;
     if (offset > static_cast<int>(rows.size()) - visible_count)
         offset = static_cast<int>(rows.size()) - visible_count;
-    if (offset < 0) offset = 0;
+    if (offset < 0)
+        offset = 0;
 
+    const auto &devices = model_.list().devices;
     for (int visible_index = 0;
          visible_index < visible_count && visible_index + offset < static_cast<int>(rows.size());
          ++visible_index) {
@@ -117,7 +126,10 @@ void BluetoothUiSession::build_list(UISetupPage &page)
         }
 
         const bool selected = row_index == model_.list_selection();
-        const cp0_bt_device_t &device = devices_[row.device_index];
+        if (row.device_index < 0 || row.device_index >= static_cast<int>(devices.size()))
+            continue;
+        const BluetoothDeviceState &device = devices[row.device_index];
+
         if (selected) {
             lv_obj_t *background = lv_obj_create(container);
             lv_obj_set_size(background, layout.screen_width - 8, 20);
@@ -132,7 +144,7 @@ void BluetoothUiSession::build_list(UISetupPage &page)
         const uint32_t text_color =
             device.connected ? 0x58A6FF : (selected ? 0xFFFFFF : 0xCCCCCC);
         lv_obj_t *name = lv_label_create(container);
-        lv_label_set_text(name, device.name[0] ? device.name : device.address);
+        lv_label_set_text(name, !device.name.empty() ? device.name.c_str() : device.address.c_str());
         lv_obj_set_pos(name, 8, y + 1);
         lv_obj_set_width(name, 150);
         lv_label_set_long_mode(name, LV_LABEL_LONG_CLIP);
@@ -140,7 +152,7 @@ void BluetoothUiSession::build_list(UISetupPage &page)
         lv_obj_set_style_text_font(name, &lv_font_montserrat_12, LV_PART_MAIN);
 
         lv_obj_t *address = lv_label_create(container);
-        lv_label_set_text(address, device.address);
+        lv_label_set_text(address, device.address.c_str());
         lv_obj_set_pos(address, 8, y + 12);
         lv_obj_set_width(address, 190);
         lv_label_set_long_mode(address, LV_LABEL_LONG_CLIP);
@@ -166,9 +178,8 @@ void BluetoothUiSession::build_list(UISetupPage &page)
     }
 
     lv_obj_t *hint = lv_label_create(container);
-    lv_label_set_text(hint, model_.list_mode() == BluetoothListMode::SCAN
-                                ? "OK:act R:restart ESC:back"
-                                : "OK:disconnect D:remove ESC:back");
+    lv_label_set_text(hint, scanning ? "OK:act R:restart ESC:back"
+                                     : "OK:disconnect D:remove ESC:back");
     lv_obj_set_pos(hint, 8, hint_y);
     lv_obj_set_width(hint, 304);
     lv_label_set_long_mode(hint, LV_LABEL_LONG_CLIP);
@@ -176,8 +187,52 @@ void BluetoothUiSession::build_list(UISetupPage &page)
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_10, LV_PART_MAIN);
 }
 
+void BluetoothUiSession::build_timeout_view(UISetupPage &page)
+{
+    SetupPageAccess access(page);
+    lv_obj_t *container = access.content_container();
+    if (!container)
+        return;
+    lv_obj_clean(container);
+
+    lv_obj_t *dialog = lv_obj_create(container);
+    if (!dialog)
+        return;
+    lv_obj_set_size(dialog, 280, 92);
+    lv_obj_center(dialog);
+    lv_obj_set_style_radius(dialog, 4, LV_PART_MAIN);
+    lv_obj_set_style_border_width(dialog, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(dialog, lv_color_hex(0xFF4444), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dialog, lv_color_hex(0x171717), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(dialog, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(dialog, 0, LV_PART_MAIN);
+    lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
+
+    auto create_label = [dialog](const char *text, int x, int y,
+                                 uint32_t color, const lv_font_t *font) {
+        lv_obj_t *label = lv_label_create(dialog);
+        if (!label)
+            return static_cast<lv_obj_t *>(nullptr);
+        lv_label_set_text(label, text);
+        lv_obj_set_pos(label, x, y);
+        lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
+        lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
+        return label;
+    };
+    if (!create_label(timeout_message_.c_str(), 12, 10, 0xFF4444,
+                      &lv_font_montserrat_14) ||
+        !create_label("Press Enter to return.", 12, 36, 0xCCCCCC,
+                      &lv_font_montserrat_12) ||
+        !create_label("OK", 246, 68, 0x58A6FF, &lv_font_montserrat_12)) {
+        lv_obj_clean(container);
+        return;
+    }
+    lv_refr_now(nullptr);
+}
+
 void BluetoothUiSession::show_action(UISetupPage &page, const char *message, uint32_t color)
 {
+    reveal_content(page);
     lv_obj_t *container = SetupPageAccess(page).content_container();
     lv_obj_clean(container);
     lv_obj_t *label = lv_label_create(container);
@@ -190,13 +245,16 @@ void BluetoothUiSession::show_action(UISetupPage &page, const char *message, uin
 
 bool BluetoothUiSession::show_power_warning(UISetupPage &page)
 {
+    reveal_content(page);
     SetupPageAccess access(page);
     lv_obj_t *container = access.content_container();
-    if (!container) return false;
+    if (!container)
+        return false;
     lv_obj_clean(container);
 
     lv_obj_t *dialog = lv_obj_create(container);
-    if (!dialog) return false;
+    if (!dialog)
+        return false;
     lv_obj_set_size(dialog, 280, 92);
     lv_obj_center(dialog);
     lv_obj_set_style_radius(dialog, 4, LV_PART_MAIN);
@@ -210,7 +268,8 @@ bool BluetoothUiSession::show_power_warning(UISetupPage &page)
     auto create_dialog_label = [dialog](const char *text, int x, int y,
                                         uint32_t color, const lv_font_t *font) {
         lv_obj_t *label = lv_label_create(dialog);
-        if (!label) return static_cast<lv_obj_t *>(nullptr);
+        if (!label)
+            return static_cast<lv_obj_t *>(nullptr);
         lv_label_set_text(label, text);
         lv_obj_set_pos(label, x, y);
         lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);

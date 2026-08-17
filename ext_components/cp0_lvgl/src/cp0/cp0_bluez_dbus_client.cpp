@@ -22,7 +22,7 @@ static constexpr const char *kDeviceIface = "org.bluez.Device1";
 static constexpr const char *kAgentManagerIface = "org.bluez.AgentManager1";
 static constexpr const char *kAgentIface = "org.bluez.Agent1";
 static constexpr const char *kAgentPath = "/com/cardputerzero/applaunch/agent";
-static constexpr int kCallTimeoutMs = 15000;
+static constexpr int kCallTimeoutMs = 5000;
 
 struct DeviceInfo {
     std::string path;

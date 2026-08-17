@@ -29,6 +29,27 @@ UISetupPage::~UISetupPage() noexcept
     });
 }
 
+setting::BluetoothUiSession *UISetupPage::ensure_bluetooth_ui()
+{
+    if (!bluetooth_ui_) {
+        bluetooth_ui_ = std::make_shared<setting::BluetoothUiSession>(*this);
+        // BtSessionInit was sent synchronously from the constructor. Do not
+        // fetch status yet: the SUB view is built by handle_main_key() right
+        // after on_enter(), and on_sub_view_created() issues BtStatusGet once
+        // the hidden view exists.
+        bluetooth_ui_->begin_initial_load(*this);
+    }
+    return bluetooth_ui_.get();
+}
+
+void UISetupPage::release_bluetooth_ui()
+{
+    // Dropping the last shared_ptr synchronously tears down the backend
+    // session (BtSessionDeinit joins worker threads) before any LVGL object
+    // is freed.
+    bluetooth_ui_.reset();
+}
+
 void UISetupPage::play_enter()
 {
     cp0_signal_audio_api({"SystemSoundPlay", "2"}, nullptr);
@@ -166,18 +187,6 @@ void UISetupPage::cache_image_paths()
 void UISetupPage::menu_init()
 {
     setting::build_menu(*this);
-}
-
-setting::BluetoothUiSession &UISetupPage::ensure_bluetooth_ui()
-{
-    if (!bluetooth_ui_)
-        bluetooth_ui_ = std::make_unique<setting::BluetoothUiSession>();
-    return *bluetooth_ui_;
-}
-
-void UISetupPage::release_bluetooth_ui()
-{
-    bluetooth_ui_.reset();
 }
 
 void UISetupPage::stop_power_timer()

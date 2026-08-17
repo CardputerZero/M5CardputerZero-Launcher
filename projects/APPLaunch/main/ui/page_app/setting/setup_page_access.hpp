@@ -65,7 +65,10 @@ public:
     Info &info();
     Developer &developer();
     RTC &rtc();
-    BluetoothUiSession &bluetooth();
+    // Bluetooth session accessors. bluetooth() returns the live session or
+    // null; ensure_bluetooth_ui() creates it on first use.
+    BluetoothUiSession *bluetooth();
+    BluetoothUiSession *ensure_bluetooth_ui();
     void release_bluetooth_ui();
     SoundCard &soundcard();
 

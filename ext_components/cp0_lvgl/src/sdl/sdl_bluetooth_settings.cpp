@@ -6,132 +6,212 @@
 
 #include "../cp0_app_internal_utils.h"
 #include "../cp0_bluetooth_api_contract.hpp"
+#include "../cp0_bluetooth_session.hpp"
 #include "../cp0_signal_registration.hpp"
 
 #include <algorithm>
-#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <list>
-#include <memory>
-#include <sstream>
 #include <string>
 #include <vector>
 
 namespace sdl_bluetooth_settings {
 namespace {
 
-class BluetoothSettings
+using cp0::bluetooth::BackendOps;
+using cp0::bluetooth::BluetoothSessionManager;
+using cp0::bluetooth::Command;
+using cp0::bluetooth::Reply;
+
+cp0_bt_status_t convert_status(const hal_bt_status_t &source)
 {
-public:
-    using callback_t = std::function<void(int, std::string)>;
-    using arg_t = std::list<std::string>;
+    cp0_bt_status_t result{};
+    result.powered = source.powered;
+    result.discoverable = source.discoverable;
+    cp0_copy_string(result.address, sizeof(result.address), source.address);
+    cp0_copy_string(result.alias, sizeof(result.alias), source.alias);
+    return result;
+}
 
-    void api_call(const arg_t &args, const callback_t &callback)
-    {
-        cp0::bluetooth::Request request;
-        if (!cp0::bluetooth::parse_request(args, request)) {
-            cp0::bluetooth::invoke_callback(callback, -1, "invalid bt api request");
-            return;
+int convert_devices(const hal_bt_device_t *source, int count, cp0_bt_device_t *out, int max,
+                    bool connected_only)
+{
+    if (!out || max <= 0 || !source || count <= 0)
+        return 0;
+    // Never trust a backend that reports more entries than the output buffer
+    // can hold; the old SDL implementation had the same clamp.
+    if (count > max)
+        count = max;
+    int written = 0;
+    for (int index = 0; index < count && written < max; ++index) {
+        if (connected_only && !source[index].connected)
+            continue;
+        cp0_copy_string(out[written].name, sizeof(out[written].name), source[index].name);
+        cp0_copy_string(out[written].address, sizeof(out[written].address), source[index].address);
+        out[written].rssi = source[index].rssi;
+        out[written].connected = source[index].connected;
+        out[written].paired = source[index].paired;
+        out[written].trusted = source[index].trusted;
+        ++written;
+    }
+    return written;
+}
+
+BackendOps make_backend_ops()
+{
+    BackendOps ops;
+    ops.status = [] { return convert_status(hal_bt_get_status()); };
+    ops.set_power = [](int on) { return hal_bt_set_power(on); };
+    ops.set_alias = [](const char *) { return 0; };
+    ops.set_discoverable = [](int) { return 0; };
+    ops.start_discovery = [] { return 0; };
+    ops.stop_discovery = [] { return 0; };
+    ops.list = [](cp0_bt_device_t *out, int max, bool connected_only) {
+        std::vector<hal_bt_device_t> source(static_cast<size_t>(max > 0 ? max : 0));
+        const int count = hal_bt_scan(source.data(), max > 0 ? max : 0);
+        return convert_devices(source.data(), count, out, max, connected_only);
+    };
+    ops.pair = [](const char *) { return -1; };
+    ops.connect = [](const char *) { return -1; };
+    ops.disconnect = [](const char *) { return -1; };
+    ops.remove = [](const char *) { return -1; };
+    return ops;
+}
+
+BluetoothSessionManager &sessions()
+{
+    static BluetoothSessionManager manager;
+    return manager;
+}
+
+template <typename Loader>
+Reply load_devices(int requested_count, Loader loader)
+{
+    std::vector<cp0_bt_device_t> devices(static_cast<size_t>(requested_count));
+    int count = loader(devices.empty() ? nullptr : devices.data(), static_cast<int>(devices.size()));
+    return {count, cp0::bluetooth::encode_devices(devices.data(), count)};
+}
+
+const char *device_command_name(Command command)
+{
+    switch (command) {
+    case Command::Pair: return "pair";
+    case Command::Connect: return "connect";
+    case Command::Disconnect: return "disconnect";
+    case Command::Remove: return "remove";
+    default: return "";
+    }
+}
+
+void dispatch_legacy(const cp0::bluetooth::Request &request,
+                     const std::function<void(int, std::string)> &callback)
+{
+    cp0::bluetooth::invoke_backend(callback, [&]() -> Reply {
+        if (request.command == Command::Status)
+            return {0, cp0::bluetooth::encode_status(convert_status(hal_bt_get_status()))};
+        if (request.command == Command::Power)
+            return {hal_bt_set_power(request.value), {}};
+        if (request.command == Command::Alias || request.command == Command::Discoverable)
+            return {0, {}};
+        if (request.command == Command::Scan || request.command == Command::List ||
+            request.command == Command::ConnectedList) {
+            return load_devices(request.max_count,
+                                [connected = request.command == Command::ConnectedList](
+                                    cp0_bt_device_t *out, int max) {
+                                    std::vector<hal_bt_device_t> source(static_cast<size_t>(max));
+                                    int count = hal_bt_scan(source.data(), max);
+                                    return convert_devices(source.data(), count, out, max,
+                                                           connected);
+                                });
         }
-        cp0::bluetooth::invoke_backend(callback, [&]() -> cp0::bluetooth::Reply {
-            using cp0::bluetooth::Command;
-            if (request.command == Command::Status) return {0, encode_status(status())};
-            if (request.command == Command::Power) return {hal_bt_set_power(request.value), {}};
-            if (request.command == Command::Alias || request.command == Command::Discoverable)
-                return {0, {}};
-            if (request.command == Command::Scan || request.command == Command::List ||
-                request.command == Command::ConnectedList) {
-                std::vector<cp0_bt_device_t> devices(static_cast<size_t>(request.max_count));
-                int count = scan(devices.empty() ? nullptr : devices.data(),
-                                 static_cast<int>(devices.size()));
-                if (request.command == Command::ConnectedList)
-                    count = filter_connected(devices.data(), count);
-                return {count, encode_devices(devices.data(), count)};
-            }
-            if (request.command == Command::DiscoveryStart ||
-                request.command == Command::DiscoveryStop)
-                return {0, {}};
-            return {-1, {}};
-        });
+        if (request.command == Command::DiscoveryStart ||
+            request.command == Command::DiscoveryStop)
+            return {0, {}};
+        return {-1, {}};
+    });
+}
+
+void api_call(const std::list<std::string> &args,
+              const std::function<void(int, std::string)> &callback)
+{
+    cp0::bluetooth::Request request;
+    if (!cp0::bluetooth::parse_request(args, request)) {
+        cp0::bluetooth::invoke_callback(callback, -1, "invalid bt api request");
+        return;
     }
 
-private:
-    static cp0_bt_status_t status()
-    {
-        const hal_bt_status_t source = hal_bt_get_status();
-        cp0_bt_status_t result{};
-        result.powered = source.powered;
-        result.discoverable = source.discoverable;
-        cp0_copy_string(result.address, sizeof(result.address), source.address);
-        cp0_copy_string(result.alias, sizeof(result.alias), source.alias);
-        return result;
+    if (request.command == Command::SessionInit) {
+        cp0::bluetooth::invoke_callback(callback, 0, sessions().create(make_backend_ops()));
+        return;
+    }
+    if (request.command == Command::SessionDeinit) {
+        cp0::bluetooth::invoke_callback(callback,
+                                        sessions().deinit(request.session_id) ? 0 : -1, {});
+        return;
     }
 
-    static int scan(cp0_bt_device_t *output, int max_devices)
-    {
-        if (!output || max_devices <= 0) return hal_bt_scan(nullptr, 0);
-
-        std::vector<hal_bt_device_t> source(static_cast<size_t>(max_devices));
-        int count = std::min(hal_bt_scan(source.data(), max_devices), max_devices);
-        for (int index = 0; index < count; ++index) {
-            cp0_copy_string(output[index].name, sizeof(output[index].name), source[index].name);
-            cp0_copy_string(output[index].address, sizeof(output[index].address),
-                            source[index].address);
-            output[index].rssi = source[index].rssi;
-            output[index].connected = source[index].connected;
-            output[index].paired = source[index].paired;
-            output[index].trusted = source[index].trusted;
-        }
-        return count;
+    if (!request.has_session) {
+        dispatch_legacy(request, callback);
+        return;
     }
 
-    static int filter_connected(cp0_bt_device_t *devices, int count)
-    {
-        if (!devices || count <= 0) return 0;
-        int output_count = 0;
-        for (int index = 0; index < count; ++index) {
-            if (!devices[index].connected) continue;
-            if (output_count != index) devices[output_count] = devices[index];
-            ++output_count;
-        }
-        return output_count;
+    auto session = sessions().get(request.session_id);
+    if (!session) {
+        cp0::bluetooth::invoke_callback(callback, -1, "unknown bluetooth session");
+        return;
     }
 
-    static std::string encode_status(const cp0_bt_status_t &value)
-    {
-        std::ostringstream output;
-        output << value.powered << '\t'
-               << cp0::bluetooth::sanitize_wire_field(value.address) << '\t'
-               << value.discoverable << '\t'
-               << cp0::bluetooth::sanitize_wire_field(value.alias);
-        return output.str();
+    switch (request.command) {
+    case Command::StatusGet:
+        session->status_get(callback);
+        return;
+    case Command::Power:
+        session->set_power(request.value, callback);
+        return;
+    case Command::Alias:
+        session->set_alias(request.text, callback);
+        return;
+    case Command::Discoverable:
+        session->set_discoverable(request.value, callback);
+        return;
+    case Command::Pair:
+    case Command::Connect:
+    case Command::Disconnect:
+    case Command::Remove:
+        session->device_command(device_command_name(request.command), request.text, callback);
+        return;
+    case Command::ConnectedListInit:
+        session->connected_list_init(callback);
+        return;
+    case Command::ConnectedListGet:
+        session->connected_list_get(callback);
+        return;
+    case Command::ConnectedListDeinit:
+        session->connected_list_deinit(callback);
+        return;
+    case Command::ScanOn:
+        session->scan_on(callback);
+        return;
+    case Command::ScanOff:
+        session->scan_off(callback);
+        return;
+    default:
+        cp0::bluetooth::invoke_callback(callback, -1, "invalid bluetooth session command");
+        return;
     }
-
-    static std::string encode_devices(const cp0_bt_device_t *devices, int count)
-    {
-        std::ostringstream output;
-        for (int index = 0; devices && index < count; ++index) {
-            output << cp0::bluetooth::sanitize_wire_field(devices[index].address) << '\t'
-                   << devices[index].rssi << '\t'
-                   << devices[index].connected << '\t' << devices[index].paired << '\t'
-                   << devices[index].trusted << '\t'
-                   << cp0::bluetooth::sanitize_wire_field(devices[index].name) << '\n';
-        }
-        return output.str();
-    }
-};
+}
 
 } // namespace
 
 void register_api()
 {
-    auto bluetooth = std::make_shared<BluetoothSettings>();
     static cp0::SignalRegistration<decltype(cp0_signal_bt_api)> registration;
     registration.replace(
         cp0_signal_bt_api,
-        [bluetooth](std::list<std::string> args,
-                    std::function<void(int, std::string)> callback) {
-            bluetooth->api_call(args, callback);
+        [](std::list<std::string> args,
+           std::function<void(int, std::string)> callback) {
+            api_call(args, callback);
         });
 }
 
