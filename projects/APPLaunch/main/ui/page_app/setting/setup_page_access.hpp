@@ -20,7 +20,7 @@ class WiFi;
 class Info;
 class Developer;
 class RTC;
-class Bluetooth;
+class BluetoothUiSession;
 class SoundCard;
 
 struct SetupLayout
@@ -65,7 +65,8 @@ public:
     Info &info();
     Developer &developer();
     RTC &rtc();
-    Bluetooth &bluetooth();
+    BluetoothUiSession &bluetooth();
+    void release_bluetooth_ui();
     SoundCard &soundcard();
 
     void confirm(const char *title, std::function<void()> action);

@@ -3,36 +3,64 @@
 #include "setup_page_access.hpp"
 
 #include <memory>
+#include <mutex>
 #include <new>
 #include <thread>
 
 namespace setting {
 
+struct BluetoothUiSession::ActionState {
+    std::mutex mutex;
+    bool ready = false;
+    int result = -1;
+    bool from_scan = false;
+};
+
 static_assert(BluetoothPageModel::ALIAS_INPUT_LIMIT == CP0_BT_NAME_MAX - 1,
               "Bluetooth alias model must match the cp0 API buffer");
 
-Bluetooth::Bluetooth() = default;
+BluetoothUiSession::BluetoothUiSession() = default;
 
-Bluetooth::~Bluetooth()
+BluetoothUiSession::~BluetoothUiSession()
 {
     shutdown();
 }
 
-void Bluetooth::shutdown()
+void BluetoothUiSession::shutdown()
 {
     stop_scan_timer();
     stop_failure_feedback();
     action_operation_.shutdown();
+    if (action_result_timer_) {
+        lv_timer_delete(action_result_timer_);
+        action_result_timer_ = nullptr;
+    }
+    if (power_refresh_timer_) {
+        lv_timer_delete(power_refresh_timer_);
+        power_refresh_timer_ = nullptr;
+    }
+    power_refresh_page_ = nullptr;
+    action_tasks_.join_all();
+    action_state_.reset();
+    action_page_ = nullptr;
     const uint64_t request_id = sudo_operation_.shutdown();
     if (request_id)
         cp0_signal_sudo_cancel(request_id, nullptr);
 }
 
-void Bluetooth::append(UISetupPage &p, std::vector<MenuItem> &menu)
+lv_result_t BluetoothUiSession::queue_lvgl_async(lv_async_cb_t callback, void *user_data)
+{
+    lv_lock();
+    const lv_result_t result = lv_async_call(callback, user_data);
+    lv_unlock();
+    return result;
+}
+
+void BluetoothUiSession::append(UISetupPage &p, std::vector<MenuItem> &menu)
 {
     UISetupPage *page = &p;
     SetupPageAccess access(*page);
-    Bluetooth *bt = &access.bluetooth();
+    BluetoothUiSession *bt = &access.bluetooth();
     MenuItem m;
     m.label = "Bluetooth";
     bt->model_.set_named_only(access.config_get_int("bt_named_only", 1) != 0);
@@ -47,7 +75,7 @@ void Bluetooth::append(UISetupPage &p, std::vector<MenuItem> &menu)
     m.on_enter = [bt, page]() { bt->refresh_status(*page); };
     menu.push_back(m);
 }
-void Bluetooth::enter_devices(UISetupPage &page)
+void BluetoothUiSession::enter_devices(UISetupPage &page)
 {
     if (!require_power_enabled(page)) return;
     stop_scan_timer();
@@ -60,7 +88,7 @@ void Bluetooth::enter_devices(UISetupPage &page)
     build_list(page);
 }
 
-void Bluetooth::enter_alias(UISetupPage &page)
+void BluetoothUiSession::enter_alias(UISetupPage &page)
 {
     if (!require_power_enabled(page)) return;
     stop_scan_timer();
@@ -73,7 +101,7 @@ void Bluetooth::enter_alias(UISetupPage &page)
     build_alias_view(page);
 }
 
-void Bluetooth::handle_alias_key(UISetupPage &page, uint32_t key)
+void BluetoothUiSession::handle_alias_key(UISetupPage &page, uint32_t key)
 {
     if (key == KEY_ESC || key == KEY_LEFT) {
         alias_input_lbl_ = nullptr;
@@ -117,7 +145,7 @@ void Bluetooth::handle_alias_key(UISetupPage &page, uint32_t key)
     }
 }
 
-void Bluetooth::enter_scan(UISetupPage &page)
+void BluetoothUiSession::enter_scan(UISetupPage &page)
 {
     if (!require_power_enabled(page)) return;
     stop_failure_feedback();
@@ -128,7 +156,7 @@ void Bluetooth::enter_scan(UISetupPage &page)
     start_scan_timer(page);
 }
 
-bool Bluetooth::require_power_enabled(UISetupPage &page)
+bool BluetoothUiSession::require_power_enabled(UISetupPage &page)
 {
     if (get_status().powered != 0) return true;
 
@@ -150,7 +178,7 @@ bool Bluetooth::require_power_enabled(UISetupPage &page)
     return false;
 }
 
-void Bluetooth::handle_power_warning_key(UISetupPage &page, uint32_t key)
+void BluetoothUiSession::handle_power_warning_key(UISetupPage &page, uint32_t key)
 {
     if (key != KEY_ENTER && key != KEY_ESC && key != KEY_LEFT) return;
     SetupPageAccess access(page);
@@ -159,7 +187,7 @@ void Bluetooth::handle_power_warning_key(UISetupPage &page, uint32_t key)
     access.build_sub_view();
 }
 
-void Bluetooth::rebuild_rows()
+void BluetoothUiSession::rebuild_rows()
 {
     std::vector<BluetoothDeviceState> devices;
     devices.reserve(device_count_);
@@ -170,7 +198,7 @@ void Bluetooth::rebuild_rows()
     model_.rebuild_rows(devices);
 }
 
-void Bluetooth::activate_selected(UISetupPage &page)
+void BluetoothUiSession::activate_selected(UISetupPage &page)
 {
     if (!require_power_enabled(page)) return;
     const bool operation_active = action_busy_ && action_operation_.active();
@@ -191,13 +219,6 @@ void Bluetooth::activate_selected(UISetupPage &page)
     else
         show_action(page, "Pairing...");
 
-    struct BtActionResult {
-        AsyncOperationLifecycle::Token token;
-        UISetupPage *page;
-        int ret;
-        bool from_scan;
-    };
-
     action_token_ = action_operation_.begin();
     AsyncOperationLifecycle::Token token = action_token_;
     if (!token) {
@@ -206,8 +227,20 @@ void Bluetooth::activate_selected(UISetupPage &page)
             resume_scan_discovery();
         return;
     }
+    auto state = std::make_shared<ActionState>();
+    action_state_ = state;
+    action_page_ = &page;
+    action_result_timer_ = lv_timer_create(action_result_timer_cb, 30, this);
+    if (!action_result_timer_) {
+        action_state_.reset();
+        action_page_ = nullptr;
+        action_operation_.abort(token);
+        action_busy_ = false;
+        if (from_scan) resume_scan_discovery();
+        return;
+    }
     try {
-        std::thread([token, page = &page, dev, from_scan]() {
+        if (!action_tasks_.start([state, dev, from_scan]() {
             int ret = -1;
             if (dev.connected) {
                 ret = device_command("BtDisconnect", dev.address);
@@ -219,41 +252,27 @@ void Bluetooth::activate_selected(UISetupPage &page)
                     ret = device_command("BtConnect", dev.address);
             }
 
-            auto result = std::unique_ptr<BtActionResult>(
-                new (std::nothrow) BtActionResult{token, page, ret, from_scan});
-            if (!result) {
-                token.complete();
-                return;
-            }
-            BtActionResult *queued = result.release();
-            if (lv_async_call([](void *user) noexcept {
-                std::unique_ptr<BtActionResult> result(static_cast<BtActionResult *>(user));
-                try {
-                    UISetupPage *page = result->page;
-                    if (!bluetooth_async_completion_allowed(
-                            result->token.complete(), page)) return;
-                    Bluetooth *bt = &SetupPageAccess(*page).bluetooth();
-                    bt->action_busy_ = false;
-                    if (result->ret != 0) {
-                        bt->show_action(*page, "Bluetooth action failed", 0xFF4444);
-                        if (bluetooth_scan_action_should_resume(
-                                result->from_scan, result->ret))
-                            bt->resume_scan_discovery();
-                    } else if (result->from_scan) {
-                        bt->model_.set_list_mode(BluetoothListMode::MANAGED);
-                        bt->stop_scan_timer();
-                    }
-                    bt->refresh_devices();
-                    if (SetupPageAccess(*page).is_view(SetupViewState::BT_LIST))
-                        bt->build_list(*page);
-                } catch (...) {
-                }
-            }, queued) != LV_RESULT_OK) {
-                queued->token.complete();
-                delete queued;
-            }
-        }).detach();
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->result = ret;
+            state->from_scan = from_scan;
+            state->ready = true;
+        })) {
+            lv_timer_delete(action_result_timer_);
+            action_result_timer_ = nullptr;
+            action_state_.reset();
+            action_page_ = nullptr;
+            action_operation_.abort(token);
+            action_busy_ = false;
+            if (from_scan)
+                resume_scan_discovery();
+        }
     } catch (...) {
+        if (action_result_timer_) {
+            lv_timer_delete(action_result_timer_);
+            action_result_timer_ = nullptr;
+        }
+        action_state_.reset();
+        action_page_ = nullptr;
         action_operation_.abort(token);
         action_busy_ = false;
         if (from_scan)
@@ -261,7 +280,46 @@ void Bluetooth::activate_selected(UISetupPage &page)
     }
 }
 
-void Bluetooth::remove_selected(UISetupPage &page)
+void BluetoothUiSession::action_result_timer_cb(lv_timer_t *timer) noexcept
+{
+    auto *bt = timer ? static_cast<BluetoothUiSession *>(lv_timer_get_user_data(timer)) : nullptr;
+    if (!bt || timer != bt->action_result_timer_ || !bt->action_state_) return;
+    try {
+        int result = -1;
+        bool from_scan = false;
+        {
+            std::lock_guard<std::mutex> lock(bt->action_state_->mutex);
+            if (!bt->action_state_->ready) return;
+            result = bt->action_state_->result;
+            from_scan = bt->action_state_->from_scan;
+        }
+        lv_timer_delete(bt->action_result_timer_);
+        bt->action_result_timer_ = nullptr;
+        bt->action_state_.reset();
+        bt->action_tasks_.reap_finished();
+        UISetupPage *page = bt->action_page_;
+        bt->action_page_ = nullptr;
+        if (!bluetooth_async_completion_allowed(bt->action_token_.complete(), page)) return;
+        bt->action_busy_ = false;
+        if (result != 0) {
+            bt->show_action(*page, "Bluetooth action failed", 0xFF4444);
+            if (bluetooth_scan_action_should_resume(from_scan, result))
+                bt->resume_scan_discovery();
+            // Do not synchronously query BlueZ while presenting the failure.
+            // That query can block the LVGL thread and make ESC appear dead.
+            return;
+        } else if (from_scan) {
+            bt->model_.set_list_mode(BluetoothListMode::MANAGED);
+            bt->stop_scan_timer();
+        }
+        bt->refresh_devices();
+        if (SetupPageAccess(*page).is_view(SetupViewState::BT_LIST))
+            bt->build_list(*page);
+    } catch (...) {
+    }
+}
+
+void BluetoothUiSession::remove_selected(UISetupPage &page)
 {
     if (!require_power_enabled(page)) return;
     int dev_index = model_.selected_device_index();
@@ -278,7 +336,7 @@ void Bluetooth::remove_selected(UISetupPage &page)
     build_list(page);
 }
 
-void Bluetooth::start_failure_feedback(UISetupPage &page)
+void BluetoothUiSession::start_failure_feedback(UISetupPage &page)
 {
     stop_failure_feedback();
     if (!model_.begin_feedback()) return;
@@ -298,7 +356,7 @@ void Bluetooth::start_failure_feedback(UISetupPage &page)
     if (SetupPageAccess(page).is_view(SetupViewState::BT_LIST)) build_list(page);
 }
 
-void Bluetooth::stop_failure_feedback()
+void BluetoothUiSession::stop_failure_feedback()
 {
     if (failure_feedback_page_ && failure_feedback_page_->screen())
         lv_obj_remove_event_cb_with_user_data(
@@ -311,9 +369,9 @@ void Bluetooth::stop_failure_feedback()
     model_.cancel_feedback();
 }
 
-void Bluetooth::failure_feedback_timer_cb(lv_timer_t *timer) noexcept
+void BluetoothUiSession::failure_feedback_timer_cb(lv_timer_t *timer) noexcept
 {
-    auto *self = static_cast<Bluetooth *>(lv_timer_get_user_data(timer));
+    auto *self = static_cast<BluetoothUiSession *>(lv_timer_get_user_data(timer));
     if (!self || !bluetooth_feedback_callback_allowed(
             timer, self->failure_feedback_timer_, self->failure_feedback_page_,
             self->model_.feedback_pending())) return;
@@ -335,11 +393,11 @@ void Bluetooth::failure_feedback_timer_cb(lv_timer_t *timer) noexcept
     }
 }
 
-void Bluetooth::failure_feedback_screen_delete_cb(lv_event_t *event) noexcept
+void BluetoothUiSession::failure_feedback_screen_delete_cb(lv_event_t *event) noexcept
 {
     try {
         if (!event) return;
-        auto *self = static_cast<Bluetooth *>(lv_event_get_user_data(event));
+        auto *self = static_cast<BluetoothUiSession *>(lv_event_get_user_data(event));
         if (!self || !self->failure_feedback_page_ ||
             !bluetooth_feedback_screen_delete_matches(
                 lv_event_get_target(event), lv_event_get_current_target(event),
@@ -355,7 +413,7 @@ void Bluetooth::failure_feedback_screen_delete_cb(lv_event_t *event) noexcept
     }
 }
 
-void Bluetooth::handle_list_key(UISetupPage &page, uint32_t key)
+void BluetoothUiSession::handle_list_key(UISetupPage &page, uint32_t key)
 {
     if (model_.feedback_pending() && key != KEY_ESC && key != KEY_LEFT)
         return;

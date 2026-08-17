@@ -40,7 +40,8 @@ WiFi &SetupPageAccess::wifi() { return page_.wifi_; }
 Info &SetupPageAccess::info() { return page_.info_; }
 Developer &SetupPageAccess::developer() { return page_.developer_; }
 RTC &SetupPageAccess::rtc() { return page_.rtc_; }
-Bluetooth &SetupPageAccess::bluetooth() { return page_.bluetooth_; }
+BluetoothUiSession &SetupPageAccess::bluetooth() { return page_.ensure_bluetooth_ui(); }
+void SetupPageAccess::release_bluetooth_ui() { page_.release_bluetooth_ui(); }
 SoundCard &SetupPageAccess::soundcard() { return page_.soundcard_; }
 
 void SetupPageAccess::confirm(const char *title, std::function<void()> action)

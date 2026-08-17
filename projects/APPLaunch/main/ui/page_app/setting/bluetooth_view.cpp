@@ -4,7 +4,7 @@
 
 namespace setting {
 
-void Bluetooth::build_alias_view(UISetupPage &page)
+void BluetoothUiSession::build_alias_view(UISetupPage &page)
 {
     SetupPageAccess access(page);
     lv_obj_t *container = access.content_container();
@@ -39,14 +39,14 @@ void Bluetooth::build_alias_view(UISetupPage &page)
     lv_obj_set_style_text_font(alias_hint_lbl_, &lv_font_montserrat_10, LV_PART_MAIN);
 }
 
-void Bluetooth::alias_update_display()
+void BluetoothUiSession::alias_update_display()
 {
     if (!alias_input_lbl_) return;
     const std::string display = model_.alias_input() + "_";
     lv_label_set_text(alias_input_lbl_, display.c_str());
 }
 
-void Bluetooth::build_list(UISetupPage &page)
+void BluetoothUiSession::build_list(UISetupPage &page)
 {
     SetupPageAccess access(page);
     const SetupLayout layout = access.layout();
@@ -176,7 +176,7 @@ void Bluetooth::build_list(UISetupPage &page)
     lv_obj_set_style_text_font(hint, &lv_font_montserrat_10, LV_PART_MAIN);
 }
 
-void Bluetooth::show_action(UISetupPage &page, const char *message, uint32_t color)
+void BluetoothUiSession::show_action(UISetupPage &page, const char *message, uint32_t color)
 {
     lv_obj_t *container = SetupPageAccess(page).content_container();
     lv_obj_clean(container);
@@ -188,7 +188,7 @@ void Bluetooth::show_action(UISetupPage &page, const char *message, uint32_t col
     lv_refr_now(nullptr);
 }
 
-bool Bluetooth::show_power_warning(UISetupPage &page)
+bool BluetoothUiSession::show_power_warning(UISetupPage &page)
 {
     SetupPageAccess access(page);
     lv_obj_t *container = access.content_container();

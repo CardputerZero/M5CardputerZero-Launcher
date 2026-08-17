@@ -168,6 +168,18 @@ void UISetupPage::menu_init()
     setting::build_menu(*this);
 }
 
+setting::BluetoothUiSession &UISetupPage::ensure_bluetooth_ui()
+{
+    if (!bluetooth_ui_)
+        bluetooth_ui_ = std::make_unique<setting::BluetoothUiSession>();
+    return *bluetooth_ui_;
+}
+
+void UISetupPage::release_bluetooth_ui()
+{
+    bluetooth_ui_.reset();
+}
+
 void UISetupPage::stop_power_timer()
 {
     if (!pwr_timer_) return;
