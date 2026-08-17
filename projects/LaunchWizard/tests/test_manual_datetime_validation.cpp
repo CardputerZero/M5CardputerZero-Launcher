@@ -8,6 +8,7 @@ bool test_service_handoff();
 bool test_command_runner();
 bool test_account_migration();
 bool test_apply_checkpoint();
+bool test_first_boot_policy();
 
 int main()
 {
@@ -42,5 +43,6 @@ int main()
     passed &= test_command_runner();
     passed &= test_account_migration();
     passed &= test_apply_checkpoint();
+    passed &= test_first_boot_policy();
     return passed ? 0 : 1;
 }
