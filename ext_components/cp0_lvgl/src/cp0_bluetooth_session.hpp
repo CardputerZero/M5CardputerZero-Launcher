@@ -111,6 +111,9 @@ private:
     std::condition_variable done_cv_;
 
     std::mutex status_mutex_;
+    // Serializes adapter state reads and writes so an in-flight initial
+    // preload cannot publish an old snapshot after BtPower changes state.
+    std::mutex state_operation_mutex_;
     std::condition_variable status_cv_;
     cp0_bt_status_t status_cache_{};
     bool status_ready_ = false;

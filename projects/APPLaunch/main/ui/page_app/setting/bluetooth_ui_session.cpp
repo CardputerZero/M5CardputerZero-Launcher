@@ -617,12 +617,29 @@ void BluetoothUiSession::toggle_power(UISetupPage &page)
 
 void BluetoothUiSession::set_power_async(int on)
 {
+    const uint64_t generation = ++power_generation_;
+    // Start the Power timeout only after rfkill/sudo has completed. Password
+    // entry time is therefore not included in the 3-second BlueZ deadline.
+    const std::string timeout_message = "Bluetooth power change timed out";
+    timeout_.begin(3000, [this, generation, timeout_message]() {
+        if (generation != power_generation_)
+            return;
+        ++power_generation_;
+        if (page_)
+            show_timeout_dialog(*page_, timeout_message);
+    });
     bt_api({"BtPower", session_id_, std::to_string(on)},
-           [this](auto, int code, std::string) { apply_power_result(code); });
+           [this, generation](auto, int code, std::string) {
+               apply_power_result(code, generation);
+           });
 }
 
-void BluetoothUiSession::apply_power_result(int code)
+void BluetoothUiSession::apply_power_result(int code, uint64_t generation)
 {
+    if (generation != power_generation_)
+        return;
+    ++power_generation_;
+    clear_timeout();
     if (code == 0) {
         refresh_status(*page_);
         return;
@@ -631,7 +648,9 @@ void BluetoothUiSession::apply_power_result(int code)
     // A failed setter result does not necessarily mean that BlueZ rejected
     // the request; the property update can complete after the method reply.
     // Read the authoritative adapter state before showing an error.
-    bt_api({"BtStatusGet", session_id_}, [this](auto, int status_code, std::string data) {
+    bt_api({"BtStatusGet", session_id_}, [this, generation](auto, int status_code, std::string data) {
+        if (generation + 1 != power_generation_)
+            return;
         BluetoothStatusSnapshot snapshot;
         const bool powered = status_code == 0 &&
             BluetoothStatusSnapshot::decode(data, snapshot) && snapshot.powered;

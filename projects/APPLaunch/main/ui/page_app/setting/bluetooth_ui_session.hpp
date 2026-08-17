@@ -95,7 +95,7 @@ private:
     void apply_status_result(int code, BluetoothStatusSnapshot snapshot);
     void apply_connected_list(int code, BluetoothListSnapshot snapshot);
     void apply_scan_snapshot(int code, std::string data, uint64_t generation);
-    void apply_power_result(int code);
+    void apply_power_result(int code, uint64_t generation);
     void apply_alias_result(std::string alias, int code);
 
     void enter_connected(UISetupPage &page);
@@ -137,6 +137,7 @@ private:
     lv_timer_t *timeout_timer_ = nullptr;
     std::function<void()> timeout_pending_cb_;
     std::string timeout_message_;
+    uint64_t power_generation_ = 0;
 
     AsyncOperationLifecycle action_operation_;
     AsyncOperationLifecycle::Token action_token_;

@@ -22,7 +22,10 @@ static constexpr const char *kDeviceIface = "org.bluez.Device1";
 static constexpr const char *kAgentManagerIface = "org.bluez.AgentManager1";
 static constexpr const char *kAgentIface = "org.bluez.Agent1";
 static constexpr const char *kAgentPath = "/com/cardputerzero/applaunch/agent";
-static constexpr int kCallTimeoutMs = 5000;
+// Keep synchronous BlueZ property calls below the UI's 3-second Power
+// operation deadline. Otherwise the LVGL timeout can fire while the backend
+// is still blocked in dbus_connection_send_with_reply_and_block().
+static constexpr int kCallTimeoutMs = 2500;
 
 struct DeviceInfo {
     std::string path;

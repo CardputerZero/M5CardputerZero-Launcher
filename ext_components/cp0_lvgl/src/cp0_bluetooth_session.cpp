@@ -105,6 +105,7 @@ void BluetoothBackendSession::preload_status()
     // session cache and observed later through status_get(); the callback is
     // intentionally empty because this operation itself is fire-and-forget.
     run_async([this]() -> Reply {
+        std::lock_guard<std::mutex> state_lock(state_operation_mutex_);
         cp0_bt_status_t status{};
         try {
             status = ops_.status();
@@ -137,20 +138,35 @@ void BluetoothBackendSession::preload_status()
 void BluetoothBackendSession::status_get(BtCallback callback)
 {
     run_async([this]() -> Reply {
-        std::unique_lock<std::mutex> lock(status_mutex_);
-        if (status_ready_)
-            return {0, encode_status(status_cache_)};
+        std::unique_lock<std::mutex> state_lock(state_operation_mutex_);
+        {
+            std::lock_guard<std::mutex> lock(status_mutex_);
+            if (status_ready_)
+                return {0, encode_status(status_cache_)};
+        }
 
-        if (preload_inflight_) {
+        bool preload_inflight = false;
+        {
+            std::lock_guard<std::mutex> lock(status_mutex_);
+            preload_inflight = preload_inflight_;
+        }
+        if (preload_inflight) {
+            state_lock.unlock();
             // Initial preload is still running. Wait a bounded time so the UI
             // keeps its own 3-second timeout meaningful. Wake up immediately
             // when the session is deinitialized so deinit() does not wait the
             // full 2.5s.
+            std::unique_lock<std::mutex> lock(status_mutex_);
             if (status_cv_.wait_for(lock, std::chrono::milliseconds(2000),
                                     [this] { return status_ready_ || !running_.load(); })) {
+                if (!status_ready_)
+                    return {-2, "session stopped"};
+                lock.unlock();
+                state_lock.lock();
+                std::lock_guard<std::mutex> state_status_lock(status_mutex_);
                 if (status_ready_)
                     return {0, encode_status(status_cache_)};
-                return {-2, "session stopped"};
+                return {0, encode_status(ops_.status())};
             }
             return {-2, "bluetooth status read timeout"};
         }
@@ -158,7 +174,6 @@ void BluetoothBackendSession::status_get(BtCallback callback)
         // Either preload never started (legacy session use) or the cache was
         // invalidated by a successful setter (power/alias/discoverable). Read
         // the adapter directly so the UI receives a fresh value.
-        lock.unlock();
         cp0_bt_status_t status{};
         try {
             status = ops_.status();
@@ -178,10 +193,36 @@ void BluetoothBackendSession::invalidate_status()
 void BluetoothBackendSession::set_power(int on, BtCallback callback)
 {
     run_async([this, on]() -> Reply {
+        std::lock_guard<std::mutex> state_lock(state_operation_mutex_);
         const int result = ops_.set_power(on);
-        if (result == 0)
-            invalidate_status();
-        return {result, {}};
+        if (result != 0)
+            return {result, {}};
+
+        invalidate_status();
+        // BlueZ may acknowledge Set(Powered) before the managed-object
+        // snapshot reflects the new value. Confirm the actual adapter state
+        // before notifying the UI, while keeping the operation bounded.
+        // Leave a small margin for the UI's 3-second operation guard. The
+        // backend must report before that guard fires, otherwise the UI can
+        // show a timeout immediately before the successful callback arrives.
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(2500);
+        while (std::chrono::steady_clock::now() < deadline) {
+            cp0_bt_status_t status{};
+            try {
+                status = ops_.status();
+            } catch (...) {
+                return {-1, {}};
+            }
+            if ((status.powered != 0) == (on != 0)) {
+                std::lock_guard<std::mutex> lock(status_mutex_);
+                status_cache_ = status;
+                status_ready_ = true;
+                return {0, encode_status(status)};
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+        return {-2, "bluetooth power state timeout"};
     }, std::move(callback));
 }
 

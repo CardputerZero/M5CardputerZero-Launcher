@@ -281,5 +281,39 @@ int main()
         assert(!delivered.done);
     }
 
+    // A delayed BlueZ property update must be observed before the Power
+    // callback is delivered; otherwise the UI can immediately read stale OFF.
+    {
+        std::mutex mutex;
+        bool powered = false;
+        bool pending_power = false;
+        BackendOps delayed = fake_ops(nullptr);
+        delayed.status = [&]() {
+            std::lock_guard<std::mutex> lock(mutex);
+            if (pending_power) {
+                pending_power = false;
+                powered = true;
+            }
+            cp0_bt_status_t status{};
+            status.powered = powered ? 1 : 0;
+            return status;
+        };
+        delayed.set_power = [&](int on) {
+            std::lock_guard<std::mutex> lock(mutex);
+            pending_power = on != 0;
+            return 0;
+        };
+        auto session = std::make_shared<BluetoothBackendSession>(delayed);
+        Delivery power;
+        session->set_power(1, [&](int code, std::string) { power.set(code, {}); });
+        assert(power.wait_for());
+        assert(power.code == 0);
+        Delivery status;
+        session->status_get([&](int code, std::string data) { status.set(code, std::move(data)); });
+        assert(status.wait_for());
+        assert(status.code == 0 && status.data.rfind("1\t", 0) == 0);
+        session->deinit();
+    }
+
     return 0;
 }
