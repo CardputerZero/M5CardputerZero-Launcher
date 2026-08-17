@@ -6,11 +6,13 @@
 #include "../../model/bluetooth_scan_lifecycle_contract.hpp"
 
 #include "cp0_lvgl_app.h"
+#include "cp0_bounded_task_registry.hpp"
 #include <lvgl.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <list>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -18,11 +20,11 @@ class UISetupPage;
 
 namespace setting {
 
-class Bluetooth
+class BluetoothUiSession
 {
 public:
-    Bluetooth();
-    ~Bluetooth();
+    BluetoothUiSession();
+    ~BluetoothUiSession();
     void shutdown();
 
     void append(UISetupPage &page, std::vector<MenuItem> &menu);
@@ -44,6 +46,7 @@ public:
     void do_scan(UISetupPage &page);
 
 private:
+    struct ActionState;
     bool require_power_enabled(UISetupPage &page);
     void alias_update_display();
     void rebuild_rows();
@@ -58,6 +61,8 @@ private:
     static void scan_timer_cb(lv_timer_t *timer) noexcept;
     static void failure_feedback_timer_cb(lv_timer_t *timer) noexcept;
     static void failure_feedback_screen_delete_cb(lv_event_t *event) noexcept;
+    static void action_result_timer_cb(lv_timer_t *timer) noexcept;
+    static void power_refresh_timer_cb(lv_timer_t *timer) noexcept;
     static void copy_string(char *destination, size_t destination_size, const std::string &source);
     static bool decode_status(const std::string &data, cp0_bt_status_t &status);
     static int decode_devices(const std::string &data, cp0_bt_device_t *out, int max_devices);
@@ -69,7 +74,12 @@ private:
     static int device_command(const char *command, const char *address);
     static int device_list(const char *command, cp0_bt_device_t *out, int max_devices);
     static int rfkill_blocked();
+    static lv_result_t queue_lvgl_async(lv_async_cb_t callback, void *user_data);
 
+    Cp0BoundedTaskRegistry action_tasks_;
+    std::shared_ptr<ActionState> action_state_;
+    lv_timer_t *action_result_timer_ = nullptr;
+    UISetupPage *action_page_ = nullptr;
     AsyncOperationLifecycle action_operation_;
     AsyncOperationLifecycle sudo_operation_;
     AsyncOperationLifecycle::Token action_token_;
@@ -80,6 +90,8 @@ private:
     UISetupPage *scan_page_ = nullptr;
     bool scan_callback_enabled_ = false;
     lv_timer_t *failure_feedback_timer_ = nullptr;
+    lv_timer_t *power_refresh_timer_ = nullptr;
+    UISetupPage *power_refresh_page_ = nullptr;
     UISetupPage *failure_feedback_page_ = nullptr;
     bool discovery_active_ = false;
     bool action_busy_ = false;
