@@ -199,6 +199,9 @@ def _control_text(config: PackageConfig) -> str:
     }
     if config.app_name == APP_NAME and config.package_name == PACKAGE_NAME:
         fields["X-CardputerZero-Update-ABI"] = LAUNCHER_UPDATE_ABI
+        # The user service pre-creates XDG folders (Music, Pictures, ...) via
+        # xdg-user-dirs-update; without a desktop session nothing else does.
+        fields["Depends"] = "xdg-user-dirs"
     return "".join(f"{key}: {value}\n" for key, value in fields.items())
 
 
@@ -622,6 +625,7 @@ After=pipewire-pulse.service
 Wants=pipewire-pulse.service
 
 [Service]
+ExecStartPre=-/usr/bin/xdg-user-dirs-update
 ExecStart=/{_posix_path(config.bin_path / config.bin_name)}
 WorkingDirectory=/{_posix_path(config.install_prefix)}
 Restart={config.service_restart}

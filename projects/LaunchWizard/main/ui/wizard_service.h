@@ -36,6 +36,9 @@ public:
     static std::string reboot();
     static bool should_run();
     static int finish_configured_system();
+    // Runs the one-shot keyboard tutorial (before the OOBE decision) and
+    // consumes its marker. Returns once the guide exits or is unavailable.
+    static void run_keyboard_guide_once();
 };
 
 }  // namespace launch_wizard

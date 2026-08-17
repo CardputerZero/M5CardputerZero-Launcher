@@ -2,6 +2,7 @@
 #include "account_migration.h"
 #include "apply_checkpoint.h"
 #include "command_runner.h"
+#include "first_boot_policy.h"
 #include "service_handoff.h"
 
 #include "global_config.h"
@@ -15,11 +16,16 @@
 #include <fcntl.h>
 #include <pwd.h>
 #include <shadow.h>
+#include <signal.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
+
+extern char **environ;
 
 #include <chrono>
 #include <fstream>
@@ -48,6 +54,27 @@ constexpr const char *kAccountJournalDir = "/var/lib/LaunchWizard";
 constexpr const char *kAccountJournalPath =
     "/var/lib/LaunchWizard/account-migration.state";
 #endif
+
+// Dropped by APPLaunch's "Run Setup Wizard" settings entry (re-run on demand).
+constexpr const char *kRearmOobeMarker = "/var/lib/applaunch/run-oobe";
+// Baked into every factory image by pi-gen; removed once first boot finishes.
+constexpr const char *kFactoryOobeMarker = "/var/lib/LaunchWizard/run-oobe";
+// One-shot keyboard tutorial shown before the OOBE (also baked by pi-gen).
+constexpr const char *kKeyboardGuideMarker =
+    "/var/lib/LaunchWizard/run-keyboard-guide";
+constexpr const char *kKeyboardGuideBinary =
+    "/usr/share/APPLaunch/bin/M5CardputerZero-Keyboard-Guide";
+
+void remove_oobe_markers(std::string *first_error = nullptr)
+{
+    static const char *marker_paths[] = {kRearmOobeMarker, kFactoryOobeMarker};
+    for (const char *path : marker_paths) {
+        if (remove(path) != 0 && errno != ENOENT && first_error &&
+            first_error->empty())
+            *first_error = std::string("Failed to remove OOBE marker: ") +
+                           strerror(errno);
+    }
+}
 
 void print_command(const std::vector<std::string> &args, const std::string *stdin_text)
 {
@@ -932,15 +959,7 @@ std::string WizardService::apply(
                 first_error = disabled.output.empty()
                     ? std::string("Failed to disable LaunchWizard.service")
                     : disabled.output;
-            static const char *marker_paths[] = {
-                "/var/lib/applaunch/run-oobe",
-                "/var/lib/LaunchWizard/run-oobe",
-            };
-            for (const char *path : marker_paths) {
-                if (remove(path) != 0 && errno != ENOENT && first_error.empty())
-                    first_error = std::string("Failed to remove OOBE marker: ") +
-                                  strerror(errno);
-            }
+            remove_oobe_markers(&first_error);
 #if !LAUNCH_WIZARD_DRY_RUN
             sync();
             sync();
@@ -977,20 +996,85 @@ bool launch_wizard::WizardService::should_run()
     // In the SDL emulator always show the OOBE so it can be developed/previewed.
     return true;
 #else
-    // Explicit re-arm marker. APPLaunch's "Run Setup Wizard" settings entry
-    // drops this file and reboots, letting an already-configured device replay
-    // the OOBE on demand. apply_all() clears it on completion, so the wizard
-    // still runs exactly once.
-    static const char *kRearmPaths[] = {
-        "/var/lib/applaunch/run-oobe",
-        "/var/lib/LaunchWizard/run-oobe",
-    };
-    for (const char *path : kRearmPaths) {
-        if (access(path, F_OK) == 0)
-            return true;
+    FirstBootState state;
+    // APPLaunch's "Run Setup Wizard" settings entry drops this file and
+    // reboots, letting an already-configured device replay the OOBE on demand.
+    // apply_all() clears it on completion, so the wizard still runs exactly
+    // once.
+    state.rearm_marker = access(kRearmOobeMarker, F_OK) == 0;
+    // pi-gen bakes the factory marker into every image. It must only trigger
+    // the OOBE while the account is still unconfigured; a device provisioned
+    // through Raspberry Pi Imager already has a password and skips straight to
+    // the launcher (finish_configured_system() then removes the marker).
+    state.factory_marker = access(kFactoryOobeMarker, F_OK) == 0;
+    state.user_has_password = first_user_has_password();
+    state.legacy_piwiz_active =
+        lightdm_autologin_user() == kFirstBootWizardUser && piwiz_autostart_enabled();
+    return should_run_wizard(state);
+#endif
+}
+
+void launch_wizard::WizardService::run_keyboard_guide_once()
+{
+#if LAUNCH_WIZARD_DRY_RUN
+    // The guide is a separate on-device binary; nothing to preview in SDL.
+    return;
+#else
+    const bool marker_present = access(kKeyboardGuideMarker, F_OK) == 0;
+    const bool binary_present = access(kKeyboardGuideBinary, X_OK) == 0;
+    if (!should_run_keyboard_guide(marker_present, binary_present)) {
+        if (marker_present)
+            fprintf(stderr,
+                    "LaunchWizard: keyboard guide binary missing; skipping guide\n");
+        return;
     }
 
-    return lightdm_autologin_user() == kFirstBootWizardUser && piwiz_autostart_enabled();
+    // Consume the marker *before* exec: if the guide ever hangs and the user
+    // power-cycles, the next boot must not be trapped in the guide again.
+    if (remove(kKeyboardGuideMarker) != 0 && errno != ENOENT) {
+        fprintf(stderr, "LaunchWizard: failed to remove keyboard guide marker: %s\n",
+                strerror(errno));
+        return;  // Without the consumed marker, re-running is worse than skipping.
+    }
+    sync();
+
+    printf("LaunchWizard: starting keyboard guide\n");
+    fflush(stdout);
+
+    // The guide is interactive and can stay open for minutes. Intentionally
+    // not run_command(): that captures stdout/stderr into a bounded buffer
+    // (hiding the guide's logs from journald), busy-polls at 20ms, and is
+    // built around a timeout. posix_spawn + blocking waitpid inherits our
+    // stdio, costs nothing while waiting, and reports exec errors directly.
+    char *argv[] = {const_cast<char *>(kKeyboardGuideBinary), nullptr};
+    posix_spawnattr_t attr;
+    posix_spawnattr_init(&attr);
+    // Give the guide default signal dispositions regardless of what the
+    // wizard's runtime may have changed (e.g. an ignored SIGPIPE).
+    sigset_t default_signals;
+    sigfillset(&default_signals);
+    posix_spawnattr_setsigdefault(&attr, &default_signals);
+    posix_spawnattr_setflags(&attr, POSIX_SPAWN_SETSIGDEF);
+
+    pid_t pid = -1;
+    const int spawn_error =
+        posix_spawn(&pid, kKeyboardGuideBinary, nullptr, &attr, argv, environ);
+    posix_spawnattr_destroy(&attr);
+    if (spawn_error != 0) {
+        fprintf(stderr, "LaunchWizard: failed to start keyboard guide: %s\n",
+                strerror(spawn_error));
+        return;
+    }
+
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+    }
+    if (WIFSIGNALED(status))
+        fprintf(stderr, "LaunchWizard: keyboard guide killed by signal %d\n",
+                WTERMSIG(status));
+    else if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+        fprintf(stderr, "LaunchWizard: keyboard guide exited with %d\n",
+                WEXITSTATUS(status));
 #endif
 }
 
@@ -1018,6 +1102,13 @@ int launch_wizard::WizardService::finish_configured_system()
         fprintf(stderr, "LaunchWizard: %s\n", service_warning.c_str());
         return 1;
     }
+
+    // The device counts as configured (Imager provisioning or a finished
+    // OOBE), so drop any leftover factory marker to keep future boots clean.
+    remove_oobe_markers();
+#if !LAUNCH_WIZARD_DRY_RUN
+    sync();
+#endif
 
     printf("LaunchWizard: started APPLaunch for %s and disabled LaunchWizard.service\n",
            user.c_str());

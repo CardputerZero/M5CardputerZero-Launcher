@@ -12,6 +12,7 @@ add_library(launch_wizard_core
     main/ui/account_migration.cpp
     main/ui/apply_checkpoint.cpp
     main/ui/command_runner.cpp
+    main/ui/first_boot_policy.cpp
     main/ui/manual_datetime_validation.cpp
     main/ui/service_handoff.cpp
     main/ui/wizard_model.cpp
@@ -45,6 +46,7 @@ if(BUILD_TESTING)
         tests/test_apply_checkpoint.cpp
         tests/test_manual_datetime_validation.cpp
         tests/test_command_runner.cpp
+        tests/test_first_boot_policy.cpp
         tests/test_service_handoff.cpp
         tests/test_wizard_model.cpp
     )
