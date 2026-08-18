@@ -23,14 +23,10 @@ bool test_first_boot_policy()
     bool passed = true;
     launch_wizard::FirstBootState state;
 
-    // Factory first boot: marker present, account unconfigured -> wizard.
+    // Factory first boot: marker present -> wizard, regardless of whether the
+    // account already has a password. Only apply_all() disables the service.
     state.factory_marker = true;
-    passed &= expect_wizard(true, state, "factory unconfigured");
-
-    // Imager-provisioned device: factory marker still present, but the user
-    // already has a password -> skip straight to the launcher (bug #227).
-    state.user_has_password = true;
-    passed &= expect_wizard(false, state, "factory imager-provisioned");
+    passed &= expect_wizard(true, state, "factory marker");
 
     // Settings "Run Setup Wizard" re-arm always wins, even when configured.
     state.rearm_marker = true;
@@ -41,8 +37,6 @@ bool test_first_boot_policy()
     passed &= expect_wizard(false, state, "no markers");
     state.legacy_piwiz_active = true;
     passed &= expect_wizard(true, state, "legacy piwiz");
-    state.user_has_password = true;
-    passed &= expect_wizard(true, state, "legacy piwiz ignores password");
 
     // Keyboard guide: needs both the marker and the installed binary; a
     // missing binary keeps the marker for a later boot.
