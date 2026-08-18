@@ -1002,12 +1002,10 @@ bool launch_wizard::WizardService::should_run()
     // apply_all() clears it on completion, so the wizard still runs exactly
     // once.
     state.rearm_marker = access(kRearmOobeMarker, F_OK) == 0;
-    // pi-gen bakes the factory marker into every image. It must only trigger
-    // the OOBE while the account is still unconfigured; a device provisioned
-    // through Raspberry Pi Imager already has a password and skips straight to
-    // the launcher (finish_configured_system() then removes the marker).
+    // pi-gen bakes the factory marker into every image. Any marker means the
+    // OOBE must run; only apply_all() disables LaunchWizard.service after the
+    // user completes configuration.
     state.factory_marker = access(kFactoryOobeMarker, F_OK) == 0;
-    state.user_has_password = first_user_has_password();
     state.legacy_piwiz_active =
         lightdm_autologin_user() == kFirstBootWizardUser && piwiz_autostart_enabled();
     return should_run_wizard(state);
