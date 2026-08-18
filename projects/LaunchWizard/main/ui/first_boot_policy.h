@@ -11,22 +11,26 @@ struct FirstBootState {
     bool rearm_marker = false;
     // /var/lib/LaunchWizard/run-oobe: baked into every factory image by pi-gen.
     bool factory_marker = false;
+    // The UID 1000 user is still named after the factory default ("pi"). A
+    // rename can only come from provisioning (Imager/userconf), so a changed
+    // name alone means the device was configured.
+    bool factory_username = false;
     // The UID 1000 user's shadow entry holds a real "$..." hash, meaning the
     // account was configured (Raspberry Pi Imager, a finished OOBE, ...).
     bool user_has_password = false;
-    // The UID 1000 account is still the factory default baked in by pi-gen
-    // (user "pi" whose hash verifies against the default password), so any
-    // existing password does NOT mean the user configured the device.
+    // The stored hash still verifies against the factory default password that
+    // pi-gen bakes into the image ("raspberry"), so an existing password does
+    // NOT mean the user configured the device.
     bool factory_credentials = false;
     // Legacy piwiz/lightdm first-boot autologin is still armed.
     bool legacy_piwiz_active = false;
 };
 
 // A user-requested re-run always shows the wizard. The factory marker shows it
-// while the account is unconfigured: either no password at all, or the
-// password still verifies as the pi-gen factory default. A device provisioned
-// through Raspberry Pi Imager has a user-chosen password (or a renamed user),
-// so first boot skips straight to the launcher.
+// only while the account is exactly in factory state: default username with
+// either no password at all or the baked default password. A changed username
+// or a user-chosen password both mean the device was provisioned (Raspberry Pi
+// Imager), so first boot skips straight to the launcher.
 bool should_run_wizard(const FirstBootState &state);
 
 // The keyboard guide runs exactly once per device, before and independently of

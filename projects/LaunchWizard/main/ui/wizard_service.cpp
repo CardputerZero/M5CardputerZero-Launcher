@@ -290,6 +290,19 @@ bool first_user_has_password()
 #endif
 }
 
+// True while the UID 1000 user is still named after the pi-gen factory
+// default. userconf/Imager renames the user in passwd, so a different name
+// alone proves the device was provisioned.
+bool first_user_has_factory_name()
+{
+#if LAUNCH_WIZARD_DRY_RUN
+    return true;
+#else
+    struct passwd *pw = getpwuid(kDefaultUserUid);
+    return pw && pw->pw_name && strcmp(pw->pw_name, kFactoryDefaultUser) == 0;
+#endif
+}
+
 // True while the UID 1000 account still carries the factory credentials that
 // pi-gen bakes into the image (FIRST_USER_NAME=pi / FIRST_USER_PASS=raspberry).
 // Verification follows crypt(5): hash the candidate with the stored hash as
@@ -1037,12 +1050,13 @@ bool launch_wizard::WizardService::should_run()
     // once.
     state.rearm_marker = access(kRearmOobeMarker, F_OK) == 0;
     // pi-gen bakes the factory marker into every image. It must only trigger
-    // the OOBE while the account is still unconfigured: no password at all, or
-    // the password still verifying as the baked pi/raspberry default. A device
-    // provisioned through Raspberry Pi Imager has a user-chosen password (or a
-    // renamed user) and skips straight to the launcher
+    // the OOBE while the account is exactly in factory state: still named
+    // "pi", with no password or the baked "raspberry" default. A renamed user
+    // or a user-chosen password means Raspberry Pi Imager provisioned the
+    // device, so first boot skips straight to the launcher
     // (finish_configured_system() then removes the marker).
     state.factory_marker = access(kFactoryOobeMarker, F_OK) == 0;
+    state.factory_username = first_user_has_factory_name();
     state.user_has_password = first_user_has_password();
     state.factory_credentials = first_user_has_factory_credentials();
     state.legacy_piwiz_active =

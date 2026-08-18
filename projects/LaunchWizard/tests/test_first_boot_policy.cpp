@@ -23,8 +23,10 @@ bool test_first_boot_policy()
     bool passed = true;
     launch_wizard::FirstBootState state;
 
-    // Factory first boot: marker present, account unconfigured -> wizard.
+    // Factory first boot: marker present, default username, no password ->
+    // wizard.
     state.factory_marker = true;
+    state.factory_username = true;
     passed &= expect_wizard(true, state, "factory unconfigured");
 
     // Factory image with the baked pi/raspberry password: the hash exists but
@@ -34,10 +36,18 @@ bool test_first_boot_policy()
     passed &= expect_wizard(true, state, "factory baked default password");
 
     // Imager-provisioned device: factory marker still present, but the user
-    // chose their own password (or renamed the user) -> skip straight to the
-    // launcher (bug #227).
+    // chose their own password -> skip straight to the launcher (bug #227).
     state.factory_credentials = false;
     passed &= expect_wizard(false, state, "factory imager-provisioned");
+
+    // A renamed user always means the device was provisioned, even when no
+    // password was set (e.g. Imager with SSH keys only).
+    state.factory_username = false;
+    state.user_has_password = false;
+    passed &= expect_wizard(false, state, "renamed user without password");
+    state.user_has_password = true;
+    state.factory_credentials = true;
+    passed &= expect_wizard(false, state, "renamed user keeps factory password");
 
     // Settings "Run Setup Wizard" re-arm always wins, even when configured.
     state.rearm_marker = true;
