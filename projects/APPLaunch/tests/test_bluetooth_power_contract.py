@@ -59,6 +59,43 @@ def test_disabled_power_shows_warning_and_returns_to_power():
     assert resume < state_check < overwrite
 
 
+def test_background_actions_are_joined_and_lvgl_dispatch_is_locked():
+    shutdown = body_between(
+        CONTROLLER,
+        "void Bluetooth::shutdown",
+        "lv_result_t Bluetooth::queue_lvgl_async",
+    )
+    assert "action_operation_.shutdown()" in shutdown
+    assert "action_tasks_.join_all()" in shutdown
+    assert shutdown.index("action_operation_.shutdown()") < shutdown.index("action_tasks_.join_all()")
+
+    dispatch = body_between(
+        CONTROLLER,
+        "lv_result_t Bluetooth::queue_lvgl_async",
+        "void Bluetooth::append",
+    )
+    assert "lv_lock()" in dispatch
+    assert "lv_async_call(callback, user_data)" in dispatch
+    assert "lv_unlock()" in dispatch
+    assert dispatch.index("lv_lock()") < dispatch.index("lv_async_call(callback, user_data)")
+    assert dispatch.index("lv_async_call(callback, user_data)") < dispatch.index("lv_unlock()")
+
+    action = body_between(
+        CONTROLLER,
+        "void Bluetooth::activate_selected",
+        "void Bluetooth::remove_selected",
+    )
+    assert "action_tasks_.start(" in action
+    worker = action[action.index("action_tasks_.start("):action.index("}))", action.index("action_tasks_.start("))]
+    assert "lv_" not in worker
+    assert "action_result_timer_cb" in action
+    assert ".detach()" not in action
+    assert "Bluetooth::queue_lvgl_async(" in SERVICE
+    assert "Cp0BoundedTaskRegistry action_tasks_;" in HEADER
+    assert "lv_timer_t *action_result_timer_" in HEADER
+
+
 if __name__ == "__main__":
     test_power_dependent_entries_use_shared_guard()
     test_disabled_power_shows_warning_and_returns_to_power()
+    test_background_actions_are_joined_and_lvgl_dispatch_is_locked()

@@ -1,12 +1,16 @@
 #pragma once
 
 #include <functional>
+#include <cstdint>
 #include <list>
 #include <string>
 
 namespace cp0::bluetooth {
 
 enum class Command {
+    SessionInit, SessionDeinit, StatusGet,
+    ConnectedListInit, ConnectedListGet, ConnectedListDeinit,
+    ScanOn, ScanOff,
     Status, Power, Alias, Discoverable, Scan, DiscoveryStart, DiscoveryStop,
     List, ConnectedList, Pair, Connect, Disconnect, Remove,
 };
@@ -15,6 +19,7 @@ struct Request {
     Command command = Command::Status;
     int value = 0;
     int max_count = 16;
+    uint64_t session_id = 0;
     std::string text;
 };
 

@@ -95,8 +95,11 @@ private:
     setting::Info info_;
     setting::Developer developer_;
     setting::RTC rtc_;
-    setting::Bluetooth bluetooth_;
+    std::unique_ptr<setting::BluetoothUiSession> bluetooth_ui_;
     setting::SoundCard soundcard_;
+
+    setting::BluetoothUiSession &ensure_bluetooth_ui();
+    void release_bluetooth_ui();
 
     SetupPageModel model_;
     Cp0KeyboardInputContextScope input_context_scope_;

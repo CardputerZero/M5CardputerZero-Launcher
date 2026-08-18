@@ -110,16 +110,17 @@ void UISetupPage::on_event(lv_event_t *event)
         if (released) wifi_.handle_power_warning_key(*this, key);
         break;
     case ViewState::BT_LIST:
+        if (!bluetooth_ui_) return;
         if (pressed && (key == KEY_UP || key == KEY_DOWN))
-            bluetooth_.handle_list_key(*this, key);
+            bluetooth_ui_->handle_list_key(*this, key);
         else if (released && key != KEY_UP && key != KEY_DOWN)
-            bluetooth_.handle_list_key(*this, key);
+            bluetooth_ui_->handle_list_key(*this, key);
         break;
     case ViewState::BT_ALIAS:
-        if (released) bluetooth_.handle_alias_key(*this, key);
+        if (released && bluetooth_ui_) bluetooth_ui_->handle_alias_key(*this, key);
         break;
     case ViewState::BT_POWER_WARNING:
-        if (released) bluetooth_.handle_power_warning_key(*this, key);
+        if (released && bluetooth_ui_) bluetooth_ui_->handle_power_warning_key(*this, key);
         break;
     case ViewState::SOUNDCARD_CARDS:
         if (pressed && (key == KEY_UP || key == KEY_DOWN))
@@ -159,7 +160,7 @@ void UISetupPage::on_root_deleted()
     speaker_.cancel_preview(*this);
     wifi_.shutdown();
     info_.stop_timer();
-    bluetooth_.shutdown();
+    bluetooth_ui_.reset();
     developer_.shutdown();
     rtc_.shutdown();
     soundcard_.shutdown();
@@ -248,6 +249,8 @@ void UISetupPage::handle_sub_key(uint32_t key)
     case KEY_LEFT:
         play_back();
         info_.stop_timer();
+        if (item.label == "Bluetooth")
+            release_bluetooth_ui();
         if (item.label == "RTC" && rtc_.is_dirty()) {
             rtc_.show_write_confirm(*this);
             break;
