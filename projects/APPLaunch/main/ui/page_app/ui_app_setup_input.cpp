@@ -202,7 +202,7 @@ void UISetupPage::handle_main_key(uint32_t key)
         if (item.on_enter) item.on_enter();
         if (!item.sub_items.empty()) {
             int sub_count = static_cast<int>(item.sub_items.size());
-            model_.enter_sub(sub_count, ROW_CENTER);
+            model_.enter_sub(sub_count, ROW_CENTER, item.default_sub_selection);
             build_sub_view();
         }
         break;

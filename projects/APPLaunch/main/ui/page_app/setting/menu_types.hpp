@@ -21,6 +21,7 @@ struct MenuItem
     std::vector<SubItem> sub_items;
     std::function<void()> on_enter;
     std::function<void(uint32_t key)> custom_key_handler;
+    int default_sub_selection = -1;
 };
 
 } // namespace setting

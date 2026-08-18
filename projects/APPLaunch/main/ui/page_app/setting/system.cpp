@@ -249,6 +249,7 @@ void Update::append(UISetupPage &page, std::vector<MenuItem> &menu)
         {"Version: --", false, false, nullptr},
         {"Build: --", false, false, nullptr},
     };
+    item.default_sub_selection = 0;
     item.on_enter = [page_ptr]() { Update::refresh_version_info(*page_ptr); };
     menu.push_back(item);
 }

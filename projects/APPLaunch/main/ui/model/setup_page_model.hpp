@@ -84,7 +84,8 @@ public:
     std::string value_title;
 
     bool move_main(int direction, int item_count);
-    void enter_sub(int item_count, int center_row = DEFAULT_CENTER_ROW);
+    void enter_sub(int item_count, int center_row = DEFAULT_CENTER_ROW,
+                   int preferred_index = -1);
     bool move_sub(int direction, int item_count);
     void select_sub(int index, int item_count);
     void enter_value(std::string title, std::vector<std::string> options, int selected_index);

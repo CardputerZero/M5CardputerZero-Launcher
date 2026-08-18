@@ -29,7 +29,12 @@ def run_update(fail_install: bool = False,
                unhealthy_process: bool = False,
                audit_required: bool = False,
                interrupted_candidate: bool = False,
-               compatible: bool = True) -> tuple[subprocess.CompletedProcess[str], str, str]:
+               compatible: bool = True,
+               candidate_version: str | None = None,
+               installed_version: str | None = None,
+               rollback_version: str | None = None,
+               after_version: str | None = None,
+               compare_exit: int = 0) -> tuple[subprocess.CompletedProcess[str], str, str]:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
         fake_bin = root / "bin"
@@ -60,6 +65,8 @@ def run_update(fail_install: bool = False,
             "1\n" if compatible else "0\n", encoding="ascii"
         )
         if provide_rollback:
+            cache.mkdir()
+            (cache / "installed.deb").write_bytes(b"trusted rollback package")
             old_package = old_release / "applaunch_1.0_arm64.deb"
             old_package.write_bytes(b"trusted previous package")
             old_digest = hashlib.sha256(old_package.read_bytes()).hexdigest()
@@ -73,17 +80,20 @@ def run_update(fail_install: bool = False,
             fake_bin / "dpkg-deb",
             'case "$3" in Package) echo applaunch;; Architecture) echo arm64;; '
             'X-CardputerZero-Update-ABI) echo "${TEST_UPDATE_ABI:-1}";; '
-            'Version) case "$2" in *installed.deb|*rollback.deb) echo 1.0;; *) echo 2.0;; esac;; esac\n',
+            'Version) case "$2" in *installed.deb|*rollback.deb) '
+            'echo "${TEST_ROLLBACK_VERSION:-1.0}";; *) '
+            'echo "${TEST_CANDIDATE_VERSION:-2.0}";; esac;; esac\n',
         )
         executable(
             fake_bin / "dpkg-query",
             'case "$2" in *Status*) echo installed;; *) '
-            'if [ -f "$TEST_MARKER" ]; then echo 2.0; else echo 1.0; fi;; esac\n',
+            'if [ -f "$TEST_MARKER" ]; then echo "${TEST_AFTER_VERSION:-2.0}"; '
+            'else echo "${TEST_INSTALLED_VERSION:-1.0}"; fi;; esac\n',
         )
         executable(
             fake_bin / "dpkg",
             'echo "dpkg $*" >>"$TEST_LOG"\n'
-            'case "$1" in --compare-versions) exit 0;; --audit) '
+            'case "$1" in --compare-versions) exit "${TEST_COMPARE_EXIT:-0}";; --audit) '
             '[ ! -f "$TEST_AUDIT_MARKER" ] || echo "package needs configuration";; --configure) '
             '[ "${TEST_FAIL_CONFIGURE:-0}" != 1 ] || exit 44; '
             '[ "${TEST_KEEP_AUDIT_DIRTY:-0}" = 1 ] || rm -f "$TEST_AUDIT_MARKER";; -i) '
@@ -114,6 +124,11 @@ def run_update(fail_install: bool = False,
                 "TEST_FAIL_CONFIGURE": "1" if fail_configure else "0",
                 "TEST_KEEP_AUDIT_DIRTY": "1" if keep_audit_dirty else "0",
                 "TEST_AUDIT_MARKER": str(root / "audit.marker"),
+                "TEST_CANDIDATE_VERSION": candidate_version or "",
+                "TEST_INSTALLED_VERSION": installed_version or "",
+                "TEST_ROLLBACK_VERSION": rollback_version or "",
+                "TEST_AFTER_VERSION": after_version or "",
+                "TEST_COMPARE_EXIT": str(compare_exit),
                 "APPLAUNCH_UPDATER_REEXEC": "1",
                 "APPLAUNCH_UPDATE_EXECUTABLE": str(app_executable),
                 "APPLAUNCH_UPDATE_PROC_ROOT": str(proc),
@@ -184,6 +199,30 @@ assert "dpkg --configure -a" in commands
 missing_rollback, status, commands = run_update(provide_rollback=False)
 assert missing_rollback.returncode != 0
 assert status == "failed:rollback-unavailable"
+
+local_to_cloud, status, commands = run_update(
+    candidate_version="2.0",
+    installed_version="3.0+local.test1",
+    rollback_version="3.0+local.test1",
+    after_version="2.0",
+    compare_exit=1,
+)
+assert local_to_cloud.returncode == 0, (
+    local_to_cloud.stderr, local_to_cloud.stdout, status, commands
+)
+assert status == "succeeded:2.0"
+assert "dpkg -i" in commands
+
+official_downgrade, status, commands = run_update(
+    candidate_version="2.0",
+    installed_version="3.0",
+    rollback_version="3.0",
+    after_version="2.0",
+    compare_exit=1,
+)
+assert official_downgrade.returncode != 0
+assert status == "failed:version-not-newer"
+assert "dpkg -i" not in commands
 
 incompatible, status, commands = run_update(compatible=False)
 assert incompatible.returncode != 0

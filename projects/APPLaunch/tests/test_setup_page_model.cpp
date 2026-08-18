@@ -108,6 +108,10 @@ int main()
     assert(model.sub_selected_index == 0);
     assert(model.move_sub(-1, 2));
     assert(model.sub_selected_index == 1);
+    model.enter_sub(2, SetupPageModel::DEFAULT_CENTER_ROW, 0);
+    assert(model.sub_selected_index == 0);
+    model.enter_sub(2, SetupPageModel::DEFAULT_CENTER_ROW, 99);
+    assert(model.sub_selected_index == 1);
     model.select_sub(0, 2);
     assert(model.sub_selected_index == 0);
     model.select_sub(99, 2);

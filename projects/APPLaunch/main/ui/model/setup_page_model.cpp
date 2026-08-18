@@ -66,10 +66,13 @@ bool SetupPageModel::move_main(int direction, int item_count)
     return true;
 }
 
-void SetupPageModel::enter_sub(int item_count, int center_row)
+void SetupPageModel::enter_sub(int item_count, int center_row, int preferred_index)
 {
     view = SetupViewState::SUB;
-    sub_selected_index = clamp_index(std::min(center_row, item_count - 1), item_count);
+    if (preferred_index >= 0)
+        sub_selected_index = clamp_index(preferred_index, item_count);
+    else
+        sub_selected_index = clamp_index(std::min(center_row, item_count - 1), item_count);
 }
 
 bool SetupPageModel::move_sub(int direction, int item_count)

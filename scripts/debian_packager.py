@@ -551,7 +551,16 @@ if [ "$candidate" = "$installed" ]; then
             ;;
     esac
 fi
-dpkg --compare-versions "$candidate" gt "$installed" || fail version-not-newer
+
+# Local verification builds use +local./+git. suffixes and can be newer than the
+# current cloud release. Allow them to return to the official channel; regular
+# official packages still cannot downgrade.
+if ! dpkg --compare-versions "$candidate" ge "$installed"; then
+    case "$installed" in
+        *+local.*|*+git.*) ;;
+        *) fail version-not-newer ;;
+    esac
+fi
 
 # Retain the last trusted package so a later upgrade can roll back after a
 # failed install or service health check.
