@@ -27,9 +27,16 @@ bool test_first_boot_policy()
     state.factory_marker = true;
     passed &= expect_wizard(true, state, "factory unconfigured");
 
-    // Imager-provisioned device: factory marker still present, but the user
-    // already has a password -> skip straight to the launcher (bug #227).
+    // Factory image with the baked pi/raspberry password: the hash exists but
+    // still verifies as the factory default, so the wizard must run.
     state.user_has_password = true;
+    state.factory_credentials = true;
+    passed &= expect_wizard(true, state, "factory baked default password");
+
+    // Imager-provisioned device: factory marker still present, but the user
+    // chose their own password (or renamed the user) -> skip straight to the
+    // launcher (bug #227).
+    state.factory_credentials = false;
     passed &= expect_wizard(false, state, "factory imager-provisioned");
 
     // Settings "Run Setup Wizard" re-arm always wins, even when configured.

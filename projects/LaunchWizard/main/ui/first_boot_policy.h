@@ -14,14 +14,19 @@ struct FirstBootState {
     // The UID 1000 user's shadow entry holds a real "$..." hash, meaning the
     // account was configured (Raspberry Pi Imager, a finished OOBE, ...).
     bool user_has_password = false;
+    // The UID 1000 account is still the factory default baked in by pi-gen
+    // (user "pi" whose hash verifies against the default password), so any
+    // existing password does NOT mean the user configured the device.
+    bool factory_credentials = false;
     // Legacy piwiz/lightdm first-boot autologin is still armed.
     bool legacy_piwiz_active = false;
 };
 
-// A user-requested re-run always shows the wizard. The factory marker only
-// shows it while no account has been configured yet: a device provisioned
-// through Raspberry Pi Imager already has a password, so first boot must skip
-// straight to the launcher.
+// A user-requested re-run always shows the wizard. The factory marker shows it
+// while the account is unconfigured: either no password at all, or the
+// password still verifies as the pi-gen factory default. A device provisioned
+// through Raspberry Pi Imager has a user-chosen password (or a renamed user),
+// so first boot skips straight to the launcher.
 bool should_run_wizard(const FirstBootState &state);
 
 // The keyboard guide runs exactly once per device, before and independently of

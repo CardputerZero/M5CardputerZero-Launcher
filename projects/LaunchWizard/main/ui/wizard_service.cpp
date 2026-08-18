@@ -41,10 +41,18 @@ extern char **environ;
 #endif
 #endif
 
+#if !LAUNCH_WIZARD_DRY_RUN
+#include <crypt.h>
+#endif
+
 namespace launch_wizard {
 
 constexpr uid_t kDefaultUserUid = 1000;
 constexpr const char *kFirstBootWizardUser = "rpi-first-boot-wizard";
+// Factory account baked into every image by pi-gen (build.yml FIRST_USER_NAME /
+// FIRST_USER_PASS). Keep in sync with the pi-gen workflow configuration.
+constexpr const char *kFactoryDefaultUser = "pi";
+constexpr const char *kFactoryDefaultPassword = "raspberry";
 #if LAUNCH_WIZARD_DRY_RUN
 constexpr const char *kAccountJournalDir = "/tmp/LaunchWizard-dry-run";
 constexpr const char *kAccountJournalPath =
@@ -279,6 +287,32 @@ bool first_user_has_password()
     if (!sp || !sp->sp_pwdp)
         return false;
     return sp->sp_pwdp[0] == '$';
+#endif
+}
+
+// True while the UID 1000 account still carries the factory credentials that
+// pi-gen bakes into the image (FIRST_USER_NAME=pi / FIRST_USER_PASS=raspberry).
+// Verification follows crypt(5): hash the candidate with the stored hash as
+// the setting string; a byte-identical result means the password matches. Any
+// crypt failure yields NULL or a "*" failure token that never compares equal,
+// so errors safely count as "not factory".
+bool first_user_has_factory_credentials()
+{
+#if LAUNCH_WIZARD_DRY_RUN
+    return false;
+#else
+    struct passwd *pw = getpwuid(kDefaultUserUid);
+    if (!pw || !pw->pw_name || strcmp(pw->pw_name, kFactoryDefaultUser) != 0)
+        return false;
+    struct spwd *sp = getspnam(pw->pw_name);
+    if (!sp || !sp->sp_pwdp || sp->sp_pwdp[0] != '$')
+        return false;
+    // struct crypt_data is ~32 KiB; keep it off the stack. should_run() is
+    // called once from the single-threaded startup path.
+    static struct crypt_data data;
+    memset(&data, 0, sizeof(data));
+    const char *hash = crypt_r(kFactoryDefaultPassword, sp->sp_pwdp, &data);
+    return hash && hash[0] == '$' && strcmp(hash, sp->sp_pwdp) == 0;
 #endif
 }
 
@@ -1003,11 +1037,14 @@ bool launch_wizard::WizardService::should_run()
     // once.
     state.rearm_marker = access(kRearmOobeMarker, F_OK) == 0;
     // pi-gen bakes the factory marker into every image. It must only trigger
-    // the OOBE while the account is still unconfigured; a device provisioned
-    // through Raspberry Pi Imager already has a password and skips straight to
-    // the launcher (finish_configured_system() then removes the marker).
+    // the OOBE while the account is still unconfigured: no password at all, or
+    // the password still verifying as the baked pi/raspberry default. A device
+    // provisioned through Raspberry Pi Imager has a user-chosen password (or a
+    // renamed user) and skips straight to the launcher
+    // (finish_configured_system() then removes the marker).
     state.factory_marker = access(kFactoryOobeMarker, F_OK) == 0;
     state.user_has_password = first_user_has_password();
+    state.factory_credentials = first_user_has_factory_credentials();
     state.legacy_piwiz_active =
         lightdm_autologin_user() == kFirstBootWizardUser && piwiz_autostart_enabled();
     return should_run_wizard(state);

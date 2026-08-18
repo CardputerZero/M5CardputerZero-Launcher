@@ -7,7 +7,7 @@ bool should_run_wizard(const FirstBootState &state)
     if (state.rearm_marker)
         return true;
     if (state.factory_marker)
-        return !state.user_has_password;
+        return !state.user_has_password || state.factory_credentials;
     return state.legacy_piwiz_active;
 }
 
