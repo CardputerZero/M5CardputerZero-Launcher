@@ -18,3 +18,6 @@
 [submodule "projects/FactoryTest/main_FactoryTest"]
 	path = projects/FactoryTest/main_FactoryTest
 	url = https://github.com/CardputerZero/FactoryTest.git
+[submodule "projects/LaunchWizard/main_Keyboard_Guide"]
+	path = projects/LaunchWizard/main_Keyboard_Guide
+	url = https://github.com/CardputerZero/Keyboard-Guide.git
