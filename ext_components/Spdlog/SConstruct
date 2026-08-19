@@ -1,0 +1,42 @@
+# component/SConscript
+Import("env")
+import os
+
+with open(env["PROJECT_TOOL_S"]) as f:
+    exec(f.read())
+
+env["GIT_REPO_LISTS"]["Spdlog"] = {
+    "url": "https://github.com/gabime/spdlog.git",
+    "commit": "79524ddd08a4ec981b7fea76afd08ee05f83755d",
+    "path": os.path.join(os.environ["GIT_REPO_PATH"], "spdlog"),
+}
+
+if "CONFIG_SPDLOG_COMPONENT_ENABLED" in os.environ:
+    spdlog = check_component("Spdlog")
+    SRCS = append_srcs_dir([os.path.join(spdlog, "src")])
+    INCLUDE = [os.path.join(spdlog, "include")]
+    PRIVATE_INCLUDE = []
+    REQUIREMENTS = []
+    STATIC_LIB = []
+    DYNAMIC_LIB = []
+    DEFINITIONS = ["-DSPDLOG_COMPILED_LIB", "-DSPDLOG_FWRITE_UNLOCKED"]
+    DEFINITIONS_PRIVATE = []
+    LDFLAGS = []
+    LINK_SEARCH_PATH = []
+
+    env["COMPONENTS"].append(
+        {
+            "target": os.path.basename(env["component_dir"]),
+            "SRCS": SRCS,
+            "INCLUDE": INCLUDE,
+            "PRIVATE_INCLUDE": PRIVATE_INCLUDE,
+            "REQUIREMENTS": REQUIREMENTS,
+            "STATIC_LIB": STATIC_LIB,
+            "DYNAMIC_LIB": DYNAMIC_LIB,
+            "DEFINITIONS": DEFINITIONS,
+            "DEFINITIONS_PRIVATE": DEFINITIONS_PRIVATE,
+            "LDFLAGS": LDFLAGS,
+            "LINK_SEARCH_PATH": LINK_SEARCH_PATH,
+            "REGISTER": "static",
+        }
+    )

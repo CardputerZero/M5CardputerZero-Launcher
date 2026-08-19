@@ -1,0 +1,5 @@
+menuconfig SPDLOG_COMPONENT_ENABLED
+    bool "Enable spdlog"
+    default n
+    help
+        Enable the spdlog logging library component.

@@ -1,0 +1,5 @@
+menuconfig SMOOTH_UI_COMPONENT_ENABLED
+    bool "Smooth UI Toolkit"
+    default n
+    help
+        Enable the Smooth UI Toolkit component.
