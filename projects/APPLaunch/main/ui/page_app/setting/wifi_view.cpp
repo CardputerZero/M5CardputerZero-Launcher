@@ -389,11 +389,12 @@ bool WiFiPasswordView::show(UISetupPage &page, const std::string &ssid)
     return true;
 }
 
-void WiFiPasswordView::update_password(const std::string &password)
+void WiFiPasswordView::update_password(const std::string &password,
+                                        std::size_t cursor_position)
 {
     if (!input_) return;
     lv_textarea_set_text(input_, password.c_str());
-    lv_textarea_set_cursor_pos(input_, LV_TEXTAREA_CURSOR_LAST);
+    lv_textarea_set_cursor_pos(input_, static_cast<int32_t>(cursor_position));
 }
 
 void WiFiPasswordView::toggle_password_visibility()
@@ -479,11 +480,18 @@ bool WiFiSsidView::show(UISetupPage &page)
         lv_obj_set_style_radius(input, 3, LV_PART_MAIN);
         lv_obj_set_style_pad_left(input, 6, LV_PART_MAIN);
         lv_obj_set_style_pad_top(input, 3, LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(input, LV_OPA_TRANSP, LV_PART_CURSOR);
-        lv_obj_set_style_border_color(input, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
-        lv_obj_set_style_border_width(input, 2, LV_PART_CURSOR);
-        lv_obj_set_style_border_side(input, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
-        lv_obj_set_style_anim_duration(input, 400, LV_PART_CURSOR);
+        lv_obj_set_style_bg_opa(input, LV_OPA_TRANSP,
+                                LV_PART_CURSOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_border_width(input, 0,
+                                      LV_PART_CURSOR | LV_STATE_DEFAULT);
+        lv_obj_set_style_border_color(input, lv_color_hex(0x58A6FF),
+                                      LV_PART_CURSOR | LV_STATE_FOCUSED);
+        lv_obj_set_style_border_width(input, 2,
+                                      LV_PART_CURSOR | LV_STATE_FOCUSED);
+        lv_obj_set_style_border_side(input, LV_BORDER_SIDE_LEFT,
+                                     LV_PART_CURSOR | LV_STATE_FOCUSED);
+        lv_obj_set_style_anim_duration(input, 400,
+                                       LV_PART_CURSOR | LV_STATE_FOCUSED);
         return input;
     };
     lv_obj_t *ssid_input = create_input(18, SetupWifiSsidModel::MAX_SSID_BYTES);
@@ -508,18 +516,20 @@ bool WiFiSsidView::show(UISetupPage &page)
     return true;
 }
 
-void WiFiSsidView::update_ssid(const std::string &ssid)
+void WiFiSsidView::update_ssid(const std::string &ssid,
+                               std::size_t cursor_position)
 {
     if (!ssid_input_) return;
     lv_textarea_set_text(ssid_input_, ssid.c_str());
-    lv_textarea_set_cursor_pos(ssid_input_, LV_TEXTAREA_CURSOR_LAST);
+    lv_textarea_set_cursor_pos(ssid_input_, static_cast<int32_t>(cursor_position));
 }
 
-void WiFiSsidView::update_password(const std::string &password)
+void WiFiSsidView::update_password(const std::string &password,
+                                   std::size_t cursor_position)
 {
     if (!password_input_) return;
     lv_textarea_set_text(password_input_, password.c_str());
-    lv_textarea_set_cursor_pos(password_input_, LV_TEXTAREA_CURSOR_LAST);
+    lv_textarea_set_cursor_pos(password_input_, static_cast<int32_t>(cursor_position));
 }
 
 void WiFiSsidView::set_focus(int focus)

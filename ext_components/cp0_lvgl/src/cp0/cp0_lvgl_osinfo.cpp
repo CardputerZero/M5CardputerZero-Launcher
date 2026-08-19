@@ -131,6 +131,8 @@ private:
             return cp0_process_commands::capture_argv_with_timeout(
                 arguments, output, timeout_for(arguments), &cancel);
         };
+        const cp0::update::Result apt_result = apt_update(cancel);
+        if (apt_result.code != 0) return apt_result;
         return cp0::update::launcher(argv, capture);
     }
 

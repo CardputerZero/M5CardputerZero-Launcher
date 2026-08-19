@@ -22,10 +22,12 @@ int main()
     assert(model.validate().error == SshConnectionModel::Error::NONE);
 
     auto arguments = model.arguments();
-    assert(arguments.size() == 3);
+    assert(arguments.size() == 5);
     auto argument = arguments.begin();
     assert(*argument++ == "-o");
     assert(*argument++ == "StrictHostKeyChecking=no");
+    assert(*argument++ == "-o");
+    assert(*argument++ == "ConnectTimeout=20");
     assert(*argument == "pi@192.168.1.1");
 
     assert(!model.select_previous());
@@ -34,7 +36,7 @@ int main()
     assert(model.append("2222"));
     arguments = model.arguments();
     argument = arguments.begin();
-    std::advance(argument, 2);
+    std::advance(argument, 4);
     assert(*argument++ == "-p");
     assert(*argument++ == "2222");
     assert(*argument == "pi@192.168.1.1");

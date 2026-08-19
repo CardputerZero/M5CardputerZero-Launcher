@@ -36,6 +36,8 @@ void UISSHPage::do_connect()
         set_status(validation.message, true);
         return;
     }
+    if (!persist_profile())
+        SLOGW("[SSH] Unable to persist profile before connecting");
     const auto arguments = model_.arguments();
     SLOGI("[SSH] Launching structured ssh request");
 
@@ -129,13 +131,8 @@ void UISSHPage::load_profile()
         status_message_ = "Saved SSH profile is invalid";
 }
 
-void UISSHPage::save_profile()
+bool UISSHPage::persist_profile()
 {
-    const auto validation = model_.validate();
-    if (validation.error != SshConnectionModel::Error::NONE) {
-        set_status(validation.message, true);
-        return;
-    }
     bool ok = false;
     cp0_signal_config_api(
         {"SetManyAndSave",
@@ -143,6 +140,17 @@ void UISSHPage::save_profile()
          "ssh_port", model_.value(1),
          "ssh_user", model_.value(2)},
         [&](int code, std::string) { ok = code == 0; });
+    return ok;
+}
+
+void UISSHPage::save_profile()
+{
+    const auto validation = model_.validate();
+    if (validation.error != SshConnectionModel::Error::NONE) {
+        set_status(validation.message, true);
+        return;
+    }
+    const bool ok = persist_profile();
     set_status(ok ? "Profile saved" : "Unable to save profile", !ok);
 }
 

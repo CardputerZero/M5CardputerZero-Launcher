@@ -58,7 +58,8 @@ class WiFiPasswordView
 public:
     ~WiFiPasswordView();
     bool show(UISetupPage &page, const std::string &ssid);
-    void update_password(const std::string &password);
+    void update_password(const std::string &password,
+                         std::size_t cursor_position = LV_TEXTAREA_CURSOR_LAST);
     void toggle_password_visibility();
     void set_hint(const char *text, uint32_t color = 0x555555);
     void unmount();
@@ -78,8 +79,10 @@ class WiFiSsidView
 public:
     ~WiFiSsidView();
     bool show(UISetupPage &page);
-    void update_ssid(const std::string &ssid);
-    void update_password(const std::string &password);
+    void update_ssid(const std::string &ssid,
+                     std::size_t cursor_position = LV_TEXTAREA_CURSOR_LAST);
+    void update_password(const std::string &password,
+                         std::size_t cursor_position = LV_TEXTAREA_CURSOR_LAST);
     void set_focus(int focus);
     void toggle_password_visibility();
     void set_hint(const char *text, uint32_t color = 0x555555);

@@ -41,7 +41,7 @@ int main()
     assert(update_job_label(UpdateAction::CheckSystem, 0, "running") ==
            "Refreshing package lists...");
     assert(update_job_label(UpdateAction::UpdateLauncher, 0, "running") ==
-           "Checking launcher update...\nLauncher may restart");
+           "Refreshing packages...\nChecking launcher update...\nLauncher may restart");
     assert(update_job_label(UpdateAction::CheckSystem, 0, "succeeded:completed") ==
            "Package lists refreshed");
     assert(update_job_label(UpdateAction::CheckSystem, 1, "failed:apt-update:1") ==

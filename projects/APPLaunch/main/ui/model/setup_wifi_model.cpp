@@ -50,6 +50,32 @@ bool is_valid_utf8_text(const std::string &text)
     return true;
 }
 
+std::size_t previous_utf8_start(const std::string &text, std::size_t cursor)
+{
+    if (cursor == 0) return 0;
+    std::size_t start = cursor - 1;
+    while (start > 0 && is_continuation(static_cast<unsigned char>(text[start]))) --start;
+    return start;
+}
+
+std::size_t next_utf8_end(const std::string &text, std::size_t cursor)
+{
+    if (cursor >= text.size()) return text.size();
+    ++cursor;
+    while (cursor < text.size() &&
+           is_continuation(static_cast<unsigned char>(text[cursor]))) ++cursor;
+    return cursor;
+}
+
+std::size_t utf8_cursor_position(const std::string &text, std::size_t cursor)
+{
+    std::size_t position = 0;
+    for (std::size_t index = 0; index < cursor; ++index) {
+        if (!is_continuation(static_cast<unsigned char>(text[index]))) ++position;
+    }
+    return position;
+}
+
 } // namespace
 
 void SetupWifiListModel::begin_scan()
@@ -142,6 +168,7 @@ void SetupWifiPasswordModel::begin(std::string ssid, std::string security)
     ssid_ = std::move(ssid);
     security_ = std::move(security);
     secure_clear_password();
+    cursor_byte_ = 0;
 }
 
 void SetupWifiPasswordModel::reset()
@@ -149,6 +176,7 @@ void SetupWifiPasswordModel::reset()
     ssid_.clear();
     security_.clear();
     secure_clear_password();
+    cursor_byte_ = 0;
 }
 
 std::string SetupWifiPasswordModel::validation_error() const
@@ -181,25 +209,47 @@ bool SetupWifiPasswordModel::append(const std::string &text)
     if (text.empty() || password_.size() + text.size() > MAX_PASSWORD_BYTES)
         return false;
     if (!is_valid_utf8_text(text)) return false;
-    password_ += text;
+    password_.insert(cursor_byte_, text);
+    cursor_byte_ += text.size();
     return true;
 }
 
 bool SetupWifiPasswordModel::erase_last()
 {
-    if (password_.empty()) return false;
-    std::size_t start = password_.size() - 1;
-    while (start > 0 && is_continuation(static_cast<unsigned char>(password_[start])))
-        --start;
+    if (cursor_byte_ == 0) return false;
+    const std::size_t start = previous_utf8_start(password_, cursor_byte_);
     volatile char *bytes = password_.data();
-    for (std::size_t index = start; index < password_.size(); ++index) bytes[index] = '\0';
-    password_.erase(start);
+    for (std::size_t index = start; index < cursor_byte_; ++index) bytes[index] = '\0';
+    password_.erase(start, cursor_byte_ - start);
+    cursor_byte_ = start;
     return true;
+}
+
+bool SetupWifiPasswordModel::move_cursor_left()
+{
+    const std::size_t next = previous_utf8_start(password_, cursor_byte_);
+    if (next == cursor_byte_) return false;
+    cursor_byte_ = next;
+    return true;
+}
+
+bool SetupWifiPasswordModel::move_cursor_right()
+{
+    const std::size_t next = next_utf8_end(password_, cursor_byte_);
+    if (next == cursor_byte_) return false;
+    cursor_byte_ = next;
+    return true;
+}
+
+std::size_t SetupWifiPasswordModel::cursor_position() const
+{
+    return utf8_cursor_position(password_, cursor_byte_);
 }
 
 void SetupWifiPasswordModel::clear_password()
 {
     secure_clear_password();
+    cursor_byte_ = 0;
 }
 
 bool SetupWifiSsidModel::append(const std::string &text)
@@ -207,18 +257,39 @@ bool SetupWifiSsidModel::append(const std::string &text)
     if (text.empty() || ssid_.size() + text.size() > MAX_SSID_BYTES ||
         !is_valid_utf8_text(text))
         return false;
-    ssid_ += text;
+    ssid_.insert(cursor_byte_, text);
+    cursor_byte_ += text.size();
     return true;
 }
 
 bool SetupWifiSsidModel::erase_last()
 {
-    if (ssid_.empty()) return false;
-    std::size_t start = ssid_.size() - 1;
-    while (start > 0 && is_continuation(static_cast<unsigned char>(ssid_[start])))
-        --start;
-    ssid_.erase(start);
+    if (cursor_byte_ == 0) return false;
+    const std::size_t start = previous_utf8_start(ssid_, cursor_byte_);
+    ssid_.erase(start, cursor_byte_ - start);
+    cursor_byte_ = start;
     return true;
+}
+
+bool SetupWifiSsidModel::move_cursor_left()
+{
+    const std::size_t next = previous_utf8_start(ssid_, cursor_byte_);
+    if (next == cursor_byte_) return false;
+    cursor_byte_ = next;
+    return true;
+}
+
+bool SetupWifiSsidModel::move_cursor_right()
+{
+    const std::size_t next = next_utf8_end(ssid_, cursor_byte_);
+    if (next == cursor_byte_) return false;
+    cursor_byte_ = next;
+    return true;
+}
+
+std::size_t SetupWifiSsidModel::cursor_position() const
+{
+    return utf8_cursor_position(ssid_, cursor_byte_);
 }
 
 void SetupWifiPasswordModel::secure_clear_password()

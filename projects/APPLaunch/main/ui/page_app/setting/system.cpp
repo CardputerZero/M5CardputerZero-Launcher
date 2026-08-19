@@ -245,7 +245,6 @@ void Update::append(UISetupPage &page, std::vector<MenuItem> &menu)
     MenuItem item;
     item.label = "Update";
     item.sub_items = {
-        {"Check System", false, false, [page_ptr]() { Update::check_system_update(*page_ptr); }},
         {"Update Launcher", false, false, [page_ptr]() { Update::update_launcher(*page_ptr); }},
         {"Version: --", false, false, nullptr},
         {"Build: --", false, false, nullptr},
@@ -257,26 +256,21 @@ void Update::append(UISetupPage &page, std::vector<MenuItem> &menu)
 void Update::refresh_version_info(UISetupPage &page)
 {
     MenuItem *item = SetupPageAccess(page).find_menu("Update");
-    if (item && item->sub_items.size() >= 4) {
+    if (item && item->sub_items.size() >= 3) {
         cp0_signal_osinfo_api({"UpdateLauncherState"}, [&](int code, std::string state) {
             if (code != 0) return;
             const std::string label = system_page::launcher_state_label(state);
-            if (!label.empty()) item->sub_items[1].label = label;
+            if (!label.empty()) item->sub_items[0].label = label;
         });
-        item->sub_items[2].label = system_page::version_label(LAUNCHER_VERSION);
-        item->sub_items[3].label = system_page::build_label(
+        item->sub_items[1].label = system_page::version_label(LAUNCHER_VERSION);
+        item->sub_items[2].label = system_page::build_label(
             LAUNCHER_BUILD_DATE, LAUNCHER_CHANNEL, LAUNCHER_GIT_COMMIT);
     }
 }
 
-void Update::check_system_update(UISetupPage &page)
-{
-    page.start_update_job("AptUpdateStart", 0);
-}
-
 void Update::update_launcher(UISetupPage &page)
 {
-    page.start_update_job("UpdateLauncherStart", 1);
+    page.start_update_job("UpdateLauncherStart", 0);
 }
 
 } // namespace setting
@@ -298,9 +292,7 @@ void UISetupPage::start_update_job(const char *command, int item_index)
     if (update_timer_ || !command) return;
     MenuItem *menu = setting::SetupPageAccess(*this).find_menu("Update");
     if (!menu || item_index < 0 || item_index >= static_cast<int>(menu->sub_items.size())) return;
-    const auto action = item_index == 0
-        ? system_page::UpdateAction::CheckSystem
-        : system_page::UpdateAction::UpdateLauncher;
+    const auto action = system_page::UpdateAction::UpdateLauncher;
     const std::string running_label = system_page::update_job_label(action, 0, "running");
     launcher_toast().show_persistent(running_label.c_str());
     lv_refr_now(nullptr);
@@ -312,8 +304,7 @@ void UISetupPage::start_update_job(const char *command, int item_index)
         update_job_id_.clear();
     }
     if (update_job_id_.empty()) {
-        launcher_toast().show(item_index == 0
-            ? "System check unavailable" : "Launcher update unavailable");
+        launcher_toast().show("Launcher update unavailable");
         return;
     }
     update_item_index_ = item_index;
@@ -334,9 +325,7 @@ void UISetupPage::update_timer_cb(lv_timer_t *timer) noexcept
         cp0_signal_osinfo_api({"UpdateJobStatus", page->update_job_id_},
             [&](int result, std::string payload) { code = result; state = std::move(payload); });
         if (code == 0 && state == "running") return;
-        const auto action = page->update_item_index_ == 0
-            ? system_page::UpdateAction::CheckSystem
-            : system_page::UpdateAction::UpdateLauncher;
+        const auto action = system_page::UpdateAction::UpdateLauncher;
         const std::string result_label =
             system_page::update_job_label(action, code, state);
         page->stop_update_timer(false);
