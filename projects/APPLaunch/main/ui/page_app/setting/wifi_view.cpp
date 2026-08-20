@@ -480,18 +480,11 @@ bool WiFiSsidView::show(UISetupPage &page)
         lv_obj_set_style_radius(input, 3, LV_PART_MAIN);
         lv_obj_set_style_pad_left(input, 6, LV_PART_MAIN);
         lv_obj_set_style_pad_top(input, 3, LV_PART_MAIN);
-        lv_obj_set_style_bg_opa(input, LV_OPA_TRANSP,
-                                LV_PART_CURSOR | LV_STATE_DEFAULT);
-        lv_obj_set_style_border_width(input, 0,
-                                      LV_PART_CURSOR | LV_STATE_DEFAULT);
-        lv_obj_set_style_border_color(input, lv_color_hex(0x58A6FF),
-                                      LV_PART_CURSOR | LV_STATE_FOCUSED);
-        lv_obj_set_style_border_width(input, 2,
-                                      LV_PART_CURSOR | LV_STATE_FOCUSED);
-        lv_obj_set_style_border_side(input, LV_BORDER_SIDE_LEFT,
-                                     LV_PART_CURSOR | LV_STATE_FOCUSED);
-        lv_obj_set_style_anim_duration(input, 400,
-                                       LV_PART_CURSOR | LV_STATE_FOCUSED);
+        lv_obj_set_style_bg_opa(input, LV_OPA_TRANSP, LV_PART_CURSOR);
+        lv_obj_set_style_border_color(input, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
+        lv_obj_set_style_border_width(input, 2, LV_PART_CURSOR);
+        lv_obj_set_style_border_side(input, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
+        lv_obj_set_style_anim_duration(input, 400, LV_PART_CURSOR);
         return input;
     };
     lv_obj_t *ssid_input = create_input(18, SetupWifiSsidModel::MAX_SSID_BYTES);
@@ -541,6 +534,15 @@ void WiFiSsidView::set_focus(int focus)
     lv_obj_remove_state(unfocused, LV_STATE_FOCUSED);
     lv_obj_set_style_border_color(focused, lv_color_hex(0x58A6FF), LV_PART_MAIN);
     lv_obj_set_style_border_color(unfocused, lv_color_hex(0x444444), LV_PART_MAIN);
+
+    lv_obj_set_style_bg_opa(focused, LV_OPA_TRANSP, LV_PART_CURSOR);
+    lv_obj_set_style_border_color(focused, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
+    lv_obj_set_style_border_width(focused, 2, LV_PART_CURSOR);
+    lv_obj_set_style_border_side(focused, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
+    lv_obj_set_style_bg_opa(unfocused, LV_OPA_TRANSP, LV_PART_CURSOR);
+    lv_obj_set_style_border_width(unfocused, 0, LV_PART_CURSOR);
+    lv_obj_invalidate(focused);
+    lv_obj_invalidate(unfocused);
 }
 
 void WiFiSsidView::toggle_password_visibility()

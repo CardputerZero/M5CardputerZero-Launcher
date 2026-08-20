@@ -64,9 +64,11 @@ void UISetupPage::on_event(lv_event_t *event)
         uint32_t now = lv_tick_get();
         const bool wifi_repeat = view_state_ == ViewState::WIFI_LIST &&
                                  item->key_state == KBD_KEY_REPEATED;
+        const bool hidden_wifi_navigation = view_state_ == ViewState::WIFI_SSID;
         const uint32_t repeat_interval = view_state_ == ViewState::WIFI_LIST
             ? SetupWifiListViewModel::KEY_REPEAT_INTERVAL_MS : REPEAT_INTERVAL_MS;
-        if ((view_state_ != ViewState::WIFI_LIST || wifi_repeat) &&
+        if (!hidden_wifi_navigation &&
+            (view_state_ != ViewState::WIFI_LIST || wifi_repeat) &&
             now - last_repeat_tick_ < repeat_interval) return;
         last_repeat_tick_ = now;
     } else if (key == KEY_UP || key == KEY_DOWN) {
@@ -101,8 +103,7 @@ void UISetupPage::on_event(lv_event_t *event)
         if (released) wifi_.handle_pw_key(*this, key);
         break;
     case ViewState::WIFI_SSID:
-        if ((pressed && (key == KEY_UP || key == KEY_DOWN)) ||
-            (released && key != KEY_UP && key != KEY_DOWN))
+        if ((pressed && (key == KEY_UP || key == KEY_DOWN)) || released)
             wifi_.handle_ssid_key(*this, key);
         break;
     case ViewState::WIFI_FORGET_CONFIRM:

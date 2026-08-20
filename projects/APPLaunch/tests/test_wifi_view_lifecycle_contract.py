@@ -27,6 +27,34 @@ def test_wifi_controller_unmounts_list_while_view_is_alive():
     assert body.index("list_view_.unmount();") < body.index("clear_password_view();")
 
 
+def test_hidden_wifi_uses_single_cursor_style_for_manual_focus():
+    start = SOURCE.index("auto create_input = [&](int y, uint32_t max_length)")
+    end = SOURCE.index("lv_obj_t *ssid_input = create_input", start)
+    body = SOURCE[start:end]
+    assert "LV_PART_CURSOR | LV_STATE_DEFAULT" not in body
+    assert "LV_PART_CURSOR | LV_STATE_FOCUSED" not in body
+    assert "lv_obj_set_style_border_width(input, 2, LV_PART_CURSOR);" in body
+
+    focus_start = SOURCE.index("void WiFiSsidView::set_focus(int focus)")
+    focus_end = SOURCE.index("void WiFiSsidView::toggle_password_visibility", focus_start)
+    focus_body = SOURCE[focus_start:focus_end]
+    assert "lv_obj_set_style_border_width(focused, 2, LV_PART_CURSOR);" in focus_body
+    assert "lv_obj_set_style_border_width(unfocused, 0, LV_PART_CURSOR);" in focus_body
+
+
+def test_hidden_wifi_routes_navigation_on_key_release():
+    start = INPUT.index("case ViewState::WIFI_SSID:")
+    end = INPUT.index("case ViewState::WIFI_FORGET_CONFIRM:", start)
+    body = INPUT[start:end]
+    assert "(pressed && (key == KEY_UP || key == KEY_DOWN)) || released" in body
+
+    guard_start = INPUT.index("if (pressed) {")
+    guard_end = INPUT.index("    } else if (key == KEY_UP || key == KEY_DOWN)", guard_start)
+    guard_body = INPUT[guard_start:guard_end]
+    assert "const bool hidden_wifi_navigation = view_state_ == ViewState::WIFI_SSID;" in guard_body
+    assert "if (!hidden_wifi_navigation &&" in guard_body
+
+
 def test_wifi_background_callbacks_lock_lvgl_async_queue():
     start = CONTROLLER.index("lv_result_t queue_lvgl_async")
     end = CONTROLLER.index("const char *wifi_error_message", start)
@@ -79,5 +107,7 @@ def test_scan_respects_user_disabled_radio():
 if __name__ == "__main__":
     test_owned_wifi_views_unmount_before_member_destruction()
     test_wifi_controller_unmounts_list_while_view_is_alive()
+    test_hidden_wifi_uses_single_cursor_style_for_manual_focus()
+    test_hidden_wifi_routes_navigation_on_key_release()
     test_wifi_background_callbacks_lock_lvgl_async_queue()
     test_scan_respects_user_disabled_radio()
