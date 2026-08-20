@@ -67,9 +67,7 @@ constexpr const char *kAccountJournalPath =
 constexpr const char *kRearmOobeMarker = "/var/lib/applaunch/run-oobe";
 // Baked into every factory image by pi-gen; removed once first boot finishes.
 constexpr const char *kFactoryOobeMarker = "/var/lib/LaunchWizard/run-oobe";
-// One-shot keyboard tutorial shown before the OOBE (also baked by pi-gen).
-constexpr const char *kKeyboardGuideMarker =
-    "/var/lib/LaunchWizard/run-keyboard-guide";
+// Keyboard tutorial shown before the OOBE on every non-test launch.
 constexpr const char *kKeyboardGuideBinary =
     "/usr/share/APPLaunch/bin/M5CardputerZero-Keyboard-Guide";
 
@@ -1065,30 +1063,12 @@ bool launch_wizard::WizardService::should_run()
 #endif
 }
 
-void launch_wizard::WizardService::run_keyboard_guide_once()
+void launch_wizard::WizardService::run_keyboard_guide()
 {
 #if LAUNCH_WIZARD_DRY_RUN
     // The guide is a separate on-device binary; nothing to preview in SDL.
     return;
 #else
-    const bool marker_present = access(kKeyboardGuideMarker, F_OK) == 0;
-    const bool binary_present = access(kKeyboardGuideBinary, X_OK) == 0;
-    if (!should_run_keyboard_guide(marker_present, binary_present)) {
-        if (marker_present)
-            fprintf(stderr,
-                    "LaunchWizard: keyboard guide binary missing; skipping guide\n");
-        return;
-    }
-
-    // Consume the marker *before* exec: if the guide ever hangs and the user
-    // power-cycles, the next boot must not be trapped in the guide again.
-    if (remove(kKeyboardGuideMarker) != 0 && errno != ENOENT) {
-        fprintf(stderr, "LaunchWizard: failed to remove keyboard guide marker: %s\n",
-                strerror(errno));
-        return;  // Without the consumed marker, re-running is worse than skipping.
-    }
-    sync();
-
     printf("LaunchWizard: starting keyboard guide\n");
     fflush(stdout);
 

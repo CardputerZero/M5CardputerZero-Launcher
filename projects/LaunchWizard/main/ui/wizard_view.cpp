@@ -1475,9 +1475,9 @@ int launch_wizard_finish_configured_system(void)
     return launch_wizard::WizardService::finish_configured_system();
 }
 
-void launch_wizard_run_keyboard_guide_once(void)
+void launch_wizard_run_keyboard_guide(void)
 {
-    launch_wizard::WizardService::run_keyboard_guide_once();
+    launch_wizard::WizardService::run_keyboard_guide();
 }
 
 void launch_wizard_register_event(void)

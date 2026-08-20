@@ -33,11 +33,6 @@ struct FirstBootState {
 // Imager), so first boot skips straight to the launcher.
 bool should_run_wizard(const FirstBootState &state);
 
-// The keyboard guide runs exactly once per device, before and independently of
-// the OOBE wizard. A missing binary keeps the marker so a later boot (e.g.
-// after the package lands) can still show the guide.
-bool should_run_keyboard_guide(bool marker_present, bool binary_present);
-
 }  // namespace launch_wizard
 
 #endif  // LAUNCH_WIZARD_FIRST_BOOT_POLICY_H

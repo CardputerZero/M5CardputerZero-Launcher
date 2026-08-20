@@ -13,8 +13,8 @@ void launch_wizard_ui_teardown(void);
 bool launch_wizard_should_run(void);
 int launch_wizard_finish_configured_system(void);
 
-// Shows the one-shot keyboard tutorial before the OOBE decision. Runs exactly
-// once per device (marker baked by pi-gen), whether or not the wizard follows.
-void launch_wizard_run_keyboard_guide_once(void);
+// Shows the keyboard tutorial before the OOBE decision on every non-test
+// launch.
+void launch_wizard_run_keyboard_guide(void);
 
 #endif  // LAUNCH_WIZARD_APPLICATION_H
