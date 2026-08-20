@@ -26,6 +26,7 @@
 #include <list>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 
 namespace lora_app_detail {
@@ -44,6 +45,8 @@ private:
     bool scroll_to_latest_pending_ = false;
     cp0_lora_info_t lora_info_{};
     std::shared_ptr<lora_app_detail::LoraInitializationState> initialization_state_;
+    std::thread init_thread_;
+    uint32_t last_init_attempt_tick_ = 0;
 
     PageTimerLifecycle<lv_timer_t *> poll_timer_;
     lv_timer_t *message_title_timer_    = nullptr;

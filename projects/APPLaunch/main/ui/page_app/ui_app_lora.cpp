@@ -24,6 +24,7 @@ struct LoraInitializationState {
 
 constexpr uint32_t kPollIntervalMs   = 300;
 constexpr int32_t kMessageScrollStep = 36;
+constexpr uint32_t kInitRetryIntervalMs = 3000;
 
 static bool is_printable_ascii(uint32_t key)
 {
@@ -181,6 +182,10 @@ UILoraPage::~UILoraPage()
     cancel_message_title_animation();
     app_active_ = false;
     poll_timer_.stop();
+    // Reap the async init thread before the page is gone. Joining here (rather
+    // than detaching) guarantees the hardware init on the global backend state
+    // is fully finished before the next page instance can touch it.
+    if (init_thread_.joinable()) init_thread_.join();
     detach_delete_callbacks();
 }
 
@@ -188,7 +193,6 @@ void UILoraPage::init_lora()
 {
     if (!ui_ready()) return;
     app_active_               = true;
-    initialization_pending_   = true;
     scroll_to_latest_pending_ = false;
     lv_obj_clean(message_list_);
     last_message_row_ = nullptr;
@@ -212,10 +216,16 @@ void UILoraPage::init_lora()
 
 void UILoraPage::start_lora_initialization()
 {
-    initialization_state_ = std::make_shared<lora_app_detail::LoraInitializationState>();
-    const auto state      = initialization_state_;
+    // A previous attempt (successful or failed) must be fully reaped before a
+    // new one starts, otherwise two init threads could race on the global
+    // backend hardware state.
+    if (init_thread_.joinable()) init_thread_.join();
+
+    initialization_pending_ = true;
+    initialization_state_   = std::make_shared<lora_app_detail::LoraInitializationState>();
+    const auto state        = initialization_state_;
     try {
-        std::thread([state] { run_lora_initialization(state); }).detach();
+        init_thread_ = std::thread([state] { run_lora_initialization(state); });
     } catch (...) {
         std::lock_guard<std::mutex> lock(state->mutex);
         state->init_code    = -1;
@@ -248,6 +258,7 @@ bool UILoraPage::consume_lora_initialization()
     } else {
         lv_label_set_text(empty_message_hint_label_, "LoRa unavailable; see Info");
         lv_obj_set_style_text_color(empty_message_hint_label_, lv_color_hex(0xD96C6C), LV_PART_MAIN | LV_STATE_DEFAULT);
+        last_init_attempt_tick_ = lv_tick_get();
     }
     render_current_view();
     if (lora_info_.hw_ready) schedule_message_title_dismissal();
@@ -366,8 +377,13 @@ void UILoraPage::append_text_key(uint32_t key)
 
 void UILoraPage::send_current_text()
 {
-    if (initialization_pending_ || !lora_info_.hw_ready) {
+    if (initialization_pending_) {
         model_.set_send_status("LoRa is still initializing");
+        update_send_content();
+        return;
+    }
+    if (!lora_info_.hw_ready) {
+        model_.set_send_status("LoRa unavailable");
         update_send_content();
         return;
     }
@@ -429,7 +445,16 @@ void UILoraPage::on_poll_timer()
         (void)consume_lora_initialization();
         return;
     }
-    if (!lora_info_.hw_ready) return;
+    if (!lora_info_.hw_ready) {
+        // A transient init failure (cold boot, EXT5V rail still ramping, etc.)
+        // must not wedge the page permanently: retry with a backoff so the
+        // radio can come up on its own without hammering the backend.
+        const uint32_t now = lv_tick_get();
+        if (now - last_init_attempt_tick_ >= lora_app_detail::kInitRetryIntervalMs) {
+            start_lora_initialization();
+        }
+        return;
+    }
     if (!refresh_lora_info(true)) return;
     if (lora_info_.rx_event) append_chat_message(lora_info_.last_rx, false, lora_info_.rssi, lora_info_.snr);
     if (model_.view() == LoraView::INFO) update_info_content();
