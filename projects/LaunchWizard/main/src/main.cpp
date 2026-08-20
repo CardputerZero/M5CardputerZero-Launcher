@@ -33,10 +33,10 @@ int main(int argc, char *argv[])
     if (force)
         printf("LaunchWizard: test mode, bypassing first-boot detection\n");
 
-    // The keyboard tutorial runs first and exactly once per device, whether
-    // the OOBE that follows is shown or skipped (Imager-provisioned devices).
+    // The keyboard tutorial always runs first on a normal (non-test) launch,
+    // whether the OOBE that follows is shown or skipped.
     if (!force)
-        launch_wizard_run_keyboard_guide_once();
+        launch_wizard_run_keyboard_guide();
 
     if (!force && !launch_wizard_should_run()) {
         printf("LaunchWizard: first-boot desktop is not active, starting APPLaunch\n");
