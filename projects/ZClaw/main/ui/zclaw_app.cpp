@@ -160,6 +160,7 @@ private:
         zclaw::KeyRouteContext context;
         context.startup = startup_workflow_.state();
         context.input_open = input_dialog_.is_open();
+        context.input_mode = input_dialog_.mode();
         context.approval_pending = approvals_.pending();
         context.setup_retry_pending =
             settings_workflow_.setup_retry_pending();

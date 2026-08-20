@@ -15,7 +15,9 @@ int main()
     using zclaw::InputSubmissionAction;
     assert(!zclaw::input_is_single_line(InputMode::Chat));
     assert(zclaw::input_is_single_line(InputMode::SetupEdit));
+    assert(!zclaw::input_is_single_line(InputMode::SetupUriEdit));
     assert(zclaw::input_is_single_line(InputMode::ProviderEdit));
+    assert(!zclaw::input_is_single_line(InputMode::ProviderUriEdit));
     assert(zclaw::input_is_single_line(InputMode::PairingCode));
     zclaw::InputSubmission submission =
         zclaw::input_submission(InputMode::Chat, "hello");
@@ -29,7 +31,11 @@ int main()
            InputSubmissionAction::None);
     assert(zclaw::input_submission(InputMode::SetupEdit, "").action ==
            InputSubmissionAction::ApplySetupEdit);
+    assert(zclaw::input_submission(InputMode::SetupUriEdit, "").action ==
+           InputSubmissionAction::ApplySetupEdit);
     assert(zclaw::input_submission(InputMode::ProviderEdit, "").action ==
+           InputSubmissionAction::ApplyProviderEdit);
+    assert(zclaw::input_submission(InputMode::ProviderUriEdit, "").action ==
            InputSubmissionAction::ApplyProviderEdit);
 
     using zclaw::Key;
@@ -51,6 +57,8 @@ int main()
     assert(!adapted.shift && adapted.text.empty());
     adapted = zclaw::adapt_key_event(KEY_ESC, KBD_KEY_RELEASED, 0, "");
     assert(adapted.key == Key::Escape && adapted.phase == KeyPhase::Released);
+    adapted = zclaw::adapt_key_event(KEY_UP, KBD_KEY_PRESSED, KBD_MOD_FN, nullptr);
+    assert(adapted.key == Key::Up && adapted.fn);
     adapted = zclaw::adapt_key_event(KEY_RESERVED, 99, KBD_MOD_CTRL, "x");
     assert(adapted.key == Key::Other && adapted.phase == KeyPhase::Unknown);
     assert(!adapted.shift && adapted.text == "x");
@@ -100,6 +108,11 @@ int main()
            KeyActionType::InputSubmit);
     assert(routed(context, KeyPhase::Released, Key::Tab).type ==
            KeyActionType::InputToggleSecretVisibility);
+    context.input_mode = InputMode::ProviderUriEdit;
+    assert(routed(context, KeyPhase::Released, Key::Tab).type ==
+           KeyActionType::InputInsertNewline);
+    assert(routed(context, KeyPhase::Released, Key::Escape).type ==
+           KeyActionType::InputClose);
     assert(routed(context, KeyPhase::Released, Key::Enter, true).type ==
            KeyActionType::None);
     assert(routed(context, KeyPhase::Released, Key::Down).type ==

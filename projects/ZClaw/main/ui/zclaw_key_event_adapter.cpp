@@ -49,6 +49,7 @@ KeyEvent adapt_key_event(std::uint32_t key_code, int key_state,
     event.phase = adapt_key_phase(key_state);
     event.key = adapt_key(key_code);
     event.shift = (modifiers & KBD_MOD_SHIFT) != 0;
+    event.fn = (modifiers & KBD_MOD_FN) != 0;
     if (utf8)
         event.text = utf8;
     return event;

@@ -7,7 +7,6 @@
 #include "zclaw_provider_manager.h"
 #include "zclaw_settings_coordinator.h"
 #include "zclaw_settings_panel.h"
-#include "zclaw_secret_input_model.h"
 
 #include <cstddef>
 
@@ -73,12 +72,13 @@ void ProviderWorkflow::edit_selected_field()
     const std::string *value = provider_field_value(
         &provider, settings_.state().provider_edit_field());
     if (value) {
-        const bool secret =
-            settings_.state().provider_edit_field() == ProviderEditField::ApiKey;
+        const bool uri =
+            settings_.state().provider_edit_field() == ProviderEditField::Uri;
         input_.open_text(&fonts_,
                          provider_field_name(settings_.state().provider_edit_field()),
-                         secret ? secret_input_initial_text() : *value,
-                         InputMode::ProviderEdit, secret);
+                         *value,
+                         uri ? InputMode::ProviderUriEdit : InputMode::ProviderEdit,
+                         false);
     }
 }
 
@@ -93,11 +93,8 @@ void ProviderWorkflow::apply_edit(const std::string &value)
     ProviderConfig provider = providers_.providers()[provider_index];
     std::string *field = provider_field_value(
         &provider, settings_.state().provider_edit_field());
-    if (field) {
-        *field = settings_.state().provider_edit_field() == ProviderEditField::ApiKey
-                     ? apply_secret_input(*field, value)
-                     : value;
-    }
+    if (field)
+        *field = value;
     settings_.state().set_provider_edit_field(ProviderEditField::None);
     std::string error;
     if (!providers_.replace(static_cast<std::size_t>(provider_index), provider,

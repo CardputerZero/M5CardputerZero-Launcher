@@ -6,7 +6,8 @@ namespace zclaw {
 
 bool input_is_single_line(InputMode mode)
 {
-    return mode != InputMode::Chat;
+    return mode != InputMode::Chat && mode != InputMode::SetupUriEdit &&
+           mode != InputMode::ProviderUriEdit;
 }
 
 InputSubmission input_submission(InputMode mode, std::string value)
@@ -19,9 +20,11 @@ InputSubmission input_submission(InputMode mode, std::string value)
                                                      : InputSubmissionAction::SendChat;
         break;
     case InputMode::SetupEdit:
+    case InputMode::SetupUriEdit:
         submission.action = InputSubmissionAction::ApplySetupEdit;
         break;
     case InputMode::ProviderEdit:
+    case InputMode::ProviderUriEdit:
         submission.action = InputSubmissionAction::ApplyProviderEdit;
         break;
     case InputMode::PairingCode:
