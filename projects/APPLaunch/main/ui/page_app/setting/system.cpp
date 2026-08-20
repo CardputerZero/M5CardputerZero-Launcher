@@ -292,7 +292,8 @@ void UISetupPage::start_update_job(const char *command, int item_index)
     if (update_timer_ || !command) return;
     MenuItem *menu = setting::SetupPageAccess(*this).find_menu("Update");
     if (!menu || item_index < 0 || item_index >= static_cast<int>(menu->sub_items.size())) return;
-    const std::string running_label = system_page::update_job_label(0, "running");
+    const auto action = system_page::UpdateAction::UpdateLauncher;
+    const std::string running_label = system_page::update_job_label(action, 0, "running");
     launcher_toast().show_persistent(running_label.c_str());
     lv_refr_now(nullptr);
     try {
@@ -323,7 +324,9 @@ void UISetupPage::update_timer_cb(lv_timer_t *timer) noexcept
         cp0_signal_osinfo_api({"UpdateJobStatus", page->update_job_id_},
             [&](int result, std::string payload) { code = result; state = std::move(payload); });
         if (code == 0 && state == "running") return;
-        const std::string result_label = system_page::update_job_label(code, state);
+        const auto action = system_page::UpdateAction::UpdateLauncher;
+        const std::string result_label =
+            system_page::update_job_label(action, code, state);
         page->stop_update_timer(false);
         launcher_toast().show(result_label.c_str());
     } catch (...) {

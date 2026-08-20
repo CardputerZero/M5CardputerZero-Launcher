@@ -31,12 +31,18 @@ if os.environ.get("CONFIG_DEFAULT_FILE") == None:
 config_dir = Path("build") / "config"
 config_stamp_path = config_dir / "config_default_file"
 selected_config = os.environ.get("CONFIG_DEFAULT_FILE", "config_defaults.mk")
+product_mode_enabled = os.environ.get("FACTORY_TEST_PRODUCT_MODE", "").lower() in (
+    "1", "y", "yes", "true"
+)
+selected_config_stamp = "{}\nFACTORY_TEST_PRODUCT_MODE={}".format(
+    selected_config, int(product_mode_enabled)
+)
 previous_config = (
     config_stamp_path.read_text(encoding="utf-8").strip()
     if config_stamp_path.exists()
     else None
 )
-if previous_config != selected_config:
+if previous_config != selected_config_stamp:
     for generated_config in (
         "global_config.mk",
         "global_config.h",
@@ -46,14 +52,25 @@ if previous_config != selected_config:
         if generated_config_path.exists():
             generated_config_path.unlink()
     config_dir.mkdir(parents=True, exist_ok=True)
-    config_stamp_path.write_text(selected_config + "\n", encoding="utf-8")
+    config_stamp_path.write_text(selected_config_stamp + "\n", encoding="utf-8")
 
 if "cross" in os.environ.get("CONFIG_DEFAULT_FILE", ''):
     cross_package_enabled = True
     config_tmp_path = config_dir / "config_tmp.mk"
     sysroot_path_str = static_lib_path.as_posix().replace('"', r'\"')
+    display_mode_config = (
+        "CONFIG_FACTORY_TEST_PRODUCT_MODE=y\n"
+        "CONFIG_V9_5_LV_USE_LINUX_DRM=y\n"
+        "# CONFIG_V9_5_LV_USE_LINUX_FBDEV is not set\n"
+        if product_mode_enabled
+        else
+        "# CONFIG_FACTORY_TEST_PRODUCT_MODE is not set\n"
+        "# CONFIG_V9_5_LV_USE_LINUX_DRM is not set\n"
+        "CONFIG_V9_5_LV_USE_LINUX_FBDEV=y\n"
+    )
     config_tmp_content = (
         f'CONFIG_TOOLCHAIN_SYSROOT="{sysroot_path_str}"\n'
+        + display_mode_config
     )
     if not config_tmp_path.exists() or config_tmp_path.read_text() != config_tmp_content:
         config_tmp_path.parent.mkdir(parents=True, exist_ok=True)
@@ -65,6 +82,7 @@ else:
 
 os.environ["SDK_PATH"] = str(sdk_path)
 os.environ["EXT_COMPONENTS_PATH"] = str(sdk_path.parent / "ext_components")
+os.environ["CONFIG_CJSON_ENABLED"] = "y"
 
 env = SConscript(
     str(sdk_path / "tools" / "scons" / "project.py"),

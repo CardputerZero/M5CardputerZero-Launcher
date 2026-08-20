@@ -1,0 +1,45 @@
+# component/SConscript
+Import("env")
+import os
+
+with open(env["PROJECT_TOOL_S"]) as f:
+    exec(f.read())
+
+env["GIT_REPO_LISTS"]["SmoothUI"] = {
+    "url": "https://github.com/Forairaaaaa/smooth_ui_toolkit.git",
+    "commit": "5328cfd14af9390b8d26a4daa0d7dbd237894d4b",
+    "path": os.path.join(os.environ["GIT_REPO_PATH"], "smooth_ui_toolkit"),
+}
+
+if "CONFIG_SMOOTH_UI_COMPONENT_ENABLED" in os.environ:
+    smooth_ui = check_component("SmoothUI")
+    SRCS = append_srcs_dir([os.path.join(smooth_ui, "src")])
+    INCLUDE = [
+        os.path.join(smooth_ui, "src"),
+        os.path.join(smooth_ui, "src", "lvgl"),
+    ]
+    PRIVATE_INCLUDE = []
+    REQUIREMENTS = ["lvgl_component", "pthread"]
+    STATIC_LIB = []
+    DYNAMIC_LIB = []
+    DEFINITIONS = ["-DSMOOTH_UI_TOOLKIT_ENABLE_DEFAULT_HAL=1"]
+    DEFINITIONS_PRIVATE = []
+    LDFLAGS = []
+    LINK_SEARCH_PATH = []
+
+    env["COMPONENTS"].append(
+        {
+            "target": os.path.basename(env["component_dir"]),
+            "SRCS": SRCS,
+            "INCLUDE": INCLUDE,
+            "PRIVATE_INCLUDE": PRIVATE_INCLUDE,
+            "REQUIREMENTS": REQUIREMENTS,
+            "STATIC_LIB": STATIC_LIB,
+            "DYNAMIC_LIB": DYNAMIC_LIB,
+            "DEFINITIONS": DEFINITIONS,
+            "DEFINITIONS_PRIVATE": DEFINITIONS_PRIVATE,
+            "LDFLAGS": LDFLAGS,
+            "LINK_SEARCH_PATH": LINK_SEARCH_PATH,
+            "REGISTER": "static",
+        }
+    )

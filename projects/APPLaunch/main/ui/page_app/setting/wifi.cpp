@@ -613,9 +613,19 @@ void WiFi::handle_pw_key(UISetupPage &page, uint32_t key)
             password_view_.set_hint("Unable to start connection", 0xFF4444);
         return;
     }
+    if (key == KEY_LEFT || key == KEY_RIGHT) {
+        const bool moved = key == KEY_LEFT
+            ? password_model_.move_cursor_left()
+            : password_model_.move_cursor_right();
+        if (moved)
+            password_view_.update_password(password_model_.password(),
+                                           password_model_.cursor_position());
+        return;
+    }
     if (key == KEY_BACKSPACE) {
         password_model_.erase_last();
-        password_view_.update_password(password_model_.password());
+        password_view_.update_password(password_model_.password(),
+                                       password_model_.cursor_position());
         return;
     }
     const std::string_view input = SetupPageAccess(page).current_utf8();
@@ -624,7 +634,8 @@ void WiFi::handle_pw_key(UISetupPage &page, uint32_t key)
             password_view_.set_hint("Password too long");
             return;
         }
-        password_view_.update_password(password_model_.password());
+        password_view_.update_password(password_model_.password(),
+                                       password_model_.cursor_position());
     }
 }
 
@@ -649,6 +660,11 @@ void WiFi::handle_ssid_key(UISetupPage &page, uint32_t key)
         ssid_view_.set_focus(hidden_focus_);
         return;
     }
+    if (key == KEY_UP || key == KEY_DOWN) {
+        hidden_focus_ = key == KEY_UP ? 0 : 1;
+        ssid_view_.set_focus(hidden_focus_);
+        return;
+    }
     if (key == KEY_ENTER) {
         if (!ssid_model_.can_submit()) {
             ssid_view_.set_hint("SSID required", 0xFF4444);
@@ -660,13 +676,33 @@ void WiFi::handle_ssid_key(UISetupPage &page, uint32_t key)
             ssid_view_.set_hint("Unable to start connection", 0xFF4444);
         return;
     }
+    if (key == KEY_LEFT || key == KEY_RIGHT) {
+        if (hidden_focus_ == 0) {
+            const bool moved = key == KEY_LEFT
+                ? ssid_model_.move_cursor_left()
+                : ssid_model_.move_cursor_right();
+            if (moved)
+                ssid_view_.update_ssid(ssid_model_.ssid(),
+                                       ssid_model_.cursor_position());
+        } else {
+            const bool moved = key == KEY_LEFT
+                ? password_model_.move_cursor_left()
+                : password_model_.move_cursor_right();
+            if (moved)
+                ssid_view_.update_password(password_model_.password(),
+                                           password_model_.cursor_position());
+        }
+        return;
+    }
     if (key == KEY_BACKSPACE) {
         if (hidden_focus_ == 0) {
             ssid_model_.erase_last();
-            ssid_view_.update_ssid(ssid_model_.ssid());
+            ssid_view_.update_ssid(ssid_model_.ssid(),
+                                   ssid_model_.cursor_position());
         } else {
             password_model_.erase_last();
-            ssid_view_.update_password(password_model_.password());
+            ssid_view_.update_password(password_model_.password(),
+                                       password_model_.cursor_position());
         }
         return;
     }
@@ -677,13 +713,15 @@ void WiFi::handle_ssid_key(UISetupPage &page, uint32_t key)
                 ssid_view_.set_hint("SSID too long or invalid", 0xFF4444);
                 return;
             }
-            ssid_view_.update_ssid(ssid_model_.ssid());
+            ssid_view_.update_ssid(ssid_model_.ssid(),
+                                   ssid_model_.cursor_position());
         } else {
             if (!password_model_.append(std::string(input))) {
                 ssid_view_.set_hint("Password too long", 0xFF4444);
                 return;
             }
-            ssid_view_.update_password(password_model_.password());
+            ssid_view_.update_password(password_model_.password(),
+                                       password_model_.cursor_position());
         }
     }
 }

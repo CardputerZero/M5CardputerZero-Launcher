@@ -63,6 +63,27 @@ env = SConscript(
     duplicate=0,
 )
 
+
+lvgl_component = list(filter(lambda x: x["target"] == "lvgl_component", env["COMPONENTS"]))[0]
+toolchain_sysroot = os.environ.get("CONFIG_TOOLCHAIN_SYSROOT", "") or "/"
+
+if "CONFIG_V9_5_LV_USE_SDL" in os.environ:
+    lvgl_component["REQUIREMENTS"] += ["SDL2"]
+    lvgl_component["INCLUDE"] += ["/usr/include/SDL2"]
+    lvgl_component["DEFINITIONS"] += ["-D_REENTRANT"]
+
+if "CONFIG_V9_5_LV_USE_FREETYPE" in os.environ:
+    lvgl_component["REQUIREMENTS"] += ["freetype"]
+    lvgl_component["INCLUDE"] += [
+        f"{os.path.join(toolchain_sysroot, 'usr', 'include', 'freetype2')}",
+        f"{os.path.join(toolchain_sysroot, 'usr', 'include', 'libpng16')}",
+    ]
+
+for src in list(lvgl_component["SRCS"]):
+    if "lv_sdl_keyboard.c" in str(src):
+        lvgl_component["SRCS"].remove(src)
+
+
 if cross_package_enabled:
     update = False
     if not static_lib_path.exists():

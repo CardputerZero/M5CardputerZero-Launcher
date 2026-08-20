@@ -101,7 +101,9 @@ void UISetupPage::on_event(lv_event_t *event)
         if (released) wifi_.handle_pw_key(*this, key);
         break;
     case ViewState::WIFI_SSID:
-        if (released) wifi_.handle_ssid_key(*this, key);
+        if ((pressed && (key == KEY_UP || key == KEY_DOWN)) ||
+            (released && key != KEY_UP && key != KEY_DOWN))
+            wifi_.handle_ssid_key(*this, key);
         break;
     case ViewState::WIFI_FORGET_CONFIRM:
         if (released) wifi_.handle_forget_key(*this, key);

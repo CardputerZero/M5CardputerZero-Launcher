@@ -53,6 +53,7 @@ private:
 
     // ==================== connect via SSH ====================
     void do_connect();
+    bool persist_profile();
     void save_profile();
     void load_profile();
     void set_status(std::string message, bool error);

@@ -123,12 +123,15 @@ public:
     void reset();
     bool append(const std::string &text);
     bool erase_last();
+    bool move_cursor_left();
+    bool move_cursor_right();
     void clear_password();
 
     bool can_submit() const;
     std::string validation_error() const;
     const std::string &ssid() const { return ssid_; }
     const std::string &password() const { return password_; }
+    std::size_t cursor_position() const;
     std::string masked_display() const;
 
 private:
@@ -136,6 +139,7 @@ private:
     std::string ssid_;
     std::string security_;
     std::string password_;
+    std::size_t cursor_byte_ = 0;
 };
 
 class SetupWifiSsidModel
@@ -143,14 +147,18 @@ class SetupWifiSsidModel
 public:
     static constexpr std::size_t MAX_SSID_BYTES = 32;
 
-    void reset() { ssid_.clear(); }
+    void reset() { ssid_.clear(); cursor_byte_ = 0; }
     bool append(const std::string &text);
     bool erase_last();
+    bool move_cursor_left();
+    bool move_cursor_right();
     bool can_submit() const { return !ssid_.empty(); }
     const std::string &ssid() const { return ssid_; }
+    std::size_t cursor_position() const;
 
 private:
     std::string ssid_;
+    std::size_t cursor_byte_ = 0;
 };
 
 class SetupWifiFeedbackModel

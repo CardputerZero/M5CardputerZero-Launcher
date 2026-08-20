@@ -45,7 +45,12 @@ std::string build_label(const std::string &date, const std::string &channel,
 std::string update_job_label(int result_code, const std::string &state)
 {
     if (state == "running")
-        return "Checking launcher update...\nLauncher may restart";
+        return action == UpdateAction::CheckSystem
+            ? "Refreshing package lists..."
+            : "Refreshing packages...\nChecking launcher update...\nLauncher may restart";
+    if (action == UpdateAction::CheckSystem)
+        return result_code == 0 && state.rfind("succeeded:", 0) == 0
+            ? "Package lists refreshed" : "System check failed";
 
     if (result_code == 0 && state.rfind("succeeded:", 0) == 0)
         return "Launcher updated";
@@ -60,6 +65,7 @@ std::string update_job_label(int result_code, const std::string &state)
         if (stage == "checksum" || stage == "checksum-manifest")
             return "Update verification failed";
         if (stage == "rollback-unavailable") return "Update blocked: no rollback";
+        if (stage == "apt-update") return "System check failed";
     }
     return "Launcher update failed";
 }
