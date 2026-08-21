@@ -42,7 +42,19 @@ std::string build_label(const std::string &date, const std::string &channel,
            (commit.empty() ? std::string("unknown") : commit) + ")";
 }
 
-std::string update_job_label(int result_code, const std::string &state)
+const char *update_request(UpdateAction action)
+{
+    switch (action) {
+    case UpdateAction::CheckSystem:
+        return "AptUpdateStart";
+    case UpdateAction::UpdateLauncher:
+        return "UpdateLauncherStart";
+    }
+    return "";
+}
+
+std::string update_job_label(UpdateAction action, int result_code,
+                             const std::string &state)
 {
     if (state == "running")
         return action == UpdateAction::CheckSystem
@@ -75,7 +87,7 @@ std::string launcher_state_label(const std::string &state)
     if (state.empty()) return {};
     if (state.rfind("succeeded:", 0) == 0) return "Launcher is up to date";
     if (state.rfind("failed:", 0) == 0)
-        return update_job_label(-1, state);
+        return update_job_label(UpdateAction::UpdateLauncher, -1, state);
     return "Updating: " + state;
 }
 
