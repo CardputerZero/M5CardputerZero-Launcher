@@ -8,6 +8,11 @@
 
 #include "../assets/cp0_status_time_background.inc"
 #include "../assets/cp0_status_battery_background.inc"
+#include "../assets/setting_cross.inc"
+#include "../assets/setting_ok.inc"
+#include "../assets/setting_red_down.inc"
+#include "../assets/setting_red_up.inc"
+#include "../assets/setting_right_arrow.inc"
 
 const lv_image_dsc_t cp0_status_time_background = {
     .header = {

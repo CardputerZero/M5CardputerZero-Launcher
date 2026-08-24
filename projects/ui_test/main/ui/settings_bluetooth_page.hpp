@@ -18,6 +18,7 @@
 
 #include "cp0_bounded_task_registry.hpp"
 #include "cp0_font_service.hpp"
+#include "cp0_lvgl_app_page_assets.h"
 #include "hal_lvgl_bsp.h"
 #include "input_keys.h"
 #include "keyboard_input.h"
@@ -26,11 +27,6 @@
 #define LVGL_COMPONENTS_ROLLER1_ONLY
 #include "lvgl_components.hpp"
 #undef LVGL_COMPONENTS_ROLLER1_ONLY
-
-extern "C" {
-extern const lv_image_dsc_t setting_ok;
-extern const lv_image_dsc_t setting_cross;
-}
 
 struct Cp0BluetoothUiApiDispatch {
     std::mutex mutex;

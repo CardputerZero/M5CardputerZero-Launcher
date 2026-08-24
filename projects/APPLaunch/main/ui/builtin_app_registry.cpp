@@ -5,7 +5,7 @@
 #include "ui.h"
 #include "generated/page_app.h"
 #include "launcher_platform.hpp"
-
+#include "settings/settings_page.hpp"
 #include <array>
 #include <cstring>
 #include <vector>
@@ -58,6 +58,8 @@ constexpr BuiltinAppRegistration BUILTIN_APPS[] = {
      nullptr, false, true, false, append_page_app<UISTPage>},
     {{"Snake", "game_100.png", "app_Game", false, true},
      nullptr, false, true, false, append_page_app<UIGamePage>},
+    {{"Settings", "setting_100.png", "app_Setting", false, true},
+     nullptr, false, true, false, append_page_app<UISettingTreePage>},
     {{"Calculator", "math_100.png", "app_Math", true, false},
      "@calculator_exec", false, true, false, nullptr},
     {{"LoRa", "lora_100.png", "app_LoRa", true, false},

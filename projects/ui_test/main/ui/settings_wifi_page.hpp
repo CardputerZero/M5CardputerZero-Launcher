@@ -20,6 +20,7 @@
 
 #include "cp0_bounded_task_registry.hpp"
 #include "cp0_font_service.hpp"
+#include "cp0_lvgl_app_page_assets.h"
 #include "input_keys.h"
 #include "keyboard_input.h"
 #include "settings_tree_types.hpp"
@@ -27,12 +28,6 @@
 #define LVGL_COMPONENTS_ROLLER1_ONLY
 #include "lvgl_components.hpp"
 #undef LVGL_COMPONENTS_ROLLER1_ONLY
-
-extern "C" {
-extern const lv_image_dsc_t setting_red_up;
-extern const lv_image_dsc_t setting_red_down;
-extern const lv_image_dsc_t setting_right_arrow;
-}
 
 class LvSettingWifiScanPage3 : public DComponens::LvglComponensBase {
 public:

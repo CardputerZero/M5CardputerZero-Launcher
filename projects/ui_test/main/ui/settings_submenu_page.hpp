@@ -18,19 +18,12 @@
 #include <tuple>
 
 #include "cp0_font_service.hpp"
+#include "cp0_lvgl_app_page_assets.h"
 #include "settings_tree_types.hpp"
 
 #define LVGL_COMPONENTS_ROLLER1_ONLY
 #include "lvgl_components.hpp"
 #undef LVGL_COMPONENTS_ROLLER1_ONLY
-
-extern "C" {
-extern const lv_image_dsc_t setting_red_up;
-extern const lv_image_dsc_t setting_red_down;
-extern const lv_image_dsc_t setting_right_arrow;
-extern const lv_image_dsc_t setting_ok;
-extern const lv_image_dsc_t setting_cross;
-}
 
 class LvSettingRollerPage2 : public DComponens::LvglComponensBase {
 public:

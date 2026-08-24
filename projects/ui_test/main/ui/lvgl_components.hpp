@@ -18,13 +18,8 @@
 #include <utility>
 
 #include "cp0_font_service.hpp"
+#include "cp0_lvgl_app_page_assets.h"
 #include "settings_tree_types.hpp"
-
-extern "C" {
-extern const lv_image_dsc_t setting_red_up;
-extern const lv_image_dsc_t setting_red_down;
-extern const lv_image_dsc_t setting_right_arrow;
-}
 
 #define lv_event_get_target(e) (lv_obj_t *)lv_event_get_target(e)
 

@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "cp0_font_service.hpp"
+#include "cp0_lvgl_app_page_assets.h"
 #include "hal_lvgl_bsp.h"
 #include "input_keys.h"
 #include "keyboard_input.h"
@@ -16,11 +17,6 @@
 #define LVGL_COMPONENTS_ROLLER1_ONLY
 #include "lvgl_components.hpp"
 #undef LVGL_COMPONENTS_ROLLER1_ONLY
-
-extern "C" {
-extern const lv_image_dsc_t setting_red_up;
-extern const lv_image_dsc_t setting_red_down;
-}
 
 namespace ui_test_soundcard {
 
