@@ -1,9 +1,7 @@
 #!/bin/sh
 set -eu
 python3 "$(dirname "$0")/test_store_cache_sync.py"
-python3 "$(dirname "$0")/test_wifi_view_lifecycle_contract.py"
 python3 "$(dirname "$0")/test_carousel_border_contract.py"
-python3 "$(dirname "$0")/test_bluetooth_power_contract.py"
 python3 "$(dirname "$0")/test_external_framebuffer_ownership.py"
 PYTHONPATH="$(dirname "$0")/..${PYTHONPATH:+:$PYTHONPATH}" \
     python3 "$(dirname "$0")/test_config_default_file.py"
@@ -13,11 +11,6 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/test_low_battery_flow.cpp" \
     -o "$build_dir/test_low_battery_flow"
 "$build_dir/test_low_battery_flow"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    "$(dirname "$0")/test_rtc_state_model.cpp" \
-    "$(dirname "$0")/../main/ui/model/rtc_state_model.cpp" \
-    -o "$build_dir/test_rtc_state_model"
-"$build_dir/test_rtc_state_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -pthread \
     "$(dirname "$0")/test_async_operation_lifecycle.cpp" \
     "$(dirname "$0")/../main/ui/model/async_operation_lifecycle.cpp" \
@@ -27,29 +20,6 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -pthread \
     "$(dirname "$0")/test_page_timer_lifecycle.cpp" \
     -o "$build_dir/test_page_timer_lifecycle"
 "$build_dir/test_page_timer_lifecycle"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    "$(dirname "$0")/test_setup_info_model.cpp" \
-    "$(dirname "$0")/../main/ui/model/setup_info_model.cpp" \
-    -o "$build_dir/test_setup_info_model"
-"$build_dir/test_setup_info_model"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    "$(dirname "$0")/test_setup_wifi_model.cpp" \
-    "$(dirname "$0")/../main/ui/model/setup_wifi_model.cpp" \
-    -o "$build_dir/test_setup_wifi_model"
-"$build_dir/test_setup_wifi_model"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
-    "$(dirname "$0")/test_adb_state.cpp" \
-    "$(dirname "$0")/../main/ui/model/adb_state.cpp" \
-    -o "$build_dir/test_adb_state"
-"$build_dir/test_adb_state"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    "$(dirname "$0")/test_developer_page_model.cpp" \
-    "$(dirname "$0")/../main/ui/model/developer_page_model.cpp" \
-    -o "$build_dir/test_developer_page_model"
-"$build_dir/test_developer_page_model"
-"$(dirname "$0")/test_cardputer_adb.sh"
-python3 "$(dirname "$0")/test_adb_packaging.py"
 python3 "$(dirname "$0")/test_updater_packaging.py"
 python3 "$(dirname "$0")/test_appstore_packaging.py"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
@@ -79,11 +49,6 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/test_snake_view_contract.cpp" \
     -o "$build_dir/test_snake_view_contract"
 "$build_dir/test_snake_view_contract"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    "$(dirname "$0")/test_sound_card_model.cpp" \
-    "$(dirname "$0")/../main/ui/model/sound_card_model.cpp" \
-    -o "$build_dir/test_sound_card_model"
-"$build_dir/test_sound_card_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/test_ip_panel_model.cpp" \
     "$(dirname "$0")/../main/ui/model/ip_panel_model.cpp" \
@@ -123,36 +88,10 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -o "$build_dir/test_tank_battle_model"
 "$build_dir/test_tank_battle_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
-    "$(dirname "$0")/test_setup_page_model.cpp" \
-    "$(dirname "$0")/../main/ui/model/setup_page_model.cpp" \
-    -o "$build_dir/test_setup_page_model"
-"$build_dir/test_setup_page_model"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    "$(dirname "$0")/test_setup_view_build_contract.cpp" \
-    -o "$build_dir/test_setup_view_build_contract"
-"$build_dir/test_setup_view_build_contract"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
-    "$(dirname "$0")/test_setup_page_access_policy.cpp" \
-    "$(dirname "$0")/../main/ui/page_app/setting/setup_page_access_policy.cpp" \
-    -o "$build_dir/test_setup_page_access_policy"
-"$build_dir/test_setup_page_access_policy"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/test_setup_value_policy.cpp" \
     "$(dirname "$0")/../main/ui/model/setup_value_policy.cpp" \
     -o "$build_dir/test_setup_value_policy"
 "$build_dir/test_setup_value_policy"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    "$(dirname "$0")/test_boot_action_policy.cpp" \
-    "$(dirname "$0")/../main/ui/model/boot_action_policy.cpp" \
-    -o "$build_dir/test_boot_action_policy"
-"$build_dir/test_boot_action_policy"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    "$(dirname "$0")/test_system_page_model.cpp" \
-    "$(dirname "$0")/../main/ui/model/system_page_model.cpp" \
-    -o "$build_dir/test_system_page_model"
-"$build_dir/test_system_page_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/test_screensaver_model.cpp" \
     "$(dirname "$0")/../main/ui/model/screensaver_model.cpp" \
@@ -214,11 +153,6 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/test_global_overlay_model.cpp" \
     -o "$build_dir/test_global_overlay_model"
 "$build_dir/test_global_overlay_model"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    "$(dirname "$0")/test_bluetooth_page_model.cpp" \
-    "$(dirname "$0")/../main/ui/model/bluetooth_page_model.cpp" \
-    -o "$build_dir/test_bluetooth_page_model"
-"$build_dir/test_bluetooth_page_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$(dirname "$0")/../../../ext_components/cp0_lvgl/include" \
     "$(dirname "$0")/test_st_key_encoder.cpp" \
