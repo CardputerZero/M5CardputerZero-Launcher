@@ -50,9 +50,18 @@ public:
     LvSettingWifiScanPage3(lv_obj_t *parent,
                            const NodeIter &parent_node,
                            std::function<void()> back_callback)
-        : parent_node_(parent_node), on_back(std::move(back_callback))
+        : parent_node_(parent_node)
     {
+        LeaveSelfPage = std::move(back_callback);
         initialize(parent);
+    }
+
+    void AnimateNextIn() override {}
+    void AnimateNextOut() override {}
+    void LoadNextPage() override {}
+    void LeaveNextPage() override
+    {
+        if (LeaveSelfPage) LeaveSelfPage();
     }
 
     ~LvSettingWifiScanPage3() override
@@ -96,7 +105,7 @@ public:
             ComponensObj,
             LV_EVENT_KEY,
             nullptr,
-            std::bind(&LvSettingWifiScanPage3::key_event_cb,
+            std::bind(&LvSettingWifiScanPage3::handle_key_event,
                       this,
                       std::placeholders::_1));
 
@@ -1037,7 +1046,7 @@ private:
         return true;
     }
 
-    void key_event_cb(lv_event_t *event)
+    void handle_key_event(lv_event_t *event)
     {
         if (!event || lv_event_get_code(event) != LV_EVENT_KEY) return;
         const uint32_t key = lv_event_get_key(event);
@@ -1069,9 +1078,9 @@ private:
                 scan_error_.clear();
                 render();
                 start_scan();
-            } else if (key == LV_KEY_LEFT && on_back) {
+            } else if (key == LV_KEY_LEFT && LeaveSelfPage) {
                 stop_connection();
-                on_back();
+                LeaveSelfPage();
             }
             lv_event_stop_processing(event);
             return;
@@ -1079,7 +1088,7 @@ private:
 
         if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
             stop_scan();
-            if (on_back) on_back();
+            if (LeaveSelfPage) LeaveSelfPage();
         } else if (key == LV_KEY_UP) {
             if (move_selection(-1)) render();
         } else if (key == LV_KEY_DOWN) {
@@ -1100,7 +1109,6 @@ private:
     std::shared_ptr<ScanState> scan_state_;
     std::shared_ptr<ConnectionState> connection_state_;
     NodeIter parent_node_;
-    std::function<void()> on_back;
     std::array<RowObjects, VISIBLE_ROWS> rows_{};
     std::vector<MockAccessPoint> access_points_;
     std::vector<MockAccessPoint> mock_networks_;
@@ -1157,9 +1165,16 @@ public:
     static constexpr int RIGHT_ARROW_SCALE = 224;
 
     int32_t selected_index = 0;
-    std::function<void()> on_back = nullptr;
 
     LvSettingValuePage3Base() = default;
+
+    void AnimateNextIn() override {}
+    void AnimateNextOut() override {}
+    void LoadNextPage() override {}
+    void LeaveNextPage() override
+    {
+        if (LeaveSelfPage) LeaveSelfPage();
+    }
 
     ~LvSettingValuePage3Base() override
     {
@@ -1329,8 +1344,9 @@ public:
 protected:
     LvSettingValuePage3Base(const NodeIter &parent_node,
                             std::function<void()> back_callback)
-        : parent_node_(parent_node), on_back(std::move(back_callback))
+        : parent_node_(parent_node)
     {
+        LeaveSelfPage = std::move(back_callback);
     }
 
     void initialize(lv_obj_t *parent)
@@ -1352,16 +1368,16 @@ protected:
         auto selected_node = std::next(parent_node_.begin(), selected_index);
         if (selected_node->Componens_api)
             selected_node->Componens_api(SettingApiActivate, this);
-        if (on_back) on_back();
+        if (LeaveSelfPage) LeaveSelfPage();
     }
 
-    void key_event_cb(lv_event_t *event)
+    void handle_key_event(lv_event_t *event)
     {
         if (!event || lv_event_get_code(event) != LV_EVENT_KEY) return;
 
         const uint32_t key = lv_event_get_key(event);
         if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
-            if (on_back) on_back();
+            if (LeaveSelfPage) LeaveSelfPage();
             lv_event_stop_processing(event);
             return;
         }
@@ -1401,7 +1417,7 @@ protected:
             ComponensObj,
             LV_EVENT_KEY,
             nullptr,
-            std::bind(&LvSettingValuePage3Base::key_event_cb, this, std::placeholders::_1));
+            std::bind(&LvSettingValuePage3Base::handle_key_event, this, std::placeholders::_1));
 
         selection_bg_ = lv_obj_create(ComponensObj);
         if (selection_bg_) {
@@ -1744,9 +1760,18 @@ public:
     LvSettingAdbGuidePage3(lv_obj_t *parent,
                            const NodeIter &page_node,
                            std::function<void()> back_callback)
-        : page_node_(page_node), on_back(std::move(back_callback))
+        : page_node_(page_node)
     {
+        LeaveSelfPage = std::move(back_callback);
         create_ui(parent);
+    }
+
+    void AnimateNextIn() override {}
+    void AnimateNextOut() override {}
+    void LoadNextPage() override {}
+    void LeaveNextPage() override
+    {
+        if (LeaveSelfPage) LeaveSelfPage();
     }
 
     ~LvSettingAdbGuidePage3() override
@@ -1776,7 +1801,7 @@ public:
             ComponensObj,
             LV_EVENT_KEY,
             nullptr,
-            std::bind(&LvSettingAdbGuidePage3::key_event_cb, this, std::placeholders::_1));
+            std::bind(&LvSettingAdbGuidePage3::handle_key_event, this, std::placeholders::_1));
 
         const lv_font_t *title_font =
             cp0_fonts().get("Montserrat-Bold.ttf", 13, LV_FREETYPE_FONT_STYLE_BOLD);
@@ -1892,14 +1917,14 @@ private:
         knob_ = nullptr;
     }
 
-    void key_event_cb(lv_event_t *event)
+    void handle_key_event(lv_event_t *event)
     {
         if (!event || lv_event_get_code(event) != LV_EVENT_KEY) return;
 
         const uint32_t key = lv_event_get_key(event);
         if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
             stop_animation();
-            if (on_back) on_back();
+            if (LeaveSelfPage) LeaveSelfPage();
         } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
             stop_animation();
             if (page_node_->Componens_api)
@@ -1911,7 +1936,6 @@ private:
     }
 
     NodeIter page_node_;
-    std::function<void()> on_back;
     lv_obj_t *knob_ = nullptr;
     lv_obj_t *confirm_label_ = nullptr;
 };

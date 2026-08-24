@@ -198,9 +198,18 @@ public:
                                  int card_index,
                                  Control control,
                                  std::function<void()> back_callback)
-        : card_index_(card_index), control_(std::move(control)), on_back_(std::move(back_callback))
+        : card_index_(card_index), control_(std::move(control))
     {
+        LeaveSelfPage = std::move(back_callback);
         create_ui(parent);
+    }
+
+    void AnimateNextIn() override {}
+    void AnimateNextOut() override {}
+    void LoadNextPage() override {}
+    void LeaveNextPage() override
+    {
+        if (LeaveSelfPage) LeaveSelfPage();
     }
 
     const Control &control() const
@@ -239,7 +248,7 @@ public:
             ComponensObj,
             LV_EVENT_KEY,
             nullptr,
-            std::bind(&LvSettingSoundCardDetailPage::key_event_cb,
+            std::bind(&LvSettingSoundCardDetailPage::handle_key_event,
                       this,
                       std::placeholders::_1));
 
@@ -370,7 +379,7 @@ private:
     void handle_key(uint32_t key)
     {
         if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
-            if (on_back_) on_back_();
+            if (LeaveSelfPage) LeaveSelfPage();
             return;
         }
         if (key == LV_KEY_BACKSPACE) {
@@ -394,7 +403,7 @@ private:
         }
     }
 
-    void key_event_cb(lv_event_t *event)
+    void handle_key_event(lv_event_t *event)
     {
         if (!event || lv_event_get_code(event) != LV_EVENT_KEY) return;
         handle_key(lv_event_get_key(event));
@@ -427,7 +436,6 @@ private:
 
     int card_index_ = -1;
     Control control_;
-    std::function<void()> on_back_;
     std::string input_text_;
     lv_obj_t *event_root_ = nullptr;
     lv_event_dsc_t *keyboard_event_dsc_ = nullptr;
@@ -456,10 +464,19 @@ public:
     LvSettingSoundCardPage4(lv_obj_t *parent,
                            const NodeIter &parent_node,
                            std::function<void()> back_callback)
-        : parent_node_(parent_node), on_back_(std::move(back_callback))
+        : parent_node_(parent_node)
     {
+        LeaveSelfPage = std::move(back_callback);
         create_ui(parent);
         load_cards();
+    }
+
+    void AnimateNextIn() override {}
+    void AnimateNextOut() override {}
+    void LoadNextPage() override {}
+    void LeaveNextPage() override
+    {
+        if (LeaveSelfPage) LeaveSelfPage();
     }
 
     ~LvSettingSoundCardPage4() override
@@ -495,7 +512,7 @@ public:
             ComponensObj,
             LV_EVENT_KEY,
             nullptr,
-            std::bind(&LvSettingSoundCardPage4::key_event_cb,
+            std::bind(&LvSettingSoundCardPage4::handle_key_event,
                       this,
                       std::placeholders::_1));
     }
@@ -735,8 +752,8 @@ private:
         if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
             if (view_ == View::Controls) {
                 load_cards();
-            } else if (on_back_) {
-                on_back_();
+            } else if (LeaveSelfPage) {
+                LeaveSelfPage();
             }
             return;
         }
@@ -758,7 +775,7 @@ private:
         }
     }
 
-    void key_event_cb(lv_event_t *event)
+    void handle_key_event(lv_event_t *event)
     {
         if (!event || lv_event_get_code(event) != LV_EVENT_KEY) return;
         handle_key(lv_event_get_key(event));
@@ -766,7 +783,6 @@ private:
     }
 
     NodeIter parent_node_;
-    std::function<void()> on_back_;
     View view_ = View::Cards;
     std::vector<ui_test_soundcard::Card> cards_;
     std::vector<ui_test_soundcard::Control> controls_;

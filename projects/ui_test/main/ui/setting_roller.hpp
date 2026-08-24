@@ -68,8 +68,60 @@ public:
     // Second-level roller object; created when entering a second-level page and destroyed when returning.
     std::unique_ptr<DComponens::LvglComponensBase> roller2_ = nullptr;
 
-    // Callback invoked when returning from the current top-level page to its parent page.
-    std::function<void()> on_back = nullptr;
+    void AnimateNextIn() override
+    {
+        animate_page3_object(selection_bg_, false);
+        animate_page3_object(ComponensObj, false);
+        animate_page3_object(arrow_up_, false);
+        animate_page3_object(arrow_down_, false);
+        animate_page3_object(right_arrow_, false);
+    }
+
+    void AnimateNextOut() override
+    {
+        animate_page3_object(selection_bg_, true);
+        animate_page3_object(ComponensObj, true);
+        animate_page3_object(arrow_up_, true);
+        animate_page3_object(arrow_down_, true);
+        animate_page3_object(right_arrow_, true);
+    }
+
+    void LoadNextPage() override
+    {
+        if (item_count_ == 0 || selected_index < 0 ||
+            selected_index >= static_cast<int32_t>(item_count_)) {
+            return;
+        }
+
+        auto selected_node = std::next(parent_node_.begin(), selected_index);
+        if (!selected_node->page_factory) return;
+
+        set_secondary_mode();
+        input_group_ = ComponensObj ? lv_obj_get_group(ComponensObj) : nullptr;
+        if (ComponensObj && input_group_) {
+            lv_group_remove_obj(ComponensObj);
+            top_in_group_ = false;
+        }
+
+        roller2_ = selected_node->page_factory(
+            ui_APP_Container,
+            selected_node,
+            std::bind(&LvSettingRoller::LeaveNextPage, this));
+        if (auto *page2 = dynamic_cast<LvSettingRollerPage2 *>(roller2_.get())) {
+            page2->set_page3_transition_callback(
+                std::bind(&LvSettingRoller::page3_transition_cb, this,
+                          std::placeholders::_1, std::placeholders::_2));
+        }
+        if (input_group_ && roller2_ && roller2_->Get()) {
+            lv_group_add_obj(input_group_, roller2_->Get());
+            lv_group_focus_obj(roller2_->Get());
+        }
+    }
+
+    void LeaveNextPage() override
+    {
+        lv_async_call(lvgl_back_this, this);
+    }
 
     /**
      * Set the Label style based on the entry's distance from the selected center row.
@@ -146,13 +198,13 @@ public:
      * UP/DOWN: Cycle through entries and scroll the selected entry to the center;
      * ENTER: Invoke the current node callback or create the corresponding second-level page.
      */
-    void key_event_cb(lv_event_t *e)
+    void handle_key_event(lv_event_t *e)
     {
         lv_obj_t *cont = lv_event_get_target(e);
 
         uint32_t key = lv_event_get_key(e);
         if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
-            if (on_back) on_back();
+            if (LeaveSelfPage) LeaveSelfPage();
             lv_event_stop_processing(e);
             return;
         }
@@ -179,8 +231,8 @@ public:
             auto selected_node = std::next(parent_node_.begin(), selected_index);
             if (selected_node->Componens_api) {
                 selected_node->Componens_api(SettingApiActivate, this);
-            } else {
-                create_second_page(selected_node);
+            } else if (selected_node->page_factory) {
+                LoadNextPage();
             }
         }
         lv_event_stop_processing(e);
@@ -227,12 +279,6 @@ public:
             self->top_in_group_ = true;
             lv_group_focus_obj(self->ComponensObj);
         }
-    }
-
-    /** Queue the return operation asynchronously in LVGL to avoid destroying objects directly in the current event callback. */
-    void back_this()
-    {
-        lv_async_call(lvgl_back_this, this);
     }
 
     /**
@@ -303,40 +349,6 @@ public:
             lv_obj_send_event(ComponensObj, LV_EVENT_SCROLL, ComponensObj);
         }
     }
-    /**
-     * Create and mount the second-level roller, then add it to the input group containing the top-level roller.
-     *
-     * The page type is created by the current node's page_factory.
-     */
-    void load_second(const NodeIter &parent_node)
-    {
-        input_group_ = ComponensObj ? lv_obj_get_group(ComponensObj) : nullptr;
-        if (ComponensObj && input_group_) {
-            lv_group_remove_obj(ComponensObj);
-            top_in_group_ = false;
-        }
-        roller2_ = parent_node->page_factory(
-            ui_APP_Container,
-            parent_node,
-            std::bind(&LvSettingRoller::back_this, this));
-        if (auto *page2 = dynamic_cast<LvSettingRollerPage2 *>(roller2_.get())) {
-            page2->set_page3_transition_callback(
-                std::bind(&LvSettingRoller::page3_transition_cb, this,
-                          std::placeholders::_1, std::placeholders::_2));
-        }
-        if (input_group_ && roller2_ && roller2_->Get()) {
-            lv_group_add_obj(input_group_, roller2_->Get());
-        }
-        lv_group_focus_obj(roller2_->Get());
-    }
-
-    /** Enter the second-level page for the specified node, adjusting the top-level layout before creating the second-level roller. */
-    void create_second_page(const NodeIter &parent_node)
-    {
-        set_secondary_mode();
-        load_second(parent_node);
-    }
-
     void page3_transition_cb(bool entering, bool completed)
     {
         if (completed) {
@@ -349,11 +361,11 @@ public:
         }
 
         page3_transitioning_ = true;
-        animate_page3_object(selection_bg_, entering);
-        animate_page3_object(ComponensObj, entering);
-        animate_page3_object(arrow_up_, entering);
-        animate_page3_object(arrow_down_, entering);
-        animate_page3_object(right_arrow_, entering);
+        if (entering) {
+            AnimateNextOut();
+        } else {
+            AnimateNextIn();
+        }
     }
 
     static void page3_anim_exec_cb(void *object, int32_t value)
@@ -442,16 +454,11 @@ public:
     // Parent container used when creating the second-level page.
     lv_obj_t *ui_APP_Container;
 
-    /** Create a top-level roller without a return callback. */
-    LvSettingRoller(lv_obj_t *parent, const NodeIter &parent_node) : parent_node_(parent_node), ui_APP_Container(parent)
-    {
-        create_ui(parent);
-    }
-
     /** Create a top-level roller and save the callback for returning to the parent page. */
     LvSettingRoller(lv_obj_t *parent, const NodeIter &parent_node, std::function<void()> back_callback)
-        : parent_node_(parent_node), ui_APP_Container(parent), on_back(std::move(back_callback))
+        : parent_node_(parent_node), ui_APP_Container(parent)
     {
+        LeaveSelfPage = std::move(back_callback);
         create_ui(parent);
     }
 
@@ -494,24 +501,24 @@ public:
 
         // Create and position the scrolling hint arrows.
         arrow_up_ = lv_img_create(parent);
-        if (arrow_up_) {
+
             lv_img_set_src(arrow_up_, &setting_red_up);
             lv_obj_update_layout(arrow_up_);
             lv_obj_set_pos(arrow_up_,
                            LABEL_CENTER_X - lv_obj_get_width(arrow_up_) / 2,
                            2);
             arrow_up_base_x_ = lv_obj_get_x(arrow_up_);
-        }
+
 
         arrow_down_ = lv_img_create(parent);
-        if (arrow_down_) {
+
             lv_img_set_src(arrow_down_, &setting_red_down);
             lv_obj_update_layout(arrow_down_);
             lv_obj_set_pos(arrow_down_,
                            LABEL_CENTER_X - lv_obj_get_width(arrow_down_) / 2,
                            150 - lv_obj_get_height(arrow_down_) - 4);
             arrow_down_base_x_ = lv_obj_get_x(arrow_down_);
-        }
+   
 
         // Show the right arrow only after entering a second-level page; hide it initially.
         right_arrow_ = lv_img_create(parent);
@@ -523,9 +530,9 @@ public:
 
         // Refresh each row's font and color while scrolling; forward key events to the member function through the bound callback.
         lv_obj_add_event_cb(ComponensObj, scroll_event_cb, LV_EVENT_SCROLL, this);
-        // lv_obj_add_event_cb(ComponensObj, key_event_cb, LV_EVENT_KEY, NULL);
+        // lv_obj_add_event_cb(ComponensObj, handle_key_event, LV_EVENT_KEY, NULL);
         DComponens::lvgl_bind_event(ComponensObj, LV_EVENT_KEY, NULL,
-                                    std::bind(&LvSettingRoller::key_event_cb, this, std::placeholders::_1));
+                                    std::bind(&LvSettingRoller::handle_key_event, this, std::placeholders::_1));
         lv_obj_set_style_radius(ComponensObj, 0, 0);
         lv_obj_set_style_clip_corner(ComponensObj, true, 0);
         lv_obj_set_scroll_dir(ComponensObj, LV_DIR_VER);
@@ -536,7 +543,6 @@ public:
         item_containers_.clear();
         for (auto it = parent_node_.begin(); it != parent_node_.end(); ++it) {
             lv_obj_t *item_container = lv_obj_create(ComponensObj);
-            if (!item_container) continue;
             item_containers_.push_back(item_container);
             lv_obj_set_size(item_container, 320, 21);
             lv_obj_set_style_bg_opa(item_container, LV_OPA_TRANSP, LV_PART_MAIN);
@@ -554,9 +560,9 @@ public:
 
         // After initial creation, position the first entry in the center and trigger a style refresh.
         selected_index = 2;
-        if (item_count_ > 0) {
+        
             scroll_to_selected(ComponensObj, false);
-        }
+        
     }
 
 private:

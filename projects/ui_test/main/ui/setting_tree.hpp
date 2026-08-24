@@ -133,19 +133,19 @@ public:
     std::unique_ptr<LvSettingRoller> roller1_ = nullptr;
     // std::unique_ptr<DComponens::LvglComponensBase> roller2_ = nullptr;
     // std::unique_ptr<DComponens::LvglComponensBase> roller3_ = nullptr;
-
+    
     static void _back_home(void *data)
     {
         auto *page = static_cast<UISettingTreePage *>(data);
+        page->AnimateNextOut();
+        page->roller1_.reset();
         if (page && page->navigate_home) {
             page->navigate_home();
         }
     }
 
-    void back_home(void *p, int e)
+    void LeaveNextPage()
     {
-        (void)p;
-        (void)e;
         lv_async_call(_back_home, this);
     }
 
@@ -156,7 +156,7 @@ public:
 #if 0
         NodeIter root = mode_tree.set_head(SettingEntry{
             "Settings",
-            std::bind(&UISettingTreePage::back_home, this,
+            std::bind(&UISettingTreePage::LeaveNextPage, this,
                       std::placeholders::_1,
                       std::placeholders::_2),
         });
@@ -352,10 +352,12 @@ public:
             mode_tree.append_child(sound_card, SettingEntry{"Open Mixer", soundcard_page4_factory});
         }
     }
-    void init_faster_page_ui()
+    void AnimateNextIn(){};
+    void AnimateNextOut() {};
+    void LoadNextPage()
     {
         roller1_ = std::make_unique<LvSettingRoller>(ui_APP_Container, mode_tree.begin(),
-                                                     std::bind(&UISettingTreePage::back_home, this, nullptr, 0));
+                                                     std::bind(&UISettingTreePage::LeaveNextPage, this));
         lv_group_add_obj(input_group(), roller1_->Get());
         lv_group_focus_obj(roller1_->Get());
     }
@@ -364,6 +366,11 @@ public:
     {
         lv_obj_set_style_bg_color(screen(), lv_color_black(), LV_PART_MAIN);
         create_page_detail();
-        init_faster_page_ui();
+        LoadNextPage();
+        AnimateNextIn();
+    }
+    ~UISettingTreePage() override
+    {
+        roller1_.reset();
     }
 };

@@ -52,8 +52,33 @@ public:
 
     int32_t selected_index                    = 0;
     std::function<void(int)> on_selected_page = nullptr;
-    std::function<void()> on_back             = nullptr;
     Page3TransitionCallback on_page3_transition = nullptr;
+
+    void AnimateNextIn() override
+    {
+        if (roller3_ && !page3_transitioning_) start_page3_transition(false);
+    }
+
+    void AnimateNextOut() override
+    {
+        if (roller3_ && !page3_transitioning_) start_page3_transition(true);
+    }
+
+    void LoadNextPage() override
+    {
+        if (item_count_ == 0 || selected_index < 0 ||
+            selected_index >= static_cast<int32_t>(item_count_)) {
+            return;
+        }
+
+        auto selected_node = std::next(parent_node_.begin(), selected_index);
+        if (selected_node->page_factory) create_third_page(selected_node);
+    }
+
+    void LeaveNextPage() override
+    {
+        back_from_third_page();
+    }
 
     LvSettingRollerPage2() = default;
     ~LvSettingRollerPage2()
@@ -95,8 +120,9 @@ public:
     }
 
     LvSettingRollerPage2(lv_obj_t *parent, const NodeIter &parent_node, std::function<void()> back_callback)
-        : parent_(parent), parent_node_(parent_node), on_back(std::move(back_callback))
+        : parent_(parent), parent_node_(parent_node)
     {
+        LeaveSelfPage = std::move(back_callback);
         create_ui(parent);
     }
 
@@ -291,14 +317,14 @@ public:
         run_async_task(std::move(callbacks));
     }
 
-    void key_event_cb(lv_event_t *event)
+    void handle_key_event(lv_event_t *event)
     {
         lv_obj_t *cont = lv_event_get_target(event);
         if (!cont || lv_event_get_code(event) != LV_EVENT_KEY) return;
 
         const uint32_t key = lv_event_get_key(event);
         if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
-            if (on_back) on_back();
+            if (LeaveSelfPage) LeaveSelfPage();
             lv_event_stop_processing(event);
             return;
         }
@@ -318,7 +344,7 @@ public:
         } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
             auto selected_node = std::next(parent_node_.begin(), selected_index);
             if (selected_node->page_factory) {
-                create_third_page(selected_node);
+                LoadNextPage();
             } else if (selected_node->Componens_api) {
                 selected_node->Componens_api(SettingApiActivate, this);
 
@@ -348,7 +374,7 @@ public:
         roller3_ = page_node->page_factory(
             parent_,
             page_node,
-            std::bind(&LvSettingRollerPage2::back_from_third_page, this));
+            std::bind(&LvSettingRollerPage2::LeaveNextPage, this));
         if (!roller3_ || !roller3_->Get()) {
             roller3_.reset();
             if (ComponensObj && group) {
@@ -359,13 +385,13 @@ public:
         }
 
         lv_obj_set_style_translate_x(roller3_->Get(), PAGE_WIDTH, LV_PART_MAIN);
-        start_page3_transition(true);
+        AnimateNextOut();
     }
 
     void back_from_third_page()
     {
         if (!roller3_ || page3_transitioning_) return;
-        start_page3_transition(false);
+        AnimateNextIn();
     }
 
     void stop_page3_animations()
@@ -582,7 +608,7 @@ public:
         lv_obj_remove_flag(ComponensObj, LV_OBJ_FLAG_SCROLL_WITH_ARROW);
         lv_obj_add_event_cb(ComponensObj, scroll_event_cb, LV_EVENT_SCROLL, this);
         DComponens::lvgl_bind_event(ComponensObj, LV_EVENT_KEY, NULL,
-                                    std::bind(&LvSettingRollerPage2::key_event_cb, this, std::placeholders::_1));
+                                    std::bind(&LvSettingRollerPage2::handle_key_event, this, std::placeholders::_1));
 
         for (auto it = parent_node_.begin(); it != parent_node_.end(); ++it) {
             lv_obj_t *row = lv_obj_create(ComponensObj);

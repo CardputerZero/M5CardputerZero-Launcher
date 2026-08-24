@@ -44,10 +44,18 @@ public:
                             std::function<void()> back_callback,
                             LvSettingBluetoothListMode mode)
         : parent_node_(parent_node),
-          on_back(std::move(back_callback)),
           mode_(mode)
     {
+        LeaveSelfPage = std::move(back_callback);
         create_ui(parent);
+    }
+
+    void AnimateNextIn() override {}
+    void AnimateNextOut() override {}
+    void LoadNextPage() override {}
+    void LeaveNextPage() override
+    {
+        if (LeaveSelfPage) LeaveSelfPage();
     }
 
     ~LvSettingBluetoothPage3() override
@@ -94,7 +102,7 @@ public:
             ComponensObj,
             LV_EVENT_KEY,
             nullptr,
-            std::bind(&LvSettingBluetoothPage3::key_event_cb,
+            std::bind(&LvSettingBluetoothPage3::handle_key_event,
                       this,
                       std::placeholders::_1));
         keyboard_root_ = lv_screen_active();
@@ -717,14 +725,14 @@ private:
         }
     }
 
-    void key_event_cb(lv_event_t *event)
+    void handle_key_event(lv_event_t *event)
     {
         if (!event || lv_event_get_code(event) != LV_EVENT_KEY) return;
         const uint32_t key = lv_event_get_key(event);
         if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
             ++generation_;
             stop_scan();
-            if (on_back) on_back();
+            if (LeaveSelfPage) LeaveSelfPage();
         } else if (key == LV_KEY_UP) {
             if (move_selection(-1)) render();
         } else if (key == LV_KEY_DOWN) {
@@ -745,7 +753,6 @@ private:
     }
 
     NodeIter parent_node_;
-    std::function<void()> on_back;
     LvSettingBluetoothListMode mode_ = LvSettingBluetoothListMode::Connected;
     std::vector<cp0_bt_device_t> devices_;
     int selected_index_ = 0;
