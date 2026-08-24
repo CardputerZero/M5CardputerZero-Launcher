@@ -4,6 +4,7 @@
 #include <array>
 #include <atomic>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
@@ -13,12 +14,12 @@
 #include <memory>
 #include <new>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #include "cp0_bounded_task_registry.hpp"
 #include "cp0_font_service.hpp"
-#include "cp0_lvgl_app.h"
 #include "input_keys.h"
 #include "keyboard_input.h"
 #include "setting_tree_types.hpp"
@@ -41,6 +42,7 @@ public:
     static constexpr int ROW_H        = 22;
     static constexpr int ROW_Y        = 30;
     static constexpr int TITLE_W      = 300;
+    static constexpr int MOCK_AP_MAX  = 32;
     static constexpr std::size_t MAX_PASSWORD_BYTES = 64;
 
     LvSettingWifiScanPage3() = default;
@@ -161,12 +163,28 @@ public:
             ComponensObj, "", 8, SCREEN_H - 14, 0x555555, &lv_font_montserrat_10);
         create_password_panel();
 
+        initialize_mock_data();
         refresh_status();
         render();
         start_scan();
     }
 
 private:
+    struct MockAccessPoint {
+        std::string ssid;
+        std::string security;
+        int signal = 0;
+        bool in_use = false;
+        bool saved = false;
+    };
+
+    static constexpr int MOCK_ERROR_RADIO_OFF = -2;
+    static constexpr int MOCK_ERROR_AUTH      = -3;
+    static constexpr int MOCK_ERROR_NOT_FOUND = -4;
+    static constexpr int MOCK_ERROR_IP_CONFIG = -5;
+    static constexpr int MOCK_ERROR_SERVICE   = -6;
+    static constexpr int MOCK_ERROR_TIMEOUT   = -7;
+
     enum class View { List, Password, Connecting };
     enum class NetworkOperation { Connect, Forget };
     enum class ConnectionOrigin { OpenNetwork, SavedProfile, PasswordEntry };
@@ -189,7 +207,7 @@ private:
 
     struct ScanResult {
         std::shared_ptr<ScanState> state;
-        std::array<cp0_wifi_ap_t, CP0_WIFI_AP_MAX> access_points{};
+        std::array<MockAccessPoint, MOCK_AP_MAX> access_points{};
         int count = 0;
     };
 
@@ -201,12 +219,12 @@ private:
         ConnectionOrigin origin = ConnectionOrigin::OpenNetwork;
         std::string ssid;
         std::string password;
-        bool disconnect_active = false;
+        std::string security;
     };
 
     struct ConnectionResult {
         std::shared_ptr<ConnectionState> state;
-        int result = CP0_WIFI_ERROR_SERVICE;
+        int result = MOCK_ERROR_SERVICE;
     };
 
     static lv_obj_t *create_label(lv_obj_t *parent,
@@ -229,9 +247,9 @@ private:
     static const char *scan_error_message(int result)
     {
         switch (result) {
-        case CP0_WIFI_ERROR_RADIO_OFF: return "WiFi is off. Turn on Power to scan";
-        case CP0_WIFI_ERROR_TIMEOUT: return "WiFi scan timed out. Press R to retry";
-        case CP0_WIFI_ERROR_SERVICE: return "WiFi service unavailable. Press R to retry";
+        case MOCK_ERROR_RADIO_OFF: return "WiFi is off. Turn on Power to scan";
+        case MOCK_ERROR_TIMEOUT: return "WiFi scan timed out. Press R to retry";
+        case MOCK_ERROR_SERVICE: return "WiFi service unavailable. Press R to retry";
         default: return "WiFi scan failed. Press R to retry";
         }
     }
@@ -239,19 +257,19 @@ private:
     static const char *connection_error_message(int result)
     {
         switch (result) {
-        case CP0_WIFI_ERROR_RADIO_OFF: return "WiFi is off";
-        case CP0_WIFI_ERROR_AUTH: return "Incorrect password";
-        case CP0_WIFI_ERROR_NOT_FOUND: return "Network is no longer available";
-        case CP0_WIFI_ERROR_IP_CONFIG: return "Connected, but IP setup failed";
-        case CP0_WIFI_ERROR_TIMEOUT: return "Network operation timed out";
+        case MOCK_ERROR_RADIO_OFF: return "WiFi is off";
+        case MOCK_ERROR_AUTH: return "Incorrect password";
+        case MOCK_ERROR_NOT_FOUND: return "Network is no longer available";
+        case MOCK_ERROR_IP_CONFIG: return "Connected, but IP setup failed";
+        case MOCK_ERROR_TIMEOUT: return "Network operation timed out";
         default: return "WiFi service unavailable";
         }
     }
 
-    static bool is_open_security(const char *security)
+    static bool is_open_security(const std::string &security)
     {
-        if (!security || !security[0]) return true;
-        std::string value(security);
+        if (security.empty()) return true;
+        std::string value = security;
         std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
             return static_cast<char>(std::toupper(ch));
         });
@@ -336,6 +354,32 @@ private:
         lv_obj_add_flag(password_panel_, LV_OBJ_FLAG_HIDDEN);
     }
 
+    static MockAccessPoint make_mock_access_point(const char *ssid,
+                                                  const char *security,
+                                                  int signal,
+                                                  bool saved)
+    {
+        MockAccessPoint access_point;
+        access_point.ssid = ssid ? ssid : "";
+        access_point.security = security ? security : "OPEN";
+        access_point.signal = signal;
+        access_point.saved = saved;
+        return access_point;
+    }
+
+    void initialize_mock_data()
+    {
+        mock_networks_.clear();
+        mock_networks_.push_back(make_mock_access_point("CardputerZero", "WPA2", 96, true));
+        mock_networks_.push_back(make_mock_access_point("Office WiFi", "WPA2", 84, true));
+        mock_networks_.push_back(make_mock_access_point("M5Stack Guest", "OPEN", 72, false));
+        mock_networks_.push_back(make_mock_access_point("IoT-Lab", "WPA3", 61, false));
+        mock_networks_.push_back(make_mock_access_point("Cafe Free", "OPEN", 48, false));
+        mock_networks_.push_back(make_mock_access_point("Workshop", "WPA2", 35, false));
+        mock_connected_ssid_ = "CardputerZero";
+        mock_ip_ = "192.168.1.42";
+    }
+
     void render_password_panel()
     {
         if (!password_panel_) return;
@@ -394,13 +438,11 @@ private:
 
     void refresh_status()
     {
-        cp0_wifi_status_t status{};
-        const int result = cp0_wifi_status_read(&status);
-        if (result == 0 && status.connected) {
+        if (!mock_connected_ssid_.empty()) {
             title_text_ = "Connected WiFi: ";
-            title_text_ += status.ssid;
+            title_text_ += mock_connected_ssid_;
             title_text_ += "  ";
-            title_text_ += status.ip;
+            title_text_ += mock_ip_;
         } else {
             title_text_ = "WiFi: Not connected";
         }
@@ -458,7 +500,7 @@ private:
             if (access_point.saved) ssid += " *";
             set_row_text(row.ssid, ssid);
             set_row_text(row.security,
-                         access_point.security[0] ? access_point.security : "Open");
+                         access_point.security.empty() ? "Open" : access_point.security);
             char signal[16];
             std::snprintf(signal, sizeof(signal), "%d%%", std::clamp(access_point.signal, 0, 100));
             set_row_text(row.signal, signal);
@@ -644,8 +686,7 @@ private:
                                  const std::string &ssid,
                                  const std::string &password,
                                  const std::string &security,
-                                 ConnectionOrigin origin,
-                                 bool disconnect_active = false)
+                                 ConnectionOrigin origin)
     {
         if (ssid.empty() || connection_pending_) return false;
 
@@ -657,7 +698,6 @@ private:
         state->ssid = ssid;
         state->password = password;
         state->security = security;
-        state->disconnect_active = disconnect_active;
         connection_state_ = state;
         connection_pending_ = true;
         password_ssid_ = ssid;
@@ -669,23 +709,15 @@ private:
 
         connection_tasks_.reap_finished();
         if (!connection_tasks_.start([state] {
-                int result = CP0_WIFI_ERROR_SERVICE;
-                try {
-                    if (!state->stop.load(std::memory_order_acquire)) {
-                        if (state->operation == NetworkOperation::Forget) {
-                            result = cp0_wifi_profile_forget(state->ssid.c_str());
-                            if (result == 0 && state->disconnect_active)
-                                result = cp0_wifi_disconnect_active();
-                        } else {
-                            const char *password = state->password.empty()
-                                ? nullptr
-                                : state->password.c_str();
-                            result = cp0_wifi_connect(state->ssid.c_str(), password);
-                        }
-                    }
-                } catch (...) {
-                    result = CP0_WIFI_ERROR_SERVICE;
+                int result = 0;
+                for (int index = 0; index < 5; ++index) {
+                    if (state->stop.load(std::memory_order_acquire)) return;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(60));
                 }
+                if (state->operation == NetworkOperation::Connect &&
+                    state->origin == ConnectionOrigin::PasswordEntry &&
+                    state->password == "wrong")
+                    result = MOCK_ERROR_AUTH;
                 if (state->stop.load(std::memory_order_acquire)) return;
 
                 auto *queued = new (std::nothrow) ConnectionResult{state, result};
@@ -738,6 +770,19 @@ private:
         self->connection_pending_ = false;
 
         if (state->operation == NetworkOperation::Forget) {
+            if (result->result == 0) {
+                self->mock_networks_.erase(
+                    std::remove_if(self->mock_networks_.begin(),
+                                   self->mock_networks_.end(),
+                                   [&state](const MockAccessPoint &access_point) {
+                                       return state->ssid == access_point.ssid;
+                                   }),
+                    self->mock_networks_.end());
+                if (self->mock_connected_ssid_ == state->ssid) {
+                    self->mock_connected_ssid_.clear();
+                    self->mock_ip_.clear();
+                }
+            }
             self->view_ = View::List;
             self->password_ssid_.clear();
             self->password_security_.clear();
@@ -751,6 +796,10 @@ private:
         }
 
         if (result->result == 0) {
+            self->mock_connected_ssid_ = state->ssid;
+            self->mock_ip_ = "192.168.1.99";
+            for (auto &access_point : self->mock_networks_)
+                access_point.in_use = state->ssid == access_point.ssid ? 1 : 0;
             self->leave_password_prompt();
             self->refresh_status();
             self->render();
@@ -778,9 +827,9 @@ private:
             selected_index_ >= static_cast<int>(access_points_.size()))
             return;
 
-        const cp0_wifi_ap_t access_point =
+        const MockAccessPoint access_point =
             access_points_[static_cast<std::size_t>(selected_index_)];
-        if (access_point.in_use || access_point.ssid[0] == '\0') return;
+        if (access_point.in_use || access_point.ssid.empty()) return;
         if (is_open_security(access_point.security)) {
             start_connection(access_point.ssid, {}, ConnectionOrigin::OpenNetwork,
                              access_point.security);
@@ -799,17 +848,16 @@ private:
         if (selected_index_ < 0 ||
             selected_index_ >= static_cast<int>(access_points_.size()))
             return;
-        const cp0_wifi_ap_t &access_point =
+        const MockAccessPoint &access_point =
             access_points_[static_cast<std::size_t>(selected_index_)];
-        if (!access_point.saved || access_point.ssid[0] == '\0') return;
+        if (!access_point.saved || access_point.ssid.empty()) return;
         stop_scan();
         start_network_operation(
             NetworkOperation::Forget,
             access_point.ssid,
             {},
             access_point.security,
-            ConnectionOrigin::OpenNetwork,
-            access_point.in_use != 0);
+            ConnectionOrigin::OpenNetwork);
     }
 
     static void keyboard_event_cb(lv_event_t *event)
@@ -817,9 +865,44 @@ private:
         if (!event) return;
         auto *self = static_cast<LvSettingWifiScanPage3 *>(lv_event_get_user_data(event));
         auto *item = static_cast<const key_item *>(lv_event_get_param(event));
-        if (!self || !item || item->key_state != KBD_KEY_PRESSED) return;
-        if (item->key_code == KEY_R || item->semantic_key == KEY_R)
+        if (!self || !item) return;
+
+        const bool pressed = item->key_state == KBD_KEY_PRESSED ||
+                             item->key_state == KBD_KEY_REPEATED;
+        if (!pressed) return;
+
+        if (self->view_ == View::Password) {
+            if (item->key_code == KEY_ESC) {
+                self->leave_password_prompt();
+                self->start_scan();
+            } else if (item->key_code == KEY_ENTER || item->key_code == KEY_KPENTER) {
+                self->submit_password();
+            } else if (item->key_code == KEY_BACKSPACE || item->key_code == KEY_DELETE) {
+                self->erase_password_last();
+                self->render();
+            } else if (item->key_code == KEY_LEFT) {
+                self->move_password_cursor_left();
+                self->render();
+            } else if (item->key_code == KEY_RIGHT) {
+                self->move_password_cursor_right();
+                self->render();
+            } else if (item->key_code == KEY_LEFTALT) {
+                self->password_visible_ = !self->password_visible_;
+                self->render();
+            } else if (item->utf8[0]) {
+                self->append_password_text(item->utf8);
+                self->render();
+            }
+            lv_event_stop_processing(event);
+            return;
+        }
+
+        if (item->key_code == KEY_R || item->semantic_key == KEY_R) {
             self->start_scan();
+        } else if (item->key_code == KEY_D || item->semantic_key == KEY_D) {
+            self->forget_selected();
+        }
+        lv_event_stop_processing(event);
     }
 
     void start_scan()
@@ -841,22 +924,28 @@ private:
         scanning_ = true;
         render();
 
+        const std::vector<MockAccessPoint> mock_networks = mock_networks_;
+        const std::string mock_connected_ssid = mock_connected_ssid_;
+
         auto state = std::make_shared<ScanState>();
         state->lifetime = lifetime_token_;
         state->owner = this;
         scan_state_ = state;
 
-        if (!scan_tasks_.start([state] {
+        if (!scan_tasks_.start([state, mock_networks, mock_connected_ssid] {
                 auto result = std::make_unique<ScanResult>();
                 result->state = state;
-                try {
-                    if (!state->stop.load(std::memory_order_acquire)) {
-                        result->count = cp0_wifi_radio_enabled() != 0
-                            ? cp0_wifi_scan(result->access_points.data(), CP0_WIFI_AP_MAX)
-                            : CP0_WIFI_ERROR_RADIO_OFF;
-                    }
-                } catch (...) {
-                    result->count = CP0_WIFI_ERROR_SERVICE;
+                for (int index = 0; index < 5; ++index) {
+                    if (state->stop.load(std::memory_order_acquire)) return;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+                }
+                result->count = 0;
+                for (const auto &source : mock_networks) {
+                    if (result->count >= MOCK_AP_MAX) break;
+                    MockAccessPoint access_point = source;
+                    access_point.in_use = mock_connected_ssid == access_point.ssid;
+                    result->access_points[static_cast<std::size_t>(result->count++)] =
+                        access_point;
                 }
                 if (state->stop.load(std::memory_order_acquire)) return;
 
@@ -900,7 +989,7 @@ private:
 
     void apply_scan_result(const ScanResult &result)
     {
-        const int count = std::clamp(result.count, 0, CP0_WIFI_AP_MAX);
+        const int count = std::clamp(result.count, 0, MOCK_AP_MAX);
         if (result.count < 0) {
             access_points_.clear();
             selected_index_ = 0;
@@ -921,7 +1010,7 @@ private:
                 const auto selected = std::find_if(
                     access_points_.begin(),
                     access_points_.end(),
-                    [this](const cp0_wifi_ap_t &access_point) {
+                    [this](const MockAccessPoint &access_point) {
                         return selected_ssid_before_scan_ == access_point.ssid;
                     });
                 if (selected != access_points_.end()) {
@@ -938,7 +1027,7 @@ private:
 
     bool move_selection(int delta)
     {
-        if (scanning_ || access_points_.empty() || delta == 0) return false;
+        if (view_ != View::List || access_points_.empty() || delta == 0) return false;
         const int next = std::clamp(
             selected_index_ + delta,
             0,
@@ -952,6 +1041,42 @@ private:
     {
         if (!event || lv_event_get_code(event) != LV_EVENT_KEY) return;
         const uint32_t key = lv_event_get_key(event);
+
+        if (view_ == View::Password) {
+            if (key == LV_KEY_ESC) {
+                leave_password_prompt();
+                start_scan();
+            } else if (key == LV_KEY_ENTER) {
+                submit_password();
+            } else if (key == LV_KEY_BACKSPACE || key == LV_KEY_DEL) {
+                erase_password_last();
+                render();
+            } else if (key == LV_KEY_LEFT) {
+                move_password_cursor_left();
+                render();
+            } else if (key == LV_KEY_RIGHT) {
+                move_password_cursor_right();
+                render();
+            }
+            lv_event_stop_processing(event);
+            return;
+        }
+
+        if (view_ == View::Connecting) {
+            if (key == LV_KEY_ESC) {
+                stop_connection();
+                view_ = View::List;
+                scan_error_.clear();
+                render();
+                start_scan();
+            } else if (key == LV_KEY_LEFT && on_back) {
+                stop_connection();
+                on_back();
+            }
+            lv_event_stop_processing(event);
+            return;
+        }
+
         if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
             stop_scan();
             if (on_back) on_back();
@@ -959,7 +1084,11 @@ private:
             if (move_selection(-1)) render();
         } else if (key == LV_KEY_DOWN) {
             if (move_selection(1)) render();
-        } else if (key == LV_KEY_NEXT || key == 'r' || key == 'R') {
+        } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
+            activate_selected();
+        } else if (key == LV_KEY_DEL) {
+            forget_selected();
+        } else if (key == LV_KEY_NEXT) {
             start_scan();
         }
         lv_event_stop_processing(event);
@@ -967,20 +1096,42 @@ private:
 
     std::shared_ptr<bool> lifetime_token_ = std::make_shared<bool>(true);
     Cp0BoundedTaskRegistry scan_tasks_;
+    Cp0BoundedTaskRegistry connection_tasks_;
     std::shared_ptr<ScanState> scan_state_;
+    std::shared_ptr<ConnectionState> connection_state_;
     NodeIter parent_node_;
     std::function<void()> on_back;
     std::array<RowObjects, VISIBLE_ROWS> rows_{};
-    std::vector<cp0_wifi_ap_t> access_points_;
+    std::vector<MockAccessPoint> access_points_;
+    std::vector<MockAccessPoint> mock_networks_;
     int selected_index_ = 0;
     bool scanning_ = false;
     bool scan_restart_pending_ = false;
+    bool connection_pending_ = false;
+    View view_ = View::List;
     std::string selected_ssid_before_scan_;
     std::string title_text_;
     std::string scan_error_;
+    std::string mock_connected_ssid_;
+    std::string mock_ip_;
+    std::string password_ssid_;
+    std::string password_security_;
+    std::string password_;
+    std::string password_error_;
+    std::size_t password_cursor_byte_ = 0;
+    bool password_visible_ = false;
+    bool keyboard_mode_saved_ = false;
+    int previous_keypad_intercept_ = 0;
+    cp0_keyboard_input_context_t previous_input_context_ = KBD_INPUT_CONTEXT_NAVIGATION;
     lv_obj_t *title_ = nullptr;
     lv_obj_t *empty_ = nullptr;
     lv_obj_t *hint_ = nullptr;
+    lv_obj_t *password_panel_ = nullptr;
+    lv_obj_t *password_title_ = nullptr;
+    lv_obj_t *password_network_ = nullptr;
+    lv_obj_t *password_value_ = nullptr;
+    lv_obj_t *password_status_ = nullptr;
+    lv_obj_t *password_hint_ = nullptr;
     lv_obj_t *keyboard_root_ = nullptr;
     lv_event_dsc_t *keyboard_event_dsc_ = nullptr;
 };
