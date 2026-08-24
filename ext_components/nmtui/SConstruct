@@ -1,0 +1,72 @@
+# component/SConscript
+Import('env')
+import os
+from pathlib import Path
+
+with open(env['PROJECT_TOOL_S']) as f:
+    exec(f.read())
+
+
+if 'CONFIG_NMTUI_COMPONENT_ENABLED' in os.environ:
+    SRCS = AGlob('src/nmtui_wifi_adapter.cpp')
+    INCLUDE = [ADir('src')]
+    PRIVATE_INCLUDE = [
+        ADir('../cp0_lvgl/include'),
+        ADir('../cp0_lvgl/src'),
+    ]
+    REQUIREMENTS = ['cp0_lvgl']
+    STATIC_LIB = []
+    DYNAMIC_LIB = []
+    DEFINITIONS = []
+    DEFINITIONS_PRIVATE = []
+    LDFLAGS = []
+    LINK_SEARCH_PATH = []
+
+    sdk_path = Path(os.environ.get('SDK_PATH', ''))
+    sysroot_value = os.environ.get('CONFIG_TOOLCHAIN_SYSROOT', '')
+    sysroot = Path(sysroot_value) if sysroot_value else None
+    triplet = env.get('GCC_DUMPMACHINE', '')
+
+    if sysroot is not None:
+        nm_include = sysroot / 'usr' / 'include' / 'libnm'
+        glib_include = sysroot / 'usr' / 'include' / 'glib-2.0'
+        glib_arch_include = sysroot / 'usr' / 'lib' / triplet / 'glib-2.0' / 'include'
+        nm_lib_dir = sysroot / 'usr' / 'lib' / triplet
+        PRIVATE_INCLUDE += [str(nm_include), str(glib_include), str(glib_arch_include)]
+        LINK_SEARCH_PATH += [str(nm_lib_dir)]
+        REQUIREMENTS += [
+            ':libnm.so.0',
+            ':libgio-2.0.so.0',
+            ':libgobject-2.0.so.0',
+            ':libglib-2.0.so.0',
+        ]
+    else:
+        nm_cflags = pkg_config_cflags('libnm')
+        nm_ldflags = pkg_config_ldflags('libnm')
+        if nm_cflags:
+            DEFINITIONS_PRIVATE += nm_cflags
+        else:
+            PRIVATE_INCLUDE += ['/usr/include/libnm', '/usr/include/glib-2.0']
+        if nm_ldflags:
+            REQUIREMENTS += nm_ldflags
+        else:
+            REQUIREMENTS += ['-lnm', '-lgio-2.0', '-lgobject-2.0', '-lglib-2.0']
+
+    eventpp_include = sdk_path / 'github_source' / 'eventpp' / 'include'
+    if eventpp_include.exists():
+        PRIVATE_INCLUDE += [str(eventpp_include)]
+
+    env['COMPONENTS'].append({
+        'target': os.path.basename(env['component_dir']),
+        'SRCS': SRCS,
+        'INCLUDE': INCLUDE,
+        'PRIVATE_INCLUDE': PRIVATE_INCLUDE,
+        'REQUIREMENTS': REQUIREMENTS,
+        'STATIC_LIB': STATIC_LIB,
+        'DYNAMIC_LIB': DYNAMIC_LIB,
+        'DEFINITIONS': DEFINITIONS,
+        'DEFINITIONS_PRIVATE': DEFINITIONS_PRIVATE,
+        'LDFLAGS': LDFLAGS,
+        'LINK_SEARCH_PATH': LINK_SEARCH_PATH,
+        'REGISTER': 'shared' if 'CONFIG_NMTUI_DYNAMIC' in os.environ else 'static'
+    })
