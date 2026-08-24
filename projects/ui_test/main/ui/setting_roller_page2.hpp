@@ -47,7 +47,7 @@ public:
         LabelBoxX    = 0,
         LabelBoxW    = 80,
         StatusIconX  = 100,
-        Page3X       = LabelBoxW,
+        Page3X       = 0,
         PageWidth    = 320,
         Page3AnimMs  = 200,
     };
@@ -384,12 +384,14 @@ public:
 
         lv_obj_t *root = roller3_->Get();
         lv_anim_del(root, nullptr);
+        const int start_x = entering ? metric(LayoutMetric::PageWidth) : metric(LayoutMetric::Page3X);
         const int end_x = entering ? metric(LayoutMetric::Page3X) : metric(LayoutMetric::PageWidth);
+        lv_obj_set_x(root, start_x);
         lv_anim_t animation;
         lv_anim_init(&animation);
         lv_anim_set_var(&animation, root);
         lv_anim_set_exec_cb(&animation, reinterpret_cast<lv_anim_exec_xcb_t>(lv_obj_set_x));
-        lv_anim_set_values(&animation, lv_obj_get_x(root), end_x);
+        lv_anim_set_values(&animation, start_x, end_x);
         lv_anim_set_time(&animation, metric(LayoutMetric::Page3AnimMs));
         lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
         lv_anim_set_user_data(&animation, this);
@@ -571,6 +573,7 @@ public:
             lv_obj_set_pos(
                 right_arrow_, metric(LayoutMetric::PanelX) - lv_obj_get_width(right_arrow_) - 4,
                 metric(LayoutMetric::BarY) + (metric(LayoutMetric::BarH) - lv_obj_get_height(right_arrow_)) / 2);
+            lv_obj_update_layout(utility_obj_);
             right_arrow_base_x_ = lv_obj_get_x(right_arrow_);
         }
 
@@ -623,6 +626,7 @@ public:
             lv_obj_set_pos(
                 arrow_up_,
                 metric(LayoutMetric::PanelX) + metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(arrow_up_) / 2, 2);
+            lv_obj_update_layout(utility_obj_);
             arrow_up_base_x_ = lv_obj_get_x(arrow_up_);
         }
 
@@ -634,6 +638,7 @@ public:
                 arrow_down_,
                 metric(LayoutMetric::PanelX) + metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(arrow_down_) / 2,
                 metric(LayoutMetric::PanelH) - lv_obj_get_height(arrow_down_) - 4);
+            lv_obj_update_layout(utility_obj_);
             arrow_down_base_x_ = lv_obj_get_x(arrow_down_);
         }
 
@@ -647,6 +652,7 @@ public:
             lv_obj_set_pos(hint_,
                            metric(LayoutMetric::PanelX) + metric(LayoutMetric::PanelW) - 6 - lv_obj_get_width(hint_),
                            metric(LayoutMetric::BarY) + (metric(LayoutMetric::BarH) - lv_obj_get_height(hint_)) / 2);
+            lv_obj_update_layout(utility_obj_);
             hint_base_x_ = lv_obj_get_x(hint_);
         }
 
