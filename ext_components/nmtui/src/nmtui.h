@@ -1,8 +1,5 @@
-/*
- * nmtui.h - libnm-backed cp0 Wi-Fi signal adapter
- */
-#ifndef _NMTUI_H_
-#define _NMTUI_H_
+#ifndef NMTUI_H_INCLUDED
+#define NMTUI_H_INCLUDED
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,4 +18,4 @@ const char *nmtui_wifi_last_error(void);
 }
 #endif
 
-#endif /* _NMTUI_H_ */
+#endif

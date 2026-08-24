@@ -611,6 +611,8 @@ private:
             outcome.message = error_message(error);
             outcome.code = classify_error_text(outcome.message);
             g_error_free(error);
+            if (active)
+                g_object_unref(active);
             g_object_unref(cancellable);
             return outcome;
         }
@@ -653,22 +655,22 @@ private:
         auto *wifi = NM_DEVICE_WIFI(device);
         auto *access_point = find_access_point(wifi, ssid);
         auto *profile = find_profile(ssid);
-        std::string old_uuid;
-        if (profile) {
-            auto *setting = NM_SETTING_CONNECTION(nm_connection_get_setting(
-                NM_CONNECTION(profile), NM_TYPE_SETTING_CONNECTION));
-            const char *uuid = setting ? nm_setting_connection_get_uuid(setting) : nullptr;
-            if (uuid)
-                old_uuid = uuid;
-        }
 
         NMConnection *connection = nullptr;
         bool add = false;
+        std::string created_uuid;
         if (password.empty() && profile) {
             connection = NM_CONNECTION(profile);
         } else {
             connection = make_connection(ssid, password, hidden, access_point);
             add = true;
+            auto *setting = connection
+                ? NM_SETTING_CONNECTION(nm_connection_get_setting(
+                      connection, NM_TYPE_SETTING_CONNECTION))
+                : nullptr;
+            const char *uuid = setting ? nm_setting_connection_get_uuid(setting) : nullptr;
+            if (uuid)
+                created_uuid = uuid;
         }
         if (!connection)
             return CP0_WIFI_ERROR_INVALID;
@@ -683,7 +685,7 @@ private:
             if (outcome.active)
                 g_object_unref(outcome.active);
             if (add)
-                cleanup_failed_profile(ssid, old_uuid);
+                cleanup_failed_profile(ssid, created_uuid);
             set_error(outcome.message);
             return outcome.code;
         }
@@ -693,21 +695,23 @@ private:
             g_object_unref(outcome.active);
         if (!activated) {
             if (add)
-                cleanup_failed_profile(ssid, old_uuid);
+                cleanup_failed_profile(ssid, created_uuid);
             return CP0_WIFI_ERROR_TIMEOUT;
         }
 
         cp0_wifi_status_t status{};
         if (!read_status(status) || !status.connected || std::string(status.ssid) != ssid) {
             if (add)
-                cleanup_failed_profile(ssid, old_uuid);
+                cleanup_failed_profile(ssid, created_uuid);
             return CP0_WIFI_ERROR_IP_CONFIG;
         }
         return 0;
     }
 
-    void cleanup_failed_profile(const std::string &ssid, const std::string &old_uuid)
+    void cleanup_failed_profile(const std::string &ssid, const std::string &created_uuid)
     {
+        if (created_uuid.empty())
+            return;
         const GPtrArray *connections = nm_client_get_connections(client_);
         if (!connections)
             return;
@@ -719,7 +723,7 @@ private:
             auto *setting = NM_SETTING_CONNECTION(nm_connection_get_setting(
                 NM_CONNECTION(connection), NM_TYPE_SETTING_CONNECTION));
             const char *uuid = setting ? nm_setting_connection_get_uuid(setting) : nullptr;
-            if (old_uuid.empty() || !uuid || old_uuid != uuid) {
+            if (uuid && created_uuid == uuid) {
                 GError *error = nullptr;
                 G_GNUC_BEGIN_IGNORE_DEPRECATIONS
                 nm_remote_connection_delete(connection, nullptr, &error);
