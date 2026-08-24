@@ -51,22 +51,39 @@ public:
         return static_cast<int>(value);
     }
 
+    static constexpr int PASSWORD_TEXT_X = 8;
+    static constexpr int PASSWORD_TEXT_RIGHT_INSET = 8;
+    static constexpr int CURSOR_GAP = 2;
+    static constexpr int CURSOR_WIDTH = 2;
+    static constexpr int CURSOR_HEIGHT = 20;
+
     LvSettingWifiScanPage3() = default;
 
     LvSettingWifiScanPage3(lv_obj_t *parent,
                            const NodeIter &parent_node,
                            std::function<void()> back_callback)
-        : parent_node_(parent_node)
+        : LvSettingWifiScanPage3(
+              parent, parent_node, std::move(back_callback), false, true)
     {
-        LeaveSelfPage = std::move(back_callback);
-        initialize(parent);
     }
 
     LvSettingWifiScanPage3(lv_obj_t *parent,
                            const NodeIter &parent_node,
                            std::function<void()> back_callback,
                            bool hidden_network)
-        : parent_node_(parent_node), hidden_network_(hidden_network)
+        : LvSettingWifiScanPage3(
+              parent, parent_node, std::move(back_callback), hidden_network, true)
+    {
+    }
+
+    LvSettingWifiScanPage3(lv_obj_t *parent,
+                           const NodeIter &parent_node,
+                           std::function<void()> back_callback,
+                           bool hidden_network,
+                           bool wifi_power_enabled)
+        : parent_node_(parent_node),
+          hidden_network_(hidden_network),
+          wifi_power_enabled_(wifi_power_enabled)
     {
         LeaveSelfPage = std::move(back_callback);
         initialize(parent);
@@ -94,6 +111,10 @@ public:
         }
         restore_text_input_mode();
         lifetime_token_.reset();
+        if (password_cursor_timer_) {
+            lv_timer_delete(password_cursor_timer_);
+            password_cursor_timer_ = nullptr;
+        }
         stop_scan();
         stop_connection();
         scan_tasks_.join_all();
@@ -208,9 +229,15 @@ public:
             &lv_font_montserrat_10);
         create_password_panel();
         create_hidden_network_panel();
+        password_cursor_timer_ = lv_timer_create(password_cursor_timer_cb, 500, this);
 
         initialize_mock_data();
         refresh_status();
+        if (!wifi_power_enabled_) {
+            render();
+            show_power_warning();
+            return;
+        }
         if (hidden_network_) {
             show_hidden_ssid_prompt();
         } else {
@@ -374,11 +401,26 @@ private:
 
     static std::string masked_password(const std::string &password, bool visible)
     {
-        if (visible) return password + "_";
+        if (visible) return password;
         std::size_t codepoints = 0;
         for (unsigned char value : password)
             if (!is_utf8_continuation(value)) ++codepoints;
-        return std::string(codepoints, '*') + "_";
+        return std::string(codepoints, '*');
+    }
+
+    static std::size_t display_cursor_offset(const std::string &password,
+                                             std::size_t cursor,
+                                             bool visible)
+    {
+        if (visible) return std::min(cursor, password.size());
+        std::size_t offset = 0;
+        std::size_t index = 0;
+        const std::size_t limit = std::min(cursor, password.size());
+        while (index < limit) {
+            index = next_utf8_end(password, index);
+            ++offset;
+        }
+        return offset;
     }
 
     void initialize(lv_obj_t *parent)
@@ -412,7 +454,24 @@ private:
         password_network_ = create_label(
             password_panel_, "", 8, 28, 0xCCCCCC, &lv_font_montserrat_10);
         password_value_ = create_label(
-            password_panel_, "_", 8, 50, 0xFFFFFF, &lv_font_montserrat_16);
+            password_panel_, "", PASSWORD_TEXT_X, 50, 0xFFFFFF, &lv_font_montserrat_16);
+        password_prefix_ = create_label(
+            password_panel_, "", PASSWORD_TEXT_X, 50, 0xFFFFFF, &lv_font_montserrat_16);
+        password_suffix_ = create_label(
+            password_panel_, "", PASSWORD_TEXT_X, 50, 0xFFFFFF, &lv_font_montserrat_16);
+        password_cursor_bar_ = lv_obj_create(password_panel_);
+        if (password_cursor_bar_) {
+            lv_obj_set_size(password_cursor_bar_, CURSOR_WIDTH, CURSOR_HEIGHT);
+            lv_obj_set_style_bg_color(
+                password_cursor_bar_, lv_color_hex(0x58A6FF), LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(password_cursor_bar_, LV_OPA_COVER, LV_PART_MAIN);
+            lv_obj_set_style_border_width(password_cursor_bar_, 0, LV_PART_MAIN);
+            lv_obj_set_style_pad_all(password_cursor_bar_, 0, LV_PART_MAIN);
+            lv_obj_clear_flag(password_cursor_bar_, LV_OBJ_FLAG_CLICKABLE);
+            lv_obj_add_flag(password_cursor_bar_, LV_OBJ_FLAG_HIDDEN);
+        }
+        if (password_prefix_) lv_obj_add_flag(password_prefix_, LV_OBJ_FLAG_HIDDEN);
+        if (password_suffix_) lv_obj_add_flag(password_suffix_, LV_OBJ_FLAG_HIDDEN);
         password_status_ = create_label(
             password_panel_, "", 8, 78, 0xFF4444, &lv_font_montserrat_10);
         password_hint_ = create_label(
@@ -431,6 +490,59 @@ private:
         if (password_status_) lv_obj_set_width(password_status_, metric(LayoutMetric::ScreenW) - 16);
         if (password_hint_) lv_obj_set_width(password_hint_, metric(LayoutMetric::ScreenW) - 16);
         lv_obj_add_flag(password_panel_, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    void render_password_editor()
+    {
+        if (!password_prefix_ || !password_suffix_) return;
+        const std::string display = masked_password(password_, password_visible_);
+        const std::size_t split = std::min(
+            display_cursor_offset(password_, password_cursor_byte_, password_visible_),
+            display.size());
+        const std::string prefix = display.substr(0, split);
+        const std::string suffix = display.substr(split);
+        const int field_right = metric(LayoutMetric::ScreenW) - PASSWORD_TEXT_RIGHT_INSET;
+        const int max_prefix_width = std::max(
+            0,
+            field_right - PASSWORD_TEXT_X - CURSOR_GAP - CURSOR_WIDTH - CURSOR_GAP);
+
+        lv_obj_set_width(password_prefix_, LV_SIZE_CONTENT);
+        lv_label_set_long_mode(password_prefix_, LV_LABEL_LONG_CLIP);
+        lv_label_set_text(password_prefix_, prefix.c_str());
+        lv_obj_set_pos(password_prefix_, PASSWORD_TEXT_X, 50);
+        lv_obj_update_layout(password_prefix_);
+        const int measured_prefix_width = lv_obj_get_width(password_prefix_);
+        const int prefix_width = std::min(measured_prefix_width, max_prefix_width);
+        if (measured_prefix_width > max_prefix_width) {
+            lv_obj_set_width(password_prefix_, max_prefix_width);
+            lv_label_set_long_mode(password_prefix_, LV_LABEL_LONG_CLIP);
+        }
+
+        const int cursor_x = PASSWORD_TEXT_X + prefix_width + CURSOR_GAP;
+        if (password_cursor_bar_) {
+            lv_obj_set_pos(password_cursor_bar_, cursor_x, 49);
+            if (password_cursor_visible_)
+                lv_obj_clear_flag(password_cursor_bar_, LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_add_flag(password_cursor_bar_, LV_OBJ_FLAG_HIDDEN);
+        }
+
+        const int suffix_x = cursor_x + CURSOR_WIDTH + CURSOR_GAP;
+        lv_label_set_text(password_suffix_, suffix.c_str());
+        lv_obj_set_pos(password_suffix_, suffix_x, 50);
+        lv_obj_set_width(password_suffix_, std::max(1, field_right - suffix_x));
+        lv_label_set_long_mode(password_suffix_, LV_LABEL_LONG_CLIP);
+    }
+
+    static void password_cursor_timer_cb(lv_timer_t *timer) noexcept
+    {
+        auto *self = timer
+            ? static_cast<LvSettingWifiScanPage3 *>(lv_timer_get_user_data(timer))
+            : nullptr;
+        if (!self || timer != self->password_cursor_timer_ || self->view_ != View::Password)
+            return;
+        self->password_cursor_visible_ = !self->password_cursor_visible_;
+        self->render_password_panel();
     }
 
     static lv_obj_t *create_hidden_input(lv_obj_t *parent, int y, uint32_t max_length)
@@ -455,6 +567,7 @@ private:
         lv_obj_set_style_border_width(input, 1, LV_PART_MAIN);
         lv_obj_set_style_radius(input, 3, LV_PART_MAIN);
         lv_obj_set_style_pad_left(input, 6, LV_PART_MAIN);
+        lv_obj_set_style_pad_right(input, 6, LV_PART_MAIN);
         lv_obj_set_style_pad_top(input, 3, LV_PART_MAIN);
         lv_obj_set_style_bg_opa(input, LV_OPA_TRANSP, LV_PART_CURSOR);
         lv_obj_set_style_border_color(input, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
@@ -535,6 +648,10 @@ private:
         lv_obj_remove_flag(password_panel_, LV_OBJ_FLAG_HIDDEN);
 
         if (view_ == View::Connecting) {
+            if (password_value_) lv_obj_clear_flag(password_value_, LV_OBJ_FLAG_HIDDEN);
+            if (password_prefix_) lv_obj_add_flag(password_prefix_, LV_OBJ_FLAG_HIDDEN);
+            if (password_suffix_) lv_obj_add_flag(password_suffix_, LV_OBJ_FLAG_HIDDEN);
+            if (password_cursor_bar_) lv_obj_add_flag(password_cursor_bar_, LV_OBJ_FLAG_HIDDEN);
             const bool forgetting = connection_state_ &&
                 connection_state_->operation == NetworkOperation::Forget;
             if (password_title_)
@@ -556,6 +673,9 @@ private:
             return;
         }
 
+        if (password_value_) lv_obj_add_flag(password_value_, LV_OBJ_FLAG_HIDDEN);
+        if (password_prefix_) lv_obj_clear_flag(password_prefix_, LV_OBJ_FLAG_HIDDEN);
+        if (password_suffix_) lv_obj_clear_flag(password_suffix_, LV_OBJ_FLAG_HIDDEN);
         if (password_title_) lv_label_set_text(password_title_, "WiFi password");
         if (password_network_) {
             std::string text = password_ssid_;
@@ -566,9 +686,7 @@ private:
             }
             lv_label_set_text(password_network_, text.c_str());
         }
-        if (password_value_)
-            lv_label_set_text(
-                password_value_, masked_password(password_, password_visible_).c_str());
+        render_password_editor();
         if (password_status_) {
             lv_label_set_text(password_status_, password_error_.c_str());
             lv_obj_set_style_text_color(
@@ -653,6 +771,112 @@ private:
         } else {
             title_text_ = "WiFi: Not connected";
         }
+    }
+
+    void show_power_warning()
+    {
+        if (power_warning_ || !ComponensObj) return;
+        power_warning_overlay_ = lv_obj_create(ComponensObj);
+        if (!power_warning_overlay_) return;
+        lv_obj_set_size(power_warning_overlay_,
+                        metric(LayoutMetric::ScreenW),
+                        metric(LayoutMetric::ScreenH));
+        lv_obj_set_pos(power_warning_overlay_, 0, 0);
+        lv_obj_set_style_bg_color(power_warning_overlay_, lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(power_warning_overlay_, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_width(power_warning_overlay_, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(power_warning_overlay_, 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(power_warning_overlay_, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(power_warning_overlay_, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_clear_flag(power_warning_overlay_, LV_OBJ_FLAG_SCROLLABLE);
+
+        power_warning_ = lv_msgbox_create(power_warning_overlay_);
+        if (!power_warning_) {
+            lv_obj_delete(power_warning_overlay_);
+            power_warning_overlay_ = nullptr;
+            return;
+        }
+        lv_obj_set_size(power_warning_, 280, 92);
+        lv_obj_center(power_warning_);
+        lv_obj_set_style_radius(power_warning_, 4, LV_PART_MAIN);
+        lv_obj_set_style_border_width(power_warning_, 1, LV_PART_MAIN);
+        lv_obj_set_style_border_color(power_warning_, lv_color_hex(0xFFAA00), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(power_warning_, lv_color_hex(0x171717), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(power_warning_, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(power_warning_, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(power_warning_, LV_OBJ_FLAG_SCROLLABLE);
+
+        lv_obj_t *title = lv_msgbox_add_title(power_warning_, "WiFi power is off");
+        lv_obj_t *header = lv_msgbox_get_header(power_warning_);
+        lv_obj_t *content = lv_msgbox_get_content(power_warning_);
+        lv_obj_t *message = lv_msgbox_add_text(power_warning_, "Turn on Power before continuing.");
+        lv_obj_t *ok_button = lv_msgbox_add_footer_button(power_warning_, "OK");
+        lv_obj_t *footer = lv_msgbox_get_footer(power_warning_);
+        lv_obj_t *ok_label = ok_button ? lv_obj_get_child(ok_button, 0) : nullptr;
+
+        if (header) {
+            lv_obj_set_height(header, 30);
+            lv_obj_set_style_bg_opa(header, LV_OPA_TRANSP, LV_PART_MAIN);
+            lv_obj_set_style_border_width(header, 0, LV_PART_MAIN);
+            lv_obj_set_style_pad_left(header, 12, LV_PART_MAIN);
+            lv_obj_set_style_pad_right(header, 12, LV_PART_MAIN);
+            lv_obj_set_style_pad_top(header, 0, LV_PART_MAIN);
+            lv_obj_set_style_pad_bottom(header, 0, LV_PART_MAIN);
+        }
+        if (title) {
+            lv_obj_set_style_text_color(title, lv_color_hex(0xFFAA00), LV_PART_MAIN);
+            lv_obj_set_style_text_font(title, &lv_font_montserrat_14, LV_PART_MAIN);
+        }
+        if (content) {
+            lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, LV_PART_MAIN);
+            lv_obj_set_style_border_width(content, 0, LV_PART_MAIN);
+            lv_obj_set_style_pad_left(content, 12, LV_PART_MAIN);
+            lv_obj_set_style_pad_right(content, 12, LV_PART_MAIN);
+        }
+        if (message) {
+            lv_obj_set_style_text_color(message, lv_color_hex(0xCCCCCC), LV_PART_MAIN);
+            lv_obj_set_style_text_font(message, &lv_font_montserrat_12, LV_PART_MAIN);
+        }
+        if (footer) {
+            lv_obj_set_height(footer, 28);
+            lv_obj_set_style_bg_opa(footer, LV_OPA_TRANSP, LV_PART_MAIN);
+            lv_obj_set_style_border_width(footer, 0, LV_PART_MAIN);
+            lv_obj_set_style_pad_left(footer, 12, LV_PART_MAIN);
+            lv_obj_set_style_pad_right(footer, 6, LV_PART_MAIN);
+            lv_obj_set_style_pad_top(footer, 0, LV_PART_MAIN);
+            lv_obj_set_style_pad_bottom(footer, 0, LV_PART_MAIN);
+            lv_obj_set_flex_align(footer, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        }
+        if (ok_button) {
+            lv_obj_set_width(ok_button, 28);
+            lv_obj_set_height(ok_button, 22);
+            lv_obj_set_style_bg_opa(ok_button, LV_OPA_TRANSP, LV_PART_MAIN);
+            lv_obj_set_style_border_width(ok_button, 0, LV_PART_MAIN);
+            lv_obj_set_style_pad_all(ok_button, 0, LV_PART_MAIN);
+        }
+        if (ok_label) {
+            lv_obj_set_style_text_color(ok_label, lv_color_hex(0x58A6FF), LV_PART_MAIN);
+            lv_obj_set_style_text_font(ok_label, &lv_font_montserrat_12, LV_PART_MAIN);
+        }
+        DComponens::lvgl_bind_event(
+            power_warning_,
+            LV_EVENT_KEY,
+            nullptr,
+            std::bind(&LvSettingWifiScanPage3::handle_key_event,
+                      this,
+                      std::placeholders::_1));
+    }
+
+    void close_power_warning()
+    {
+        if (!power_warning_) return;
+        lv_msgbox_close(power_warning_);
+        power_warning_ = nullptr;
+        if (power_warning_overlay_) {
+            lv_obj_delete(power_warning_overlay_);
+            power_warning_overlay_ = nullptr;
+        }
+        if (LeaveSelfPage) LeaveSelfPage();
     }
 
     void render()
@@ -821,10 +1045,13 @@ private:
 
     bool append_password_text(const char *text)
     {
-        return append_text(password_,
-                           password_cursor_byte_,
-                           text,
-                           static_cast<std::size_t>(metric(LayoutMetric::MaxPasswordBytes)));
+        const bool changed = append_text(
+            password_,
+            password_cursor_byte_,
+            text,
+            static_cast<std::size_t>(metric(LayoutMetric::MaxPasswordBytes)));
+        if (changed) password_cursor_visible_ = true;
+        return changed;
     }
 
     bool append_hidden_ssid_text(const char *text)
@@ -844,6 +1071,7 @@ private:
             bytes[index] = '\0';
         password_.erase(start, password_cursor_byte_ - start);
         password_cursor_byte_ = start;
+        password_cursor_visible_ = true;
         return true;
     }
 
@@ -852,6 +1080,7 @@ private:
         const std::size_t next = previous_utf8_start(password_, password_cursor_byte_);
         if (next == password_cursor_byte_) return false;
         password_cursor_byte_ = next;
+        password_cursor_visible_ = true;
         return true;
     }
 
@@ -860,6 +1089,7 @@ private:
         const std::size_t next = next_utf8_end(password_, password_cursor_byte_);
         if (next == password_cursor_byte_) return false;
         password_cursor_byte_ = next;
+        password_cursor_visible_ = true;
         return true;
     }
 
@@ -944,6 +1174,7 @@ private:
         password_security_ = security;
         password_error_ = error;
         password_visible_ = false;
+        password_cursor_visible_ = true;
         clear_password();
         enter_text_input_mode();
         render();
@@ -959,6 +1190,7 @@ private:
         password_security_ = "WPA2";
         password_error_.clear();
         password_visible_ = false;
+        password_cursor_visible_ = true;
         hidden_focus_ = 0;
         clear_hidden_ssid();
         clear_password();
@@ -1028,7 +1260,8 @@ private:
             render();
             return;
         }
-        start_connection(password_ssid_, password_, ConnectionOrigin::PasswordEntry);
+        start_connection(password_ssid_, password_, ConnectionOrigin::PasswordEntry,
+                         password_security_);
     }
 
     bool start_network_operation(NetworkOperation operation,
@@ -1213,9 +1446,6 @@ private:
         if (access_point.in_use || access_point.ssid.empty()) return;
         if (is_open_security(access_point.security)) {
             start_connection(access_point.ssid, {}, ConnectionOrigin::OpenNetwork,
-                             access_point.security);
-        } else if (access_point.saved) {
-            start_connection(access_point.ssid, {}, ConnectionOrigin::SavedProfile,
                              access_point.security);
         } else {
             show_password_prompt(access_point.ssid, access_point.security);
@@ -1457,6 +1687,14 @@ private:
         if (!event || lv_event_get_code(event) != LV_EVENT_KEY) return;
         const uint32_t key = lv_event_get_key(event);
 
+        if (power_warning_) {
+            if (key == LV_KEY_ESC || key == LV_KEY_LEFT || key == LV_KEY_ENTER ||
+                key == LV_KEY_RIGHT)
+                close_power_warning();
+            lv_event_stop_processing(event);
+            return;
+        }
+
         if (view_ == View::HiddenSsid) {
             if (!connection_pending_) {
                 if (key == LV_KEY_ESC) {
@@ -1561,7 +1799,9 @@ private:
     std::size_t password_cursor_byte_ = 0;
     int hidden_focus_ = 0;
     bool password_visible_ = false;
+    bool password_cursor_visible_ = true;
     bool hidden_network_ = false;
+    bool wifi_power_enabled_ = true;
     bool keyboard_mode_saved_ = false;
     int previous_keypad_intercept_ = 0;
     cp0_keyboard_input_context_t previous_input_context_ = KBD_INPUT_CONTEXT_NAVIGATION;
@@ -1572,6 +1812,9 @@ private:
     lv_obj_t *password_title_ = nullptr;
     lv_obj_t *password_network_ = nullptr;
     lv_obj_t *password_value_ = nullptr;
+    lv_obj_t *password_prefix_ = nullptr;
+    lv_obj_t *password_suffix_ = nullptr;
+    lv_obj_t *password_cursor_bar_ = nullptr;
     lv_obj_t *password_status_ = nullptr;
     lv_obj_t *password_hint_ = nullptr;
     lv_obj_t *hidden_panel_ = nullptr;
@@ -1580,4 +1823,7 @@ private:
     lv_obj_t *hidden_hint_ = nullptr;
     lv_obj_t *keyboard_root_ = nullptr;
     lv_event_dsc_t *keyboard_event_dsc_ = nullptr;
+    lv_timer_t *password_cursor_timer_ = nullptr;
+    lv_obj_t *power_warning_overlay_ = nullptr;
+    lv_obj_t *power_warning_ = nullptr;
 };

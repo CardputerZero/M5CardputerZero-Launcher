@@ -897,6 +897,11 @@ public:
     static constexpr int SCREEN_W = 320;
     static constexpr int SCREEN_H = 150;
     static constexpr std::size_t MAX_ALIAS_BYTES = CP0_BT_NAME_MAX - 1;
+    static constexpr int ALIAS_TEXT_X = 64;
+    static constexpr int ALIAS_TEXT_RIGHT_INSET = 8;
+    static constexpr int CURSOR_GAP = 2;
+    static constexpr int CURSOR_WIDTH = 2;
+    static constexpr int CURSOR_HEIGHT = 18;
 
     LvSettingBluetoothAliasPage3() = default;
 
@@ -923,6 +928,10 @@ public:
         if (api_timer_) {
             lv_timer_delete(api_timer_);
             api_timer_ = nullptr;
+        }
+        if (cursor_timer_) {
+            lv_timer_delete(cursor_timer_);
+            cursor_timer_ = nullptr;
         }
         {
             std::lock_guard<std::mutex> lock(api_dispatch_->mutex);
@@ -981,6 +990,7 @@ public:
                 this);
         }
         api_timer_ = lv_timer_create(api_result_timer_cb, 50, this);
+        cursor_timer_ = lv_timer_create(cursor_timer_cb, 500, this);
         render();
         request_api({"BtStatus"}, [this](int code, std::string data) {
             const auto fields = split_fields(data);
@@ -1073,16 +1083,57 @@ private:
                      cp0_fonts().get("Montserrat-Bold.ttf", 13, LV_FREETYPE_FONT_STYLE_BOLD));
         create_label(ComponensObj, "Name:", 8, 38, 52, 0xCCCCCC, &lv_font_montserrat_12);
 
-        std::string display = alias_.substr(0, cursor_);
-        display.push_back('_');
-        display += alias_.substr(cursor_);
-        create_label(ComponensObj,
-                     display.c_str(),
-                     64,
-                     36,
-                     SCREEN_W - 72,
-                     0xFFFFFF,
-                     &lv_font_montserrat_14);
+        const bool show_cursor = !saving_ && cursor_visible_;
+        if (!show_cursor) {
+            create_label(ComponensObj,
+                         alias_.c_str(),
+                         ALIAS_TEXT_X,
+                         36,
+                         SCREEN_W - ALIAS_TEXT_X - ALIAS_TEXT_RIGHT_INSET,
+                         0xFFFFFF,
+                         &lv_font_montserrat_14);
+        } else {
+            const std::string prefix = alias_.substr(0, cursor_);
+            const std::string suffix = alias_.substr(cursor_);
+            const int field_right = SCREEN_W - ALIAS_TEXT_RIGHT_INSET;
+            const int max_prefix_width = std::max(
+                0,
+                field_right - ALIAS_TEXT_X - CURSOR_GAP - CURSOR_WIDTH - CURSOR_GAP);
+            lv_obj_t *prefix_label = create_label(ComponensObj,
+                                                  prefix.c_str(),
+                                                  ALIAS_TEXT_X,
+                                                  36,
+                                                  0,
+                                                  0xFFFFFF,
+                                                  &lv_font_montserrat_14);
+            if (prefix_label) lv_obj_update_layout(prefix_label);
+            const int measured_prefix_width =
+                prefix_label ? lv_obj_get_width(prefix_label) : 0;
+            const int prefix_width = std::min(measured_prefix_width, max_prefix_width);
+            if (prefix_label && measured_prefix_width > max_prefix_width) {
+                lv_obj_set_width(prefix_label, max_prefix_width);
+                lv_label_set_long_mode(prefix_label, LV_LABEL_LONG_CLIP);
+            }
+            const int cursor_x = ALIAS_TEXT_X + prefix_width + CURSOR_GAP;
+            lv_obj_t *cursor_bar = lv_obj_create(ComponensObj);
+            if (cursor_bar) {
+                lv_obj_set_size(cursor_bar, CURSOR_WIDTH, CURSOR_HEIGHT);
+                lv_obj_set_pos(cursor_bar, cursor_x, 34);
+                lv_obj_set_style_bg_color(cursor_bar, lv_color_hex(0x58A6FF), LV_PART_MAIN);
+                lv_obj_set_style_bg_opa(cursor_bar, LV_OPA_COVER, LV_PART_MAIN);
+                lv_obj_set_style_border_width(cursor_bar, 0, LV_PART_MAIN);
+                lv_obj_set_style_pad_all(cursor_bar, 0, LV_PART_MAIN);
+                lv_obj_clear_flag(cursor_bar, LV_OBJ_FLAG_CLICKABLE);
+            }
+            const int suffix_x = cursor_x + CURSOR_WIDTH + CURSOR_GAP;
+            create_label(ComponensObj,
+                         suffix.c_str(),
+                         suffix_x,
+                         36,
+                         std::max(1, field_right - suffix_x),
+                         0xFFFFFF,
+                         &lv_font_montserrat_14);
+        }
 
         const char *hint = saving_ ? "Setting alias..." : "OK:set  BS:del  ESC:cancel";
         create_label(ComponensObj,
@@ -1238,6 +1289,17 @@ private:
         self->api_tasks_.reap_finished();
     }
 
+    static void cursor_timer_cb(lv_timer_t *timer) noexcept
+    {
+        auto *self = timer
+            ? static_cast<LvSettingBluetoothAliasPage3 *>(lv_timer_get_user_data(timer))
+            : nullptr;
+        if (!self || timer != self->cursor_timer_ || self->warning_active_ || self->saving_)
+            return;
+        self->cursor_visible_ = !self->cursor_visible_;
+        self->render();
+    }
+
     void append_text(const char *text)
     {
         if (saving_ || !text || !text[0]) return;
@@ -1246,6 +1308,7 @@ private:
         if (std::strpbrk(text, "\t\r\n")) return;
         alias_.insert(cursor_, text, length);
         cursor_ += length;
+        cursor_visible_ = true;
         error_message_.clear();
         render();
     }
@@ -1292,6 +1355,7 @@ private:
                 alias_.erase(previous_utf8_start(alias_, cursor_),
                              cursor_ - previous_utf8_start(alias_, cursor_));
                 cursor_ = previous_utf8_start(alias_, cursor_);
+                cursor_visible_ = true;
                 render();
             }
         } else if (key == LV_KEY_UP || key == LV_KEY_DOWN) {
@@ -1336,9 +1400,11 @@ private:
             }
         } else if (item->key_code == KEY_LEFT) {
             self->cursor_ = previous_utf8_start(self->alias_, self->cursor_);
+            self->cursor_visible_ = true;
             self->render();
         } else if (item->key_code == KEY_RIGHT) {
             self->cursor_ = next_utf8_end(self->alias_, self->cursor_);
+            self->cursor_visible_ = true;
             self->render();
         } else if (item->utf8[0]) {
             self->append_text(item->utf8);
@@ -1350,6 +1416,7 @@ private:
     std::string alias_;
     std::size_t cursor_ = 0;
     bool saving_ = false;
+    bool cursor_visible_ = true;
     bool status_known_ = false;
     bool powered_ = false;
     bool warning_active_ = false;
@@ -1358,6 +1425,7 @@ private:
     lv_obj_t *keyboard_root_ = nullptr;
     lv_event_dsc_t *keyboard_event_dsc_ = nullptr;
     lv_timer_t *api_timer_ = nullptr;
+    lv_timer_t *cursor_timer_ = nullptr;
     Cp0BoundedTaskRegistry api_tasks_;
     std::shared_ptr<Cp0BluetoothUiApiDispatch> api_dispatch_ =
         std::make_shared<Cp0BluetoothUiApiDispatch>();
