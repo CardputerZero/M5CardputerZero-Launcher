@@ -2,7 +2,10 @@
 
 #include <atomic>
 #include <cstdio>
+#include <cstring>
 #include <memory>
+#include <mutex>
+#include <sstream>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -132,12 +135,184 @@ static void append_numeric_options(Tree &tree, const NodeIter &parent, int first
 }
 
 bool mork_api_read_flag = false;
+static std::mutex mork_api_mutex;
 
+
+#if 0
+static std::unique_ptr<DComponens::LvglComponensBase> bluetooth_alias_page_factory(
+    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+{
+    std::string alias = page_node->label;
+    constexpr const char *prefix = "Alias: ";
+    if (alias.rfind(prefix, 0) == 0) alias.erase(0, std::strlen(prefix));
+    return std::make_unique<LvSettingBluetoothAliasPage3>(
+        parent,
+        page_node,
+        std::move(on_back),
+        std::move(alias),
+        [page_node](std::string value) {
+            page_node->label = "Alias: " + std::move(value);
+        });
+}
+
+
+static bool bluetooth_power_state = false;
+static bool bluetooth_discoverable_state = false;
+static bool bluetooth_named_only_state = true;
+static bool bluetooth_power_pending = false;
+static bool bluetooth_discoverable_pending = false;
+static std::recursive_mutex bluetooth_state_mutex;
+
+static bool query_bluetooth_status(bool &powered, bool &discoverable)
+{
+    bool success = false;
+    try {
+        cp0_signal_bt_api({"BtStatus"}, [&](int code, std::string data) {
+            std::istringstream input(data);
+            std::string powered_text;
+            std::string address;
+            std::string discoverable_text;
+            std::string alias;
+            if (code != 0 || !std::getline(input, powered_text, '\t') ||
+                !std::getline(input, address, '\t') ||
+                !std::getline(input, discoverable_text, '\t') ||
+                !std::getline(input, alias, '\t'))
+                return;
+            if ((powered_text != "0" && powered_text != "1") ||
+                (discoverable_text != "0" && discoverable_text != "1"))
+                return;
+            powered = powered_text == "1";
+            discoverable = discoverable_text == "1";
+            success = true;
+        });
+    } catch (...) {
+    }
+    return success;
+}
+
+static void bluetooth_toggle_api(int cmd,
+                                 void *data,
+                                 bool &state,
+                                 const char *command)
+{
+    std::lock_guard<std::recursive_mutex> state_lock(bluetooth_state_mutex);
+    if (cmd == SettingApiReadFlag && data) {
+        bool powered = bluetooth_power_state;
+        bool discoverable = bluetooth_discoverable_state;
+        if (command &&
+            !((std::strcmp(command, "BtPower") == 0 && bluetooth_power_pending) ||
+              (std::strcmp(command, "BtDiscoverable") == 0 &&
+               bluetooth_discoverable_pending)) &&
+            query_bluetooth_status(powered, discoverable)) {
+            state = std::strcmp(command, "BtDiscoverable") == 0 ? discoverable : powered;
+            if (std::strcmp(command, "BtPower") == 0)
+                bluetooth_power_state = powered;
+            else if (std::strcmp(command, "BtDiscoverable") == 0)
+                bluetooth_discoverable_state = discoverable;
+        }
+        *static_cast<bool *>(data) = state;
+    } else if (cmd == SettingApiReadFlagTimeStart && data) {
+        auto *result = static_cast<SettingApiReadFlagTimeStartData *>(data);
+        bool powered = bluetooth_power_state;
+        bool discoverable = bluetooth_discoverable_state;
+        if (command &&
+            !((std::strcmp(command, "BtPower") == 0 && bluetooth_power_pending) ||
+              (std::strcmp(command, "BtDiscoverable") == 0 &&
+               bluetooth_discoverable_pending)) &&
+            query_bluetooth_status(powered, discoverable)) {
+            state = std::strcmp(command, "BtDiscoverable") == 0 ? discoverable : powered;
+            if (std::strcmp(command, "BtPower") == 0)
+                bluetooth_power_state = powered;
+            else if (std::strcmp(command, "BtDiscoverable") == 0)
+                bluetooth_discoverable_state = discoverable;
+        }
+        std::get<0>(*result) = state;
+    } else if (cmd == SettingApiActivate) {
+        if (command &&
+            ((std::strcmp(command, "BtPower") == 0 && bluetooth_power_pending) ||
+             (std::strcmp(command, "BtDiscoverable") == 0 &&
+              bluetooth_discoverable_pending)))
+            return;
+
+        const bool next = !state;
+        if (command) {
+            try {
+                if (std::strcmp(command, "BtPower") == 0)
+                    bluetooth_power_pending = true;
+                if (std::strcmp(command, "BtDiscoverable") == 0)
+                    bluetooth_discoverable_pending = true;
+
+                // Publish the requested value before dispatching.  The SDL backend
+                // completes synchronously, while BlueZ may complete asynchronously;
+                // the callback below is the single error rollback path for both.
+                state = next;
+                cp0_signal_bt_api({command, next ? "1" : "0"},
+                                  [command, next](int code, std::string) {
+                                      std::lock_guard<std::recursive_mutex> state_lock(
+                                          bluetooth_state_mutex);
+                                      if (std::strcmp(command, "BtPower") == 0) {
+                                          bluetooth_power_pending = false;
+                                          if (code != 0) bluetooth_power_state = !next;
+                                      } else if (std::strcmp(command, "BtDiscoverable") == 0) {
+                                          bluetooth_discoverable_pending = false;
+                                          if (code != 0) bluetooth_discoverable_state = !next;
+                                      }
+                                  });
+            } catch (...) {
+                std::lock_guard<std::recursive_mutex> state_lock(bluetooth_state_mutex);
+                if (std::strcmp(command, "BtPower") == 0) {
+                    bluetooth_power_pending = false;
+                    bluetooth_power_state = !next;
+                } else if (std::strcmp(command, "BtDiscoverable") == 0) {
+                    bluetooth_discoverable_pending = false;
+                    bluetooth_discoverable_state = !next;
+                }
+            }
+        } else {
+            state = next;
+        }
+    }
+}
+
+static void bluetooth_power_api(int cmd, void *data)
+{
+    bluetooth_toggle_api(cmd, data, bluetooth_power_state, "BtPower");
+}
+
+static void bluetooth_discoverable_api(int cmd, void *data)
+{
+    if (cmd == SettingApiActivate) {
+        auto *page = static_cast<LvSettingRollerPage2 *>(data);
+        std::lock_guard<std::recursive_mutex> state_lock(bluetooth_state_mutex);
+        if (bluetooth_discoverable_pending) return;
+
+        bool powered = bluetooth_power_state;
+        bool status_powered = powered;
+        bool ignored_discoverable = false;
+        if (!bluetooth_power_pending &&
+            query_bluetooth_status(status_powered, ignored_discoverable)) {
+            // This gate only observes Power; pressing Discoverable must not
+            // rewrite either independent toggle state.
+            powered = status_powered;
+        }
+        if (bluetooth_power_pending || !powered) {
+            if (page) page->show_power_warning();
+            return;
+        }
+    }
+    bluetooth_toggle_api(cmd, data, bluetooth_discoverable_state, "BtDiscoverable");
+}
+
+static void bluetooth_named_only_api(int cmd, void *data)
+{
+    bluetooth_toggle_api(cmd, data, bluetooth_named_only_state, nullptr);
+}
+#endif
 static void mork_api(int cmd, void *data)
 {
+    std::lock_guard<std::mutex> state_lock(mork_api_mutex);
     if (cmd == SettingApiReadFlag && data) {
         bool *flag         = static_cast<bool *>(data);
-        mork_api_read_flag = !mork_api_read_flag;
         *flag              = mork_api_read_flag;
     } else if (cmd == SettingApiReadFlagTimeStart && data) {
         auto *result = static_cast<SettingApiReadFlagTimeStartData *>(data);
@@ -146,6 +321,7 @@ static void mork_api(int cmd, void *data)
 #endif
         std::get<0>(*result) = mork_api_read_flag;
     } else if (cmd == SettingApiActivate) {
+        mork_api_read_flag = !mork_api_read_flag;
         printf("SettingApiActivate\n");
     }
 }
