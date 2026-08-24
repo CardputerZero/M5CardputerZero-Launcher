@@ -31,6 +31,84 @@
 #include "settings_sound_card_page.hpp"
 #include "settings_tree_types.hpp"
 
+static bool wifi_power_state = false;
+static bool wifi_power_pending = false;
+static std::recursive_mutex wifi_state_mutex;
+
+static bool query_wifi_power(bool &enabled)
+{
+    auto result = std::make_shared<std::atomic<int>>(-1);
+    try {
+        cp0_signal_wifi_api({"RadioEnabled"},
+                            [result](int code, std::string) {
+                                result->store(code, std::memory_order_release);
+                            });
+    } catch (...) {
+        return false;
+    }
+
+    const int code = result->load(std::memory_order_acquire);
+    if (code != 0 && code != 1) return false;
+    enabled = code == 1;
+    return true;
+}
+
+static void wifi_power_api(int cmd, void *data)
+{
+    if (cmd == SettingApiReadFlag && data) {
+        {
+            std::lock_guard<std::recursive_mutex> lock(wifi_state_mutex);
+            if (wifi_power_pending) {
+                *static_cast<bool *>(data) = wifi_power_state;
+                return;
+            }
+        }
+
+        bool enabled = false;
+        const bool success = query_wifi_power(enabled);
+        std::lock_guard<std::recursive_mutex> lock(wifi_state_mutex);
+        if (!wifi_power_pending && success) wifi_power_state = enabled;
+        *static_cast<bool *>(data) = wifi_power_state;
+    } else if (cmd == SettingApiReadFlagTimeStart && data) {
+        auto *result = static_cast<SettingApiReadFlagTimeStartData *>(data);
+        {
+            std::lock_guard<std::recursive_mutex> lock(wifi_state_mutex);
+            if (wifi_power_pending) {
+                std::get<0>(*result) = wifi_power_state;
+                return;
+            }
+        }
+
+        bool enabled = false;
+        const bool success = query_wifi_power(enabled);
+        std::lock_guard<std::recursive_mutex> lock(wifi_state_mutex);
+        if (!wifi_power_pending && success) wifi_power_state = enabled;
+        std::get<0>(*result) = wifi_power_state;
+    } else if (cmd == SettingApiActivate) {
+        bool next = false;
+        {
+            std::lock_guard<std::recursive_mutex> lock(wifi_state_mutex);
+            if (wifi_power_pending) return;
+            next = !wifi_power_state;
+            wifi_power_state = next;
+            wifi_power_pending = true;
+        }
+
+        try {
+            cp0_signal_wifi_api({"RadioSetEnabled", next ? "on" : "off"},
+                                [next](int code, std::string) {
+                                    std::lock_guard<std::recursive_mutex> lock(wifi_state_mutex);
+                                    wifi_power_pending = false;
+                                    if (code != 0) wifi_power_state = !next;
+                                });
+        } catch (...) {
+            std::lock_guard<std::recursive_mutex> lock(wifi_state_mutex);
+            wifi_power_pending = false;
+            wifi_power_state = !next;
+        }
+    }
+}
+
 static std::unique_ptr<DComponens::LvglComponensBase> roller_page_factory(lv_obj_t *parent, const NodeIter &page_node,
                                                                           std::function<void()> on_back)
 {
@@ -93,14 +171,20 @@ static std::unique_ptr<DComponens::LvglComponensBase> wifi_scan_page3_factory(lv
                                                                               const NodeIter &page_node,
                                                                               std::function<void()> on_back)
 {
-    return std::make_unique<LvSettingWifiScanPage3>(parent, page_node, std::move(on_back));
+    bool enabled = false;
+    query_wifi_power(enabled);
+    return std::make_unique<LvSettingWifiScanPage3>(
+        parent, page_node, std::move(on_back), false, enabled);
 }
 
 static std::unique_ptr<DComponens::LvglComponensBase> wifi_add_hidden_page_factory(lv_obj_t *parent,
                                                                                    const NodeIter &page_node,
                                                                                    std::function<void()> on_back)
 {
-    return std::make_unique<LvSettingWifiScanPage3>(parent, page_node, std::move(on_back), true);
+    bool enabled = false;
+    query_wifi_power(enabled);
+    return std::make_unique<LvSettingWifiScanPage3>(
+        parent, page_node, std::move(on_back), true, enabled);
 }
 
 static std::unique_ptr<DComponens::LvglComponensBase> adb_guide_page_factory(lv_obj_t *parent,
@@ -138,7 +222,6 @@ bool mork_api_read_flag = false;
 static std::mutex mork_api_mutex;
 
 
-#if 0
 static std::unique_ptr<DComponens::LvglComponensBase> bluetooth_alias_page_factory(
     lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
 {
@@ -307,7 +390,6 @@ static void bluetooth_named_only_api(int cmd, void *data)
 {
     bluetooth_toggle_api(cmd, data, bluetooth_named_only_state, nullptr);
 }
-#endif
 static void mork_api(int cmd, void *data)
 {
     std::lock_guard<std::mutex> state_lock(mork_api_mutex);
@@ -392,7 +474,7 @@ public:
 
         {
             NodeIter wifi = mode_tree.append_child(root, SettingEntry{"WiFi", roller_page_factory});
-            mode_tree.append_child(wifi, SettingEntry{"Power", mork_api, true});
+            mode_tree.append_child(wifi, SettingEntry{"Power", wifi_power_api, true});
             mode_tree.append_child(wifi, SettingEntry{"Scan", wifi_scan_page3_factory, PageType::FullCustom});
             mode_tree.append_child(
                 wifi,
@@ -503,10 +585,16 @@ public:
 
         {
             NodeIter bluetooth = mode_tree.append_child(root, SettingEntry{"Bluetooth", roller_page_factory});
-            mode_tree.append_child(bluetooth, SettingEntry{"Power", mork_api, true});
-            mode_tree.append_child(bluetooth, SettingEntry{"Alias: CardputerZero"});
-            mode_tree.append_child(bluetooth, SettingEntry{"Discoverable", mork_api, true});
-            mode_tree.append_child(bluetooth, SettingEntry{"Named Only", mork_api, true});
+            mode_tree.append_child(bluetooth, SettingEntry{"Power", bluetooth_power_api, true});
+            mode_tree.append_child(
+                bluetooth,
+                SettingEntry{"Alias: CardputerZero", bluetooth_alias_page_factory});
+            mode_tree.append_child(
+                bluetooth,
+                SettingEntry{"Discoverable", bluetooth_discoverable_api, true});
+            mode_tree.append_child(
+                bluetooth,
+                SettingEntry{"Named Only", bluetooth_named_only_api, true});
             mode_tree.append_child(
                 bluetooth,
                 SettingEntry{"Connected", bluetooth_connected_page_factory, PageType::FullCustom});

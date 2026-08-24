@@ -622,6 +622,13 @@ public:
         if (!roller3_ || !roller3_->Get()) return;
 
         page3_transitioning_ = true;
+        if (utility_obj_) {
+            if (entering) {
+                lv_obj_add_flag(utility_obj_, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_clear_flag(utility_obj_, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
         if (!entering && input_group_) {
             lv_group_remove_obj(roller3_->Get());
         }
