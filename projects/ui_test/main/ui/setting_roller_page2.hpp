@@ -89,23 +89,18 @@ public:
         auto selected_node = std::next(parent_node_.begin(), selected_index);
         if (!selected_node->page_factory || page3_transitioning_ || roller3_ || !parent_) return;
 
-        SetSelfUiMode(selected_node->page_type);
-
         lv_group_t *group = ComponensObj ? lv_obj_get_group(ComponensObj) : nullptr;
-        if (ComponensObj && group) lv_group_remove_obj(ComponensObj);
-        input_group_ = group;
 
         roller3_ = selected_node->page_factory(ui_APP_Container, selected_node,
                                                std::bind(&LvSettingRollerPage2::LeaveNextPage, this));
         if (!roller3_ || !roller3_->Get()) {
             roller3_.reset();
-            SetSelfUiMode(PageType::Normal);
-            if (ComponensObj && group) {
-                lv_group_add_obj(group, ComponensObj);
-                lv_group_focus_obj(ComponensObj);
-            }
             return;
         }
+
+        if (ComponensObj && group) lv_group_remove_obj(ComponensObj);
+        input_group_ = group;
+        SetSelfUiMode(PageType::NextPageNeeded);
 
         lv_obj_set_style_translate_x(roller3_->Get(), 0, LV_PART_MAIN);
         lv_obj_set_x(roller3_->Get(), metric(LayoutMetric::PageWidth));
@@ -212,8 +207,7 @@ public:
         if (mode == PageType::FullCustom) return;
 
         const bool enabled = mode == PageType::NextPageNeeded;
-        NextActive         = enabled;
-        // for(int i = 0; i < )
+        NextActive = enabled;
 
         update_arrow_visibility();
 
@@ -238,15 +232,9 @@ public:
             lv_obj_t *label = row ? lv_obj_get_child(row, 0) : nullptr;
             if (!label) continue;
 
-            if (enabled) {
-                lv_obj_set_width(label, metric(LayoutMetric::LabelBoxW));
-                lv_obj_set_x(label, metric(LayoutMetric::LabelBoxX));
-                lv_label_set_long_mode(label, index == static_cast<uint32_t>(selected_index)
-                                                  ? LV_LABEL_LONG_SCROLL_CIRCULAR
-                                                  : LV_LABEL_LONG_CLIP);
-            }
+            const int distance = std::abs(static_cast<int32_t>(index) - selected_index);
+            style_label(label, distance, enabled);
         }
-        lv_obj_send_event(ComponensObj, LV_EVENT_SCROLL, ComponensObj);
     }
 
     void update_arrow_visibility()
@@ -413,7 +401,7 @@ public:
         }
     }
 
-    void animate_first_page_objects()
+    void animate_first_page_objects(bool entering)
     {
         if (!ui_APP_Container || !utility_obj_) return;
 
@@ -421,7 +409,8 @@ public:
         for (uint32_t index = 0; index < child_count; ++index) {
             lv_obj_t *object = lv_obj_get_child(ui_APP_Container, index);
             if (!object || object == utility_obj_) break;
-            animate_object_to(object, lv_obj_get_x(object) - metric(LayoutMetric::PageWidth));
+            const int offset = entering ? -metric(LayoutMetric::PageWidth) : metric(LayoutMetric::PageWidth);
+            animate_object_to(object, lv_obj_get_x(object) + offset);
         }
     }
 
@@ -442,7 +431,7 @@ public:
         if (!entering && input_group_) {
             lv_group_remove_obj(roller3_->Get());
         }
-        if (entering) animate_first_page_objects();
+        animate_first_page_objects(entering);
         animate_object_to(selection_bg_, page2_target_x(selection_bg_, entering));
         animate_object_to(ComponensObj, page2_target_x(ComponensObj, entering));
         animate_object_to(arrow_up_, page2_target_x(arrow_up_, entering));
@@ -585,7 +574,7 @@ public:
             right_arrow_base_x_ = lv_obj_get_x(right_arrow_);
         }
 
-        ComponensObj = lv_obj_create(parent);
+        ComponensObj = lv_obj_create(utility_obj_);
         if (!ComponensObj) return;
         lv_obj_set_size(ComponensObj, metric(LayoutMetric::PanelW), metric(LayoutMetric::PanelH));
         lv_obj_set_pos(ComponensObj, metric(LayoutMetric::PanelX), 0);

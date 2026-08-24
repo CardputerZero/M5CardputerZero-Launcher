@@ -420,9 +420,21 @@ public:
      */
     void create_ui(lv_obj_t *parent) override
     {
+        lv_obj_t *page_container = lv_obj_create(parent);
+        if (!page_container) return;
+        lv_obj_set_size(page_container, 320, 150);
+        lv_obj_set_pos(page_container, 0, 0);
+        lv_obj_set_style_bg_opa(page_container, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(page_container, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(page_container, 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(page_container, 0, LV_PART_MAIN);
+        lv_obj_remove_flag(page_container, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_remove_flag(page_container, LV_OBJ_FLAG_SCROLLABLE);
+
         // Create the center highlight background. It does not accept input or scroll itself.
-        selection_bg_          = lv_obj_create(parent);
+        selection_bg_          = lv_obj_create(page_container);
         lv_obj_t *selection_bg = selection_bg_;
+        if (!selection_bg) return;
         lv_obj_set_size(selection_bg, 312, 21);
         lv_obj_set_pos(selection_bg, 4, 66);
         selection_bg_base_x_ = lv_obj_get_x(selection_bg);
@@ -435,7 +447,8 @@ public:
 
         // Create the scrolling container. Reserve three row heights above and below so the first and last entries can
         // also snap to the center.
-        ComponensObj = lv_obj_create(parent);
+        ComponensObj = lv_obj_create(page_container);
+        if (!ComponensObj) return;
         lv_obj_set_size(ComponensObj, 320, 150);
         lv_obj_set_pos(ComponensObj, 0, 20);
         lv_obj_center(ComponensObj);
@@ -449,13 +462,13 @@ public:
         lv_obj_set_style_pad_row(ComponensObj, 0, LV_PART_MAIN);
 
         // Create and position the scrolling hint arrows.
-        arrow_up_ = lv_img_create(parent);
+        arrow_up_ = lv_img_create(page_container);
 
         lv_img_set_src(arrow_up_, &setting_red_up);
         lv_obj_update_layout(arrow_up_);
         lv_obj_set_pos(arrow_up_, metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(arrow_up_) / 2, 2);
 
-        arrow_down_ = lv_img_create(parent);
+        arrow_down_ = lv_img_create(page_container);
 
         lv_img_set_src(arrow_down_, &setting_red_down);
         lv_obj_update_layout(arrow_down_);

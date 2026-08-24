@@ -7801,8 +7801,6 @@ public:
         BarY            = 66,
         BarW            = 312,
         BarH            = 22,
-        TitleCenterX    = 60,
-        TitleBoxW       = 84,
         ValueListX      = 100,
         ValueListW      = 120,
         ValueCenterX    = ValueListW / 2,
@@ -7845,7 +7843,6 @@ public:
         }
         selection_bg_ = nullptr;
         value_list_   = nullptr;
-        title_label_  = nullptr;
         right_arrow_  = nullptr;
         arrow_up_     = nullptr;
         arrow_down_   = nullptr;
@@ -7899,27 +7896,6 @@ public:
         lv_obj_set_y(label, std::max(0, label_y));
     }
 
-    void update_title_position()
-    {
-        if (!title_label_) return;
-
-        lv_obj_set_width(title_label_, LV_SIZE_CONTENT);
-        lv_label_set_long_mode(title_label_, LV_LABEL_LONG_CLIP);
-        lv_obj_update_layout(title_label_);
-
-        if (lv_obj_get_width(title_label_) > metric(LayoutMetric::TitleBoxW)) {
-            lv_obj_set_width(title_label_, metric(LayoutMetric::TitleBoxW));
-            lv_label_set_long_mode(title_label_, LV_LABEL_LONG_SCROLL_CIRCULAR);
-            lv_obj_set_x(title_label_, metric(LayoutMetric::TitleCenterX) - metric(LayoutMetric::TitleBoxW) / 2);
-        } else {
-            lv_obj_set_x(title_label_, metric(LayoutMetric::TitleCenterX) - lv_obj_get_width(title_label_) / 2);
-        }
-
-        const int label_y =
-            metric(LayoutMetric::BarY) + (metric(LayoutMetric::BarH) - lv_obj_get_height(title_label_)) / 2;
-        lv_obj_set_y(title_label_, std::max(0, label_y));
-    }
-
     void update_value_styles()
     {
         int index = 0;
@@ -7937,20 +7913,18 @@ public:
 
     void update_right_arrow_position()
     {
-        if (!right_arrow_ || !title_label_ || item_count_ == 0) return;
+        if (!right_arrow_ || item_count_ == 0) return;
 
         lv_obj_t *row   = row_at(selected_index);
         lv_obj_t *label = row ? lv_obj_get_child(row, 0) : nullptr;
         if (!label) return;
 
-        lv_obj_update_layout(title_label_);
         lv_obj_update_layout(label);
         lv_obj_update_layout(right_arrow_);
 
-        const int title_right = lv_obj_get_x(title_label_) + lv_obj_get_width(title_label_);
         const int value_left  = metric(LayoutMetric::ValueListX) + lv_obj_get_x(label);
         const int arrow_width = lv_obj_get_width(right_arrow_);
-        const int arrow_x     = std::max(title_right + 4, value_left - 4 - arrow_width);
+        const int arrow_x     = value_left - 4 - arrow_width;
         const int arrow_y =
             metric(LayoutMetric::BarY) + (metric(LayoutMetric::BarH) - lv_obj_get_height(right_arrow_)) / 2;
         lv_obj_set_pos(right_arrow_, arrow_x, std::max(0, arrow_y));
@@ -8120,16 +8094,6 @@ protected:
             item_count_ = static_cast<uint32_t>(value_rows_.size());
         }
 
-        title_label_ = lv_label_create(ComponensObj);
-        if (title_label_) {
-            lv_label_set_text(title_label_, parent_node_->label.c_str());
-            lv_obj_set_style_text_font(
-                title_label_, cp0_fonts().get("Montserrat-Bold.ttf", 16, LV_FREETYPE_FONT_STYLE_BOLD), LV_PART_MAIN);
-            lv_obj_set_style_text_color(title_label_, lv_color_white(), LV_PART_MAIN);
-            lv_obj_set_style_text_align(title_label_, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
-            update_title_position();
-        }
-
         right_arrow_ = lv_img_create(ComponensObj);
         if (right_arrow_) {
             lv_img_set_src(right_arrow_, &setting_right_arrow);
@@ -8185,7 +8149,6 @@ private:
     std::list<lv_obj_t *> value_rows_;
     lv_obj_t *selection_bg_ = nullptr;
     lv_obj_t *value_list_   = nullptr;
-    lv_obj_t *title_label_  = nullptr;
     lv_obj_t *right_arrow_  = nullptr;
     lv_obj_t *arrow_up_     = nullptr;
     lv_obj_t *arrow_down_   = nullptr;
