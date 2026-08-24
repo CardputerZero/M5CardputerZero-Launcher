@@ -5,6 +5,7 @@ with open(env['PROJECT_TOOL_S']) as f:
     exec(f.read())
 
 SRCS = Glob('src/*.c*')
+SRCS += Glob('ui/settings_page*.cpp')
 INCLUDE = [ADir('.'), ADir('include'), ADir('ui')]
 PRIVATE_INCLUDE = []
 REQUIREMENTS = ['cp0_lvgl', 'lvgl_component', 'pthread', 'Sigslot', 'eventpp']

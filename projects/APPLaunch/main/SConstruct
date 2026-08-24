@@ -93,6 +93,7 @@ print('-- APPLaunch version: %s (%s, %s)' %
 # add srcs
 SRCS += Glob('src/*.c*')
 SRCS += append_srcs_dir(ADir('ui'))
+SRCS += append_srcs_dir(ADir('ui/settings'))
 # add includes
 INCLUDE += [ADir('.'), ADir('include'), ADir('ui'), str(_generated_include_dir)]
 
@@ -102,6 +103,7 @@ DEFINITIONS += ['-DLAUNCHER_GIT_COMMIT_RAW=%s' % _git_commit]
 DEFINITIONS += ['-DLAUNCHER_VERSION_RAW=%s' % _launcher_version]
 DEFINITIONS += ['-DLAUNCHER_CHANNEL_RAW=%s' % _launcher_channel]
 DEFINITIONS += ['-DLAUNCHER_BUILD_DATE_RAW=%s' % _launcher_build_date]
+DEFINITIONS += ['-DLAUNCHER_BUILD']
 
 # Startup animation (GIF splash): opt-in via environment variable
 if os.environ.get('APPLAUNCH_STARTUP_ANIMATION', '0') == '1':
