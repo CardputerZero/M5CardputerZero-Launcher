@@ -2,6 +2,7 @@
 
 #include "cp0_lvgl_app.h"
 #include "settings_adb_guide_page.hpp"
+#include "settings_battery_info_page.hpp"
 #include "settings_battery_calibration_page.hpp"
 #include "settings_bluetooth_connected_devices_page.hpp"
 #include "settings_bluetooth_scan_page.hpp"
@@ -12,6 +13,9 @@
 #include "settings_screen_timeout_page.hpp"
 #include "settings_sound_card_page.hpp"
 #include "settings_submenu_page.hpp"
+#include "settings_system_page.hpp"
+#include "settings_t12b_adapter.hpp"
+#include "settings_t12b_static_info_page.hpp"
 #include "settings_value_page.hpp"
 #include "settings_volume_page.hpp"
 #include "settings_wifi_page.hpp"
@@ -118,16 +122,7 @@ static std::unique_ptr<DComponens::LvglComponensBase> roller_page_factory(lv_obj
     if (page_node->label == "Launcher") {
         Tree *tree = settings_tree_factory_context();
         if (tree) {
-            tree->erase_children(page_node);
-            std::size_t app_count = 0;
-            const AppDescriptor *apps = launcher_app_registry_entries(&app_count);
-            for (std::size_t index = 0; index < app_count; ++index) {
-                const AppDescriptor &desc = apps[index];
-                if (!desc.configurable || !desc.label) continue;
-                tree->append_child(
-                    page_node,
-                    SettingEntry{std::string(desc.label), launcher_app_setting_api(desc), true});
-            }
+            settings_t12b::populate_launcher_children(*tree, page_node);
         }
     }
 #endif
@@ -397,28 +392,10 @@ void UISettingTreePage::create_page_detail()
 
 #ifdef LAUNCHER_BUILD
     mode_tree.append_child(root, SettingEntry{"Launcher", roller_page_factory});
-#else
-    {
-        NodeIter launcher = mode_tree.append_child(root, SettingEntry{"Launcher", roller_page_factory});
-        mode_tree.append_child(launcher, SettingEntry{"Calculator", mork_api, true});
-        mode_tree.append_child(launcher, SettingEntry{"LoRa", mork_api, true});
-        mode_tree.append_child(launcher, SettingEntry{"IP_PANEL", mork_api, true});
-        mode_tree.append_child(launcher, SettingEntry{"SSH", mork_api, true});
-        mode_tree.append_child(launcher, SettingEntry{"Tank", mork_api, true});
-    }
 #endif
     {
         NodeIter boot = mode_tree.append_child(root, SettingEntry{"Boot", roller_page_factory});
-        {
-            NodeIter reboot = mode_tree.append_child(boot, SettingEntry{"Reboot", confirm_page3_factory});
-            mode_tree.append_child(reboot, SettingEntry{"Yes"});
-            mode_tree.append_child(reboot, SettingEntry{"No"});
-        }
-        {
-            NodeIter shutdown = mode_tree.append_child(boot, SettingEntry{"Shutdown", confirm_page3_factory});
-            mode_tree.append_child(shutdown, SettingEntry{"Yes"});
-            mode_tree.append_child(shutdown, SettingEntry{"No"});
-        }
+        settings_t12b::append_boot_children(mode_tree, boot, confirm_page3_factory);
     }
 
     {
@@ -474,10 +451,8 @@ void UISettingTreePage::create_page_detail()
 
     {
         NodeIter info = mode_tree.append_child(root, SettingEntry{"Info", roller_page_factory});
-        mode_tree.append_child(info, SettingEntry{"Battery"});
-        mode_tree.append_child(info, SettingEntry{"Temp"});
-        mode_tree.append_child(info, SettingEntry{"Current"});
-        mode_tree.append_child(info, SettingEntry{"Voltage"});
+        mode_tree.append_child(
+            info, SettingEntry{"Battery", settings_battery_info_page_factory, PageType::FullCustom});
         NodeIter bq_calibrate = mode_tree.append_child(info, SettingEntry{"BQ Calibrate", bq_calibrate_page3_factory});
         mode_tree.append_child(bq_calibrate, SettingEntry{"Enter CAL"});
         mode_tree.append_child(bq_calibrate, SettingEntry{"CC Offset"});
@@ -486,35 +461,30 @@ void UISettingTreePage::create_page_detail()
     }
 
     {
-        NodeIter about = mode_tree.append_child(root, SettingEntry{"About", roller_page_factory});
-        mode_tree.append_child(about, SettingEntry{"M5CardputerZero"});
-        mode_tree.append_child(about, SettingEntry{"LVGL: 9.x"});
-        mode_tree.append_child(about, SettingEntry{"Build"});
-        mode_tree.append_child(about, SettingEntry{"Commit"});
+        mode_tree.append_child(
+            root, SettingEntry{"About", settings_t12b_about_page_factory, PageType::FullCustom});
     }
 
     {
-        NodeIter help = mode_tree.append_child(root, SettingEntry{"Help", roller_page_factory});
-        mode_tree.append_child(help, SettingEntry{"View Help"});
+        mode_tree.append_child(
+            root, SettingEntry{"Help", settings_t12b_help_page_factory, PageType::FullCustom});
     }
 
     {
         NodeIter ext_port = mode_tree.append_child(root, SettingEntry{"ExtPort", roller_page_factory});
-        mode_tree.append_child(ext_port, SettingEntry{"GROVE5V", mork_api, true});
-        mode_tree.append_child(ext_port, SettingEntry{"EXT5V", mork_api, true});
+        settings_t12b::append_ext_port_children(mode_tree, ext_port);
     }
 
     {
         NodeIter developer = mode_tree.append_child(root, SettingEntry{"Developer", roller_page_factory});
-        mode_tree.append_child(developer, SettingEntry{"ADB", mork_api, true});
+        mode_tree.append_child(developer, SettingEntry{"ADB", adb_toggle_api, true});
         mode_tree.append_child(
-            developer,
-            SettingEntry{"ADB guide", adb_guide_page_factory, adb_guide_api, PageType::FullCustom});
+            developer, SettingEntry{"ADB guide", adb_guide_page_factory, PageType::FullCustom});
     }
 
     {
         NodeIter rtc = mode_tree.append_child(root, SettingEntry{"RTC", roller_page_factory});
-        mode_tree.append_child(rtc, SettingEntry{"NTP", mork_api, true});
+        mode_tree.append_child(rtc, SettingEntry{"NTP", settings_rtc::settings_rtc_ntp_api, true});
         {
             NodeIter year = mode_tree.append_child(rtc, SettingEntry{"Year", rtc_page3_factory});
             append_numeric_options(mode_tree, year, 2000, 2099);
@@ -563,24 +533,15 @@ void UISettingTreePage::create_page_detail()
     }
 
     {
-        NodeIter ethernet = mode_tree.append_child(root, SettingEntry{"Ethernet", roller_page_factory});
-        mode_tree.append_child(ethernet, SettingEntry{"IP"});
-        mode_tree.append_child(ethernet, SettingEntry{"Gateway"});
-        mode_tree.append_child(ethernet, SettingEntry{"MAC"});
+        mode_tree.append_child(root, SettingEntry{"Ethernet", settings_ethernet_page_factory, PageType::FullCustom});
     }
 
     {
-        NodeIter account = mode_tree.append_child(root, SettingEntry{"Account", roller_page_factory});
-        mode_tree.append_child(account, SettingEntry{"Username"});
-        mode_tree.append_child(account, SettingEntry{"Password"});
-        mode_tree.append_child(account, SettingEntry{"Hostname"});
+        mode_tree.append_child(root, SettingEntry{"Account", settings_account_page_factory, PageType::FullCustom});
     }
 
     {
-        NodeIter update = mode_tree.append_child(root, SettingEntry{"Update", roller_page_factory});
-        mode_tree.append_child(update, SettingEntry{"Update Launcher"});
-        mode_tree.append_child(update, SettingEntry{"Version"});
-        mode_tree.append_child(update, SettingEntry{"Build"});
+        mode_tree.append_child(root, SettingEntry{"Update", settings_update_page_factory, PageType::FullCustom});
     }
 
     {

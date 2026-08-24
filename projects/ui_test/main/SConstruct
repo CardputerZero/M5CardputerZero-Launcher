@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 Import('env')
 with open(env['PROJECT_TOOL_S']) as f:
@@ -6,6 +7,14 @@ with open(env['PROJECT_TOOL_S']) as f:
 
 SRCS = Glob('src/*.c*')
 SRCS += Glob('ui/settings_page*.cpp')
+SRCS += Glob('ui/settings_rtc_api.cpp')
+SRCS += Glob('ui/settings_audio_api.cpp')
+SRCS += Glob('ui/settings_adb_api.cpp')
+SRCS += Glob('ui/settings_adb_state.cpp')
+SRCS += Glob('ui/settings_wifi_api.cpp')
+SRCS += Glob('ui/settings_system*.cpp')
+SRCS += Glob('ui/settings_t12b_*.cpp')
+SRCS += Glob('ui/model/setup_value_policy.cpp')
 INCLUDE = [ADir('.'), ADir('include'), ADir('ui')]
 PRIVATE_INCLUDE = []
 REQUIREMENTS = ['cp0_lvgl', 'lvgl_component', 'pthread', 'Sigslot', 'eventpp']
@@ -17,13 +26,15 @@ LDFLAGS = []
 LINK_SEARCH_PATH = []
 STATIC_FILES = []
 
-app_launch_static_root = os.path.join(env['PROJECT_PATH'], 'APPLaunch')
-if os.path.isdir(app_launch_static_root):
-    STATIC_FILES.append((app_launch_static_root, 'APPLaunch'))
+app_launch_static_root = Path(env['PROJECT_PATH']) / 'APPLaunch'
+if app_launch_static_root.is_dir():
+    STATIC_FILES.append((str(app_launch_static_root), 'APPLaunch'))
 
 
 SRCS += append_srcs_dir(ADir('assets'))
 
+project_target = 'ui_test'
+env['PROJECT_NAME'] = project_target
 
 lvgl_component = list(filter(lambda x: x['target'] == 'lvgl_component', env['COMPONENTS']))[0]
 toolchain_sysroot = os.environ.get('CONFIG_TOOLCHAIN_SYSROOT', '') or '/'
@@ -48,7 +59,7 @@ for src in lvgl_component['SRCS']:
 # REQUIREMENTS += ['Backward_cpp']
 
 
-env['COMPONENTS'].append({'target':env['PROJECT_NAME'],
+env['COMPONENTS'].append({'target':project_target,
                           'SRCS':SRCS,
                           'INCLUDE':INCLUDE,
                           'PRIVATE_INCLUDE':PRIVATE_INCLUDE,

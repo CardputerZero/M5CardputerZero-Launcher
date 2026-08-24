@@ -1,7 +1,6 @@
 #pragma once
 
 #include <algorithm>
-#include <charconv>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -22,6 +21,7 @@
 #include "hal_lvgl_bsp.h"
 #include "input_keys.h"
 #include "keyboard_input.h"
+#include "settings_bluetooth_api.hpp"
 #include "settings_tree_types.hpp"
 
 #define LVGL_COMPONENTS_ROLLER1_ONLY
@@ -29,15 +29,28 @@
 #undef LVGL_COMPONENTS_ROLLER1_ONLY
 
 struct Cp0BluetoothUiApiDispatch {
+    using Handler = std::function<void(int, std::string)>;
+
+    struct Result {
+        std::weak_ptr<bool> lifetime;
+        Handler handler;
+        Handler stale_handler;
+        uint64_t generation = 0;
+        int code = -1;
+        std::string data;
+    };
+
     std::mutex mutex;
     bool stopped = false;
-    std::deque<std::function<void()>> pending;
+    std::deque<Result> pending;
 };
 
 inline void cp0_bluetooth_ui_enqueue(
     const std::shared_ptr<Cp0BluetoothUiApiDispatch> &dispatch,
     const std::weak_ptr<bool> &lifetime,
-    std::function<void(int, std::string)> handler,
+    Cp0BluetoothUiApiDispatch::Handler handler,
+    Cp0BluetoothUiApiDispatch::Handler stale_handler,
+    uint64_t generation,
     int code,
     std::string data)
 {
@@ -45,11 +58,12 @@ inline void cp0_bluetooth_ui_enqueue(
     try {
         std::lock_guard<std::mutex> lock(dispatch->mutex);
         if (dispatch->stopped || lifetime.expired()) return;
-        dispatch->pending.emplace_back(
-            [lifetime, handler = std::move(handler), code, data = std::move(data)]() mutable {
-                if (lifetime.expired()) return;
-                if (handler) handler(code, std::move(data));
-            });
+        dispatch->pending.push_back({lifetime,
+                                     std::move(handler),
+                                     std::move(stale_handler),
+                                     generation,
+                                     code,
+                                     std::move(data)});
     } catch (...) {
     }
 }
@@ -117,14 +131,14 @@ public:
             lv_timer_delete(api_timer_);
             api_timer_ = nullptr;
         }
+        ++generation_;
+        stop_scan();
         {
             std::lock_guard<std::mutex> lock(api_dispatch_->mutex);
             api_dispatch_->stopped = true;
             api_dispatch_->pending.clear();
         }
-        ++generation_;
         page_lifetime_.reset();
-        stop_scan();
         api_tasks_.join_all();
         if (ComponensObj) {
             lv_anim_del(ComponensObj, nullptr);
@@ -178,6 +192,7 @@ private:
         LvSettingBluetoothPage3 *owner = nullptr;
         std::weak_ptr<bool> lifetime;
         ApiHandler handler;
+        ApiHandler stale_handler;
         uint64_t generation = 0;
         int code = -1;
         std::string data;
@@ -193,6 +208,7 @@ private:
                                    LvSettingBluetoothPage3 *owner,
                                    const std::weak_ptr<bool> &lifetime,
                                    const ApiHandler &handler,
+                                   const ApiHandler &stale_handler,
                                    uint64_t generation,
                                    int code,
                                    std::string data) noexcept
@@ -202,7 +218,13 @@ private:
             std::lock_guard<std::mutex> lock(dispatch->mutex);
             if (dispatch->stopped) return;
             dispatch->pending.push_back(
-                ApiResult{owner, lifetime, handler, generation, code, std::move(data)});
+                ApiResult{owner,
+                          lifetime,
+                          handler,
+                          stale_handler,
+                          generation,
+                          code,
+                          std::move(data)});
         } catch (...) {
         }
     }
@@ -216,39 +238,54 @@ private:
 
         std::deque<ApiResult> pending;
         {
+            self->api_tasks_.reap_finished();
             std::lock_guard<std::mutex> lock(self->api_dispatch_->mutex);
             pending.swap(self->api_dispatch_->pending);
         }
 
+        const std::weak_ptr<bool> lifetime = self->page_lifetime_;
         for (auto &result : pending) {
-            if (result.lifetime.expired() || result.owner != self ||
-                result.generation != self->generation_ || !self->ComponensObj)
+            if (result.lifetime.expired() || result.owner != self || !self->ComponensObj)
                 continue;
+            if (result.generation != self->generation_) {
+                try {
+                    if (result.stale_handler) result.stale_handler(result.code, std::move(result.data));
+                } catch (...) {
+                }
+                if (lifetime.expired()) break;
+                continue;
+            }
 
             try {
                 if (result.handler)
                     result.handler(result.code, std::move(result.data));
             } catch (...) {
             }
+            if (lifetime.expired()) break;
         }
-        self->api_tasks_.reap_finished();
     }
 
-    void request_api(std::list<std::string> arguments, ApiHandler handler)
+    void request_api(std::list<std::string> arguments,
+                     ApiHandler handler,
+                     ApiHandler stale_handler = {})
     {
         const std::weak_ptr<bool> lifetime = page_lifetime_;
         const uint64_t request_generation = generation_;
         const auto dispatch = api_dispatch_;
         const ApiHandler fallback_handler = handler;
+        const ApiHandler fallback_stale_handler = stale_handler;
         auto callback = [dispatch,
                          owner = this,
                          lifetime,
                          request_generation,
-                         handler = std::move(handler)](int code, std::string data) mutable {
+                         handler = std::move(handler),
+                         stale_handler = std::move(stale_handler)](int code,
+                                                                     std::string data) mutable {
             enqueue_api_result(dispatch,
                                owner,
                                lifetime,
                                handler,
+                               stale_handler,
                                request_generation,
                                code,
                                std::move(data));
@@ -267,104 +304,22 @@ private:
                                this,
                                lifetime,
                                fallback_handler,
+                               fallback_stale_handler,
                                request_generation,
                                -1,
                                "Bluetooth request could not be scheduled");
         }
     }
 
-    static std::vector<std::string> split_fields(const std::string &record)
-    {
-        std::vector<std::string> fields;
-        std::istringstream input(record);
-        std::string field;
-        while (std::getline(input, field, '\t')) fields.push_back(field);
-        if (!record.empty() && record.back() == '\t') fields.emplace_back();
-        return fields;
-    }
-
-    static bool parse_integer(std::string_view text, int &value)
-    {
-        if (text.empty()) return false;
-        int parsed = 0;
-        const char *begin = text.data();
-        const char *end = begin + text.size();
-        const auto result = std::from_chars(begin, end, parsed, 10);
-        if (result.ec != std::errc() || result.ptr != end) return false;
-        value = parsed;
-        return true;
-    }
-
-    static bool parse_bool(std::string_view text, bool &value)
-    {
-        int parsed = 0;
-        if (!parse_integer(text, parsed) || (parsed != 0 && parsed != 1)) return false;
-        value = parsed != 0;
-        return true;
-    }
-
     static bool decode_status(const std::string &data,
                               bool &powered,
                               std::string &address)
     {
-        const auto fields = split_fields(data);
-        if (fields.size() != 4) return false;
-        bool discoverable = false;
-        if (!parse_bool(fields[0], powered) ||
-            !parse_bool(fields[2], discoverable))
-            return false;
-        address = fields[1];
+        settings_bluetooth::StatusRecord decoded;
+        if (!settings_bluetooth::decode_status(data, decoded)) return false;
+        powered = decoded.powered;
+        address = std::move(decoded.address);
         return true;
-    }
-
-    static void copy_device_field(char *destination,
-                                  size_t destination_size,
-                                  const std::string &source)
-    {
-        if (!destination || destination_size == 0) return;
-        const size_t count = std::min(destination_size - 1, source.size());
-        std::copy_n(source.data(), count, destination);
-        destination[count] = '\0';
-    }
-
-    static bool decode_device(const std::string &line, cp0_bt_device_t &device)
-    {
-        const auto fields = split_fields(line);
-        if (fields.size() != 6) return false;
-
-        int rssi = 0;
-        bool connected = false;
-        bool paired = false;
-        bool trusted = false;
-        if (!parse_integer(fields[1], rssi) ||
-            !parse_bool(fields[2], connected) ||
-            !parse_bool(fields[3], paired) ||
-            !parse_bool(fields[4], trusted))
-            return false;
-
-        cp0_bt_device_t decoded{};
-        copy_device_field(decoded.address, sizeof(decoded.address), fields[0]);
-        copy_device_field(decoded.name, sizeof(decoded.name), fields[5]);
-        decoded.rssi = rssi;
-        decoded.connected = connected ? 1 : 0;
-        decoded.paired = paired ? 1 : 0;
-        decoded.trusted = trusted ? 1 : 0;
-        device = decoded;
-        return true;
-    }
-
-    static void decode_devices(const std::string &data,
-                               std::vector<cp0_bt_device_t> &devices)
-    {
-        devices.clear();
-        std::istringstream lines(data);
-        std::string line;
-        while (static_cast<int>(devices.size()) < CP0_BT_DEVICE_MAX &&
-               std::getline(lines, line)) {
-            if (line.empty()) continue;
-            cp0_bt_device_t device{};
-            if (decode_device(line, device)) devices.push_back(device);
-        }
     }
 
     static std::string device_text(const char *value, size_t size)
@@ -373,6 +328,26 @@ private:
         size_t length = 0;
         while (length < size && value[length]) ++length;
         return std::string(value, length);
+    }
+
+    static void copy_text(char *target, size_t capacity, std::string_view value)
+    {
+        if (!target || capacity == 0) return;
+        const size_t length = std::min(capacity - 1, value.size());
+        if (length > 0) std::memcpy(target, value.data(), length);
+        target[length] = '\0';
+    }
+
+    static void copy_device_record(const settings_bluetooth::DeviceRecord &source,
+                                   cp0_bt_device_t &target)
+    {
+        target = {};
+        copy_text(target.address, sizeof(target.address), source.address);
+        copy_text(target.name, sizeof(target.name), source.name);
+        target.rssi = source.rssi;
+        target.connected = source.connected ? 1 : 0;
+        target.paired = source.paired ? 1 : 0;
+        target.trusted = source.trusted ? 1 : 0;
     }
 
     static lv_obj_t *create_label(lv_obj_t *parent,
@@ -399,22 +374,28 @@ private:
 
     void request_status()
     {
+        if (status_pending_) return;
         status_pending_ = true;
-        request_api({"BtStatus"}, [this](int code, std::string data) {
+        request_api(settings_bluetooth::status_request(), [this](int code, std::string data) {
             status_pending_ = false;
-            status_known_ = code == 0 && decode_status(data, powered_, adapter_address_);
-            if (!status_known_) {
+            const bool decoded = code == 0 && decode_status(data, powered_, adapter_address_);
+            if (!decoded) {
+                ++generation_;
+                status_known_ = false;
                 powered_ = false;
                 adapter_address_.clear();
                 devices_.clear();
                 clamp_selection();
                 error_message_ = "Bluetooth service unavailable.";
+                stop_scan();
                 render();
                 return;
             }
 
+            status_known_ = true;
             error_message_.clear();
             if (!powered_) {
+                ++generation_;
                 devices_.clear();
                 clamp_selection();
                 stop_scan();
@@ -427,6 +408,8 @@ private:
                 start_scan();
             else
                 refresh_devices();
+        }, [this](int, std::string) {
+            status_pending_ = false;
         });
     }
 
@@ -437,19 +420,40 @@ private:
         loading_ = true;
         render();
 
-        const char *command = mode_ == LvSettingBluetoothListMode::Scan
-            ? "BtList"
-            : "BtConnectedList";
-        request_api({command, std::to_string(CP0_BT_DEVICE_MAX)},
+        std::list<std::string> request;
+        if (!settings_bluetooth::list_request(
+                mode_ == LvSettingBluetoothListMode::Connected,
+                CP0_BT_DEVICE_MAX,
+                request)) {
+            list_pending_ = false;
+            loading_ = false;
+            error_message_ = "Bluetooth device list unavailable.";
+            render();
+            return;
+        }
+        request_api(std::move(request),
                     [this](int code, std::string data) {
                         list_pending_ = false;
                         loading_ = false;
-                        if (code < 0) {
+                        if (!status_known_ || !powered_) {
                             devices_.clear();
-                            error_message_ = "Bluetooth device list unavailable.";
+                            error_message_ = "Bluetooth is off. Enable Power first.";
                         } else {
-                            decode_devices(data, devices_);
-                            error_message_.clear();
+                            std::vector<settings_bluetooth::DeviceRecord> decoded_devices;
+                            if (!settings_bluetooth::decode_device_list_reply(
+                                    code, data, decoded_devices, CP0_BT_DEVICE_MAX)) {
+                                devices_.clear();
+                                error_message_ = "Bluetooth device list unavailable.";
+                            } else {
+                                devices_.clear();
+                                devices_.reserve(decoded_devices.size());
+                                for (const auto &device : decoded_devices) {
+                                    cp0_bt_device_t converted{};
+                                    copy_device_record(device, converted);
+                                    devices_.push_back(converted);
+                                }
+                                error_message_.clear();
+                            }
                         }
                         clamp_selection();
                         render();
@@ -459,18 +463,34 @@ private:
     void start_scan()
     {
         if (mode_ != LvSettingBluetoothListMode::Scan || !powered_ ||
-            scan_start_pending_ || discovery_active_)
+            scan_start_pending_ || scan_stop_pending_ || discovery_active_)
             return;
 
         scan_start_pending_ = true;
         loading_ = true;
         error_message_.clear();
         render();
-        request_api({"BtDiscoveryStart"}, [this](int code, std::string) {
+        const auto complete_start = [this](int code, std::string data) {
             scan_start_pending_ = false;
-            if (code != 0) {
+            if (scan_stop_after_start_) {
+                scan_stop_after_start_ = false;
+                const auto continuation = std::move(scan_after_stop_);
+                scan_after_stop_ = nullptr;
+                if (!settings_bluetooth::success_without_payload(code, data)) {
+                    discovery_active_ = false;
+                    loading_ = false;
+                    if (continuation) continuation();
+                    return;
+                }
+                discovery_active_ = true;
+                stop_scan(continuation);
+                return;
+            }
+            if (!settings_bluetooth::success_without_payload(code, data) || !powered_) {
                 discovery_active_ = false;
-                error_message_ = "Bluetooth scan unavailable.";
+                error_message_ = powered_
+                    ? "Bluetooth scan unavailable."
+                    : "Bluetooth is off. Enable Power first.";
                 loading_ = false;
                 render();
                 return;
@@ -479,8 +499,17 @@ private:
             discovery_active_ = true;
             if (!scan_timer_)
                 scan_timer_ = lv_timer_create(scan_timer_cb, 1500, this);
+            if (!scan_timer_) {
+                error_message_ = "Bluetooth scan unavailable.";
+                stop_scan();
+                render();
+                return;
+            }
             refresh_devices();
-        });
+        };
+        request_api(settings_bluetooth::discovery_start_request(),
+                    complete_start,
+                    complete_start);
     }
 
     void restart_scan()
@@ -490,24 +519,76 @@ private:
 
         ++generation_;
         list_pending_ = false;
-        stop_scan();
-        start_scan();
+        stop_scan([this] {
+            if (status_known_ && powered_ && !action_pending_) start_scan();
+        });
     }
 
-    void stop_scan()
+    void stop_scan(std::function<void()> after_stop = {})
     {
         if (scan_timer_) {
             lv_timer_delete(scan_timer_);
             scan_timer_ = nullptr;
         }
-        if (discovery_active_ || scan_start_pending_) {
-            try {
-                cp0_signal_bt_api({"BtDiscoveryStop"}, [](int, std::string) {});
-            } catch (...) {
+        const bool needs_stop = discovery_active_ || scan_start_pending_;
+        if (scan_start_pending_) {
+            scan_stop_after_start_ = true;
+            if (after_stop) {
+                auto previous = std::move(scan_after_stop_);
+                scan_after_stop_ = [previous = std::move(previous),
+                                    after_stop = std::move(after_stop)]() mutable {
+                    if (previous) previous();
+                    if (after_stop) after_stop();
+                };
             }
+            discovery_active_ = false;
+            loading_ = false;
+            return;
         }
         discovery_active_ = false;
         scan_start_pending_ = false;
+        loading_ = false;
+
+        if (scan_stop_pending_) {
+            if (after_stop) {
+                auto previous = std::move(scan_after_stop_);
+                scan_after_stop_ = [previous = std::move(previous),
+                                    after_stop = std::move(after_stop)]() mutable {
+                    if (previous) previous();
+                    if (after_stop) after_stop();
+                };
+            }
+            return;
+        }
+
+        if (!needs_stop) {
+            if (after_stop) after_stop();
+            return;
+        }
+
+        scan_stop_pending_ = true;
+        scan_after_stop_ = std::move(after_stop);
+        const uint64_t stop_request_id = ++scan_stop_request_id_;
+        const auto complete_stop = [this, stop_request_id](int code,
+                                                           std::string data) {
+            if (!scan_stop_pending_ || stop_request_id != scan_stop_request_id_) return;
+            scan_stop_pending_ = false;
+            const auto continuation = std::move(scan_after_stop_);
+            scan_after_stop_ = nullptr;
+            if (!settings_bluetooth::success_without_payload(code, data)) {
+                error_message_ = "Bluetooth scan stop failed.";
+                if (action_waiting_for_scan_stop_) {
+                    action_waiting_for_scan_stop_ = false;
+                    cancel_action();
+                }
+                render();
+                return;
+            }
+            if (continuation) continuation();
+        };
+        request_api(settings_bluetooth::discovery_stop_request(),
+                    complete_stop,
+                    complete_stop);
     }
 
     static void scan_timer_cb(lv_timer_t *timer) noexcept
@@ -521,6 +602,35 @@ private:
         self->refresh_devices();
     }
 
+    void submit_action(bool connected, bool paired)
+    {
+        if (!action_pending_) return;
+        action_waiting_for_scan_stop_ = false;
+        if (connected) {
+            request_action("BtDisconnect", action_address_);
+        } else if (paired) {
+            request_action("BtConnect", action_address_);
+        } else {
+            std::list<std::string> request;
+            if (!settings_bluetooth::device_request("BtPair", action_address_, request)) {
+                finish_action(-1, "");
+                return;
+            }
+            request_api(std::move(request), [this](int code, std::string data) {
+                if (!settings_bluetooth::success_without_payload(code, data)) {
+                    finish_action(code, std::move(data));
+                    return;
+                }
+                action_message_ = "Connecting...";
+                render();
+                request_action("BtConnect", action_address_);
+            }, [this](int, std::string) {
+                cancel_action();
+                render();
+            });
+        }
+    }
+
     void activate_selected()
     {
         if (action_pending_ || selected_index_ < 0 ||
@@ -529,47 +639,67 @@ private:
 
         const cp0_bt_device_t device = devices_[static_cast<size_t>(selected_index_)];
         const std::string address = device_text(device.address, sizeof(device.address));
-        if (address.empty()) return;
+        if (!settings_bluetooth::valid_device_address(address)) {
+            error_message_ = "Bluetooth device address is invalid.";
+            render();
+            return;
+        }
 
         action_pending_ = true;
         action_address_ = address;
         ++generation_;
         list_pending_ = false;
-        stop_scan();
         action_message_ = device.connected ? "Disconnecting..."
             : device.paired ? "Connecting..." : "Pairing...";
         render();
 
-        if (device.connected) {
-            request_action("BtDisconnect", address);
-        } else if (device.paired) {
-            request_action("BtConnect", address);
+        const bool connected = device.connected != 0;
+        const bool paired = device.paired != 0;
+        const auto submit = [this, connected, paired] {
+            submit_action(connected, paired);
+        };
+        if (mode_ == LvSettingBluetoothListMode::Scan) {
+            action_waiting_for_scan_stop_ = discovery_active_ ||
+                scan_start_pending_ || scan_stop_pending_;
+            if (action_waiting_for_scan_stop_)
+                stop_scan(submit);
+            else {
+                stop_scan();
+                submit();
+            }
         } else {
-            request_api({"BtPair", address}, [this](int code, std::string) {
-                if (code != 0) {
-                    finish_action(code);
-                    return;
-                }
-                action_message_ = "Connecting...";
-                render();
-                request_action("BtConnect", action_address_);
-            });
+            submit();
         }
     }
 
     void request_action(const char *command, const std::string &address)
     {
-        request_api({command, address}, [this](int code, std::string) {
-            finish_action(code);
+        std::list<std::string> request;
+        if (!settings_bluetooth::device_request(command, address, request)) {
+            finish_action(-1, "");
+            return;
+        }
+        request_api(std::move(request), [this](int code, std::string data) {
+            finish_action(code, std::move(data));
+        }, [this](int, std::string) {
+            cancel_action();
+            render();
         });
     }
 
-    void finish_action(int code)
+    void cancel_action()
     {
+        action_waiting_for_scan_stop_ = false;
         action_pending_ = false;
         action_message_.clear();
         action_address_.clear();
-        if (code != 0) {
+    }
+
+    void finish_action(int code, std::string data)
+    {
+        const bool succeeded = settings_bluetooth::success_without_payload(code, data);
+        cancel_action();
+        if (!succeeded) {
             error_message_ = "Bluetooth action failed.";
             render();
             if (mode_ == LvSettingBluetoothListMode::Scan)
@@ -594,7 +724,11 @@ private:
         const std::string address = device_text(
             devices_[static_cast<size_t>(selected_index_)].address,
             sizeof(devices_[static_cast<size_t>(selected_index_)].address));
-        if (address.empty()) return;
+        if (!settings_bluetooth::valid_device_address(address)) {
+            error_message_ = "Bluetooth device address is invalid.";
+            render();
+            return;
+        }
         action_pending_ = true;
         ++generation_;
         list_pending_ = false;
@@ -876,12 +1010,17 @@ private:
     bool list_pending_ = false;
     bool loading_ = false;
     bool action_pending_ = false;
+    bool action_waiting_for_scan_stop_ = false;
     bool scan_start_pending_ = false;
+    bool scan_stop_after_start_ = false;
+    bool scan_stop_pending_ = false;
     bool discovery_active_ = false;
     std::string adapter_address_;
     std::string error_message_;
     std::string action_message_;
     std::string action_address_;
+    std::function<void()> scan_after_stop_;
+    uint64_t scan_stop_request_id_ = 0;
     lv_timer_t *scan_timer_ = nullptr;
     lv_timer_t *api_timer_ = nullptr;
     lv_obj_t *keyboard_root_ = nullptr;
@@ -915,6 +1054,8 @@ public:
           saved_callback_(std::move(saved_callback))
     {
         LeaveSelfPage = std::move(back_callback);
+        if (!settings_bluetooth::valid_alias(alias_)) alias_ = "CardputerZero";
+        backend_alias_ = alias_;
         cursor_ = alias_.size();
         create_ui(parent);
     }
@@ -933,6 +1074,7 @@ public:
             lv_timer_delete(cursor_timer_);
             cursor_timer_ = nullptr;
         }
+        ++generation_;
         {
             std::lock_guard<std::mutex> lock(api_dispatch_->mutex);
             api_dispatch_->stopped = true;
@@ -992,15 +1134,20 @@ public:
         api_timer_ = lv_timer_create(api_result_timer_cb, 50, this);
         cursor_timer_ = lv_timer_create(cursor_timer_cb, 500, this);
         render();
-        request_api({"BtStatus"}, [this](int code, std::string data) {
-            const auto fields = split_fields(data);
-            status_known_ = code == 0 && fields.size() == 4;
+        status_pending_ = true;
+        request_api(settings_bluetooth::status_request(), [this](int code, std::string data) {
+            status_pending_ = false;
+            settings_bluetooth::StatusRecord status;
+            status_known_ = code == 0 && settings_bluetooth::decode_status(data, status);
             if (status_known_) {
-                powered_ = fields[0] == "1";
-                if (!fields[3].empty()) {
-                    alias_ = fields[3];
+                powered_ = status.powered;
+                if (!status.alias.empty()) {
+                    alias_ = status.alias;
+                    backend_alias_ = status.alias;
                     cursor_ = alias_.size();
                 }
+            } else {
+                powered_ = false;
             }
             if (!status_known_) {
                 error_message_ = "Bluetooth service unavailable.";
@@ -1012,6 +1159,8 @@ public:
                 return;
             }
             render();
+        }, [this](int, std::string) {
+            status_pending_ = false;
         });
     }
 
@@ -1058,15 +1207,6 @@ private:
                (static_cast<unsigned char>(value[end]) & 0xC0u) == 0x80u)
             ++end;
         return end;
-    }
-
-    static std::vector<std::string> split_fields(const std::string &record)
-    {
-        std::vector<std::string> fields;
-        std::istringstream input(record);
-        std::string field;
-        while (std::getline(input, field, '\t')) fields.push_back(field);
-        return fields;
     }
 
     void render()
@@ -1244,14 +1384,28 @@ private:
         }
     }
 
-    void request_api(std::list<std::string> arguments, ApiHandler handler)
+    void request_api(std::list<std::string> arguments,
+                     ApiHandler handler,
+                     ApiHandler stale_handler = {})
     {
         const auto dispatch = api_dispatch_;
         const auto lifetime = lifetime_;
+        const uint64_t request_generation = generation_;
         const ApiHandler fallback_handler = handler;
-        auto callback = [dispatch, lifetime, handler = std::move(handler)](
+        const ApiHandler fallback_stale_handler = stale_handler;
+        auto callback = [dispatch,
+                         lifetime,
+                         request_generation,
+                         handler = std::move(handler),
+                         stale_handler = std::move(stale_handler)](
                             int code, std::string data) mutable {
-            cp0_bluetooth_ui_enqueue(dispatch, lifetime, handler, code, std::move(data));
+            cp0_bluetooth_ui_enqueue(dispatch,
+                                     lifetime,
+                                     std::move(handler),
+                                     std::move(stale_handler),
+                                     request_generation,
+                                     code,
+                                     std::move(data));
         };
         const bool started = api_tasks_.start(
             [arguments = std::move(arguments), callback = std::move(callback)]() mutable {
@@ -1265,6 +1419,8 @@ private:
             cp0_bluetooth_ui_enqueue(dispatch,
                                      lifetime,
                                      fallback_handler,
+                                     fallback_stale_handler,
+                                     request_generation,
                                      -1,
                                      "Bluetooth request could not be scheduled");
     }
@@ -1275,18 +1431,26 @@ private:
             ? static_cast<LvSettingBluetoothAliasPage3 *>(lv_timer_get_user_data(timer))
             : nullptr;
         if (!self || timer != self->api_timer_) return;
-        std::deque<std::function<void()>> pending;
+        self->api_tasks_.reap_finished();
+        std::deque<Cp0BluetoothUiApiDispatch::Result> pending;
         {
             std::lock_guard<std::mutex> lock(self->api_dispatch_->mutex);
             pending.swap(self->api_dispatch_->pending);
         }
-        for (auto &callback : pending) {
+        const std::weak_ptr<bool> lifetime = self->lifetime_;
+        for (auto &result : pending) {
+            if (result.lifetime.expired()) continue;
             try {
-                if (callback) callback();
+                if (result.generation != self->generation_) {
+                    if (result.stale_handler)
+                        result.stale_handler(result.code, std::move(result.data));
+                } else if (result.handler) {
+                    result.handler(result.code, std::move(result.data));
+                }
             } catch (...) {
             }
+            if (lifetime.expired()) break;
         }
-        self->api_tasks_.reap_finished();
     }
 
     static void cursor_timer_cb(lv_timer_t *timer) noexcept
@@ -1303,9 +1467,11 @@ private:
     void append_text(const char *text)
     {
         if (saving_ || !text || !text[0]) return;
-        const std::size_t length = std::strlen(text);
-        if (alias_.size() + length > MAX_ALIAS_BYTES) return;
-        if (std::strpbrk(text, "\t\r\n")) return;
+        const std::string_view input(text);
+        if (!settings_bluetooth::valid_text_field(input, MAX_ALIAS_BYTES, false) ||
+            alias_.size() + input.size() > MAX_ALIAS_BYTES)
+            return;
+        const std::size_t length = input.size();
         alias_.insert(cursor_, text, length);
         cursor_ += length;
         cursor_visible_ = true;
@@ -1315,23 +1481,44 @@ private:
 
     void save()
     {
-        if (saving_ || alias_.empty()) return;
+        if (saving_) return;
+        if (!settings_bluetooth::valid_alias(alias_)) {
+            error_message_ = "Name must be 1-63 UTF-8 bytes.";
+            render();
+            return;
+        }
         if (!status_known_ || !powered_) {
             show_power_warning();
             return;
         }
+        std::list<std::string> request;
+        if (!settings_bluetooth::alias_request(alias_, request)) {
+            error_message_ = "Name contains unsupported characters.";
+            render();
+            return;
+        }
+        alias_before_save_ = backend_alias_;
         saving_ = true;
         error_message_.clear();
         render();
-        request_api({"BtAlias", alias_}, [this](int code, std::string) {
+        request_api(std::move(request), [this](int code, std::string data) {
             saving_ = false;
-            if (code != 0) {
+            if (!settings_bluetooth::success_without_payload(code, data)) {
+                alias_ = alias_before_save_;
+                cursor_ = std::min(cursor_, alias_.size());
                 error_message_ = "Set alias failed.";
                 render();
                 return;
             }
+            backend_alias_ = alias_;
             if (saved_callback_) saved_callback_(alias_);
             if (LeaveSelfPage) LeaveSelfPage();
+        }, [this](int, std::string) {
+            saving_ = false;
+            alias_ = alias_before_save_;
+            cursor_ = std::min(cursor_, alias_.size());
+            error_message_ = "Set alias cancelled.";
+            render();
         });
     }
 
@@ -1414,11 +1601,14 @@ private:
 
     NodeIter parent_node_;
     std::string alias_;
+    std::string backend_alias_;
+    std::string alias_before_save_;
     std::size_t cursor_ = 0;
     bool saving_ = false;
     bool cursor_visible_ = true;
     bool status_known_ = false;
     bool powered_ = false;
+    bool status_pending_ = false;
     bool warning_active_ = false;
     std::string error_message_;
     std::function<void(std::string)> saved_callback_;
@@ -1430,4 +1620,5 @@ private:
     std::shared_ptr<Cp0BluetoothUiApiDispatch> api_dispatch_ =
         std::make_shared<Cp0BluetoothUiApiDispatch>();
     std::shared_ptr<bool> lifetime_ = std::make_shared<bool>(true);
+    uint64_t generation_ = 1;
 };

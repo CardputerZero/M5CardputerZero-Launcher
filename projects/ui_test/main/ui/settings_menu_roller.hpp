@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdio>
 #include <iterator>
 #include <list>
@@ -56,6 +57,12 @@ public:
     // Second-level roller object; created when entering a second-level page and destroyed when returning.
     std::unique_ptr<DComponens::LvglComponensBase> roller2_ = nullptr;
 
+    ~LvSettingRoller() override
+    {
+        cancel_async_tasks();
+        roller2_.reset();
+    }
+
     void AnimateNextIn(std::function<void()> animate_over_func) override
     {
         slide_page_objects(false, std::move(animate_over_func));
@@ -71,6 +78,7 @@ public:
         if (item_count_ == 0 || selected_index < 0 || selected_index >= static_cast<int32_t>(item_count_)) {
             return;
         }
+        if (roller2_) return;
 
         auto selected_node = std::next(parent_node_.begin(), selected_index);
         if (!selected_node->page_factory) return;
@@ -84,6 +92,16 @@ public:
 
         roller2_ = selected_node->page_factory(ui_APP_Container, selected_node,
                                                std::bind(&LvSettingRoller::LeaveNextPage, this));
+        if (!roller2_ || !roller2_->Get()) {
+            roller2_.reset();
+            SetSelfUiMode(PageType::Normal);
+            if (ComponensObj && input_group_) {
+                lv_group_add_obj(input_group_, ComponensObj);
+                top_in_group_ = true;
+                lv_group_focus_obj(ComponensObj);
+            }
+            return;
+        }
         AnimateNextIn([this]() {
             if (!input_group_ || !roller2_ || !roller2_->Get()) return;
 
@@ -95,7 +113,8 @@ public:
 
     void LeaveNextPage() override
     {
-        lv_async_call(lvgl_back_this, this);
+        if (leave_pending_.exchange(true, std::memory_order_acq_rel)) return;
+        if (!enqueue_async([this] { lvgl_back_this(this); })) leave_pending_.store(false, std::memory_order_release);
     }
 
     /**
@@ -187,7 +206,7 @@ public:
     /**
      * Perform the actual return-to-top-level operation in the LVGL thread.
      *
-     * The callback may originate from a second-level page keyboard event, so lv_async_call defers it until
+     * The callback may originate from a second-level page keyboard event, so the dispatch timer defers it until
      * it is safe to process in LVGL. This destroys the second-level page, restores the arrows,
      * restores the top-level entry styles, and returns keyboard focus to the top-level roller.
      */
@@ -195,6 +214,7 @@ public:
     {
         auto *self = static_cast<LvSettingRoller *>(p);
         if (!self) return;
+        self->leave_pending_.store(false, std::memory_order_release);
 
         lv_group_t *group = self->input_group_;
         if (self->roller2_ && self->roller2_->Get()) {
@@ -418,6 +438,7 @@ public:
      */
     void create_ui(lv_obj_t *parent) override
     {
+        ensure_async_dispatch();
         lv_obj_t *page_container = lv_obj_create(parent);
         if (!page_container) return;
         lv_obj_set_size(page_container, 320, 150);
@@ -578,6 +599,7 @@ private:
     int selection_bg_base_x_                   = 0;
     int componens_base_x_                      = 0;
     std::function<void()> page_animation_over_ = nullptr;
+    std::atomic_bool leave_pending_{false};
 
     // Up and Down scrolling hint arrows.
     lv_obj_t *arrow_up_   = nullptr;

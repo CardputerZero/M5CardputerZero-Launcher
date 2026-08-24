@@ -1,53 +1,81 @@
 #include "settings_page.hpp"
 
-#include <cstdio>
+#include "settings_adb_api.hpp"
+
 #include <mutex>
-
-void adb_guide_api(int cmd, void *)
-{
-    if (cmd == SettingApiActivate) printf("ADB guide activate\n");
-}
-
-bool mork_api_read_flag = false;
+#include <tuple>
 
 namespace {
 
-std::mutex mork_api_mutex;
+std::mutex adb_api_mutex;
+settings_adb::AdbApi adb_api;
+bool adb_enabled = false;
+bool adb_initialized = false;
+bool adb_pending = false;
 
-}
-
-void mork_api(int cmd, void *data)
+void refresh_adb_status()
 {
-    std::lock_guard<std::mutex> state_lock(mork_api_mutex);
-    if (cmd == SettingApiReadFlag && data) {
-        *static_cast<bool *>(data) = mork_api_read_flag;
-    } else if (cmd == SettingApiReadFlagTimeStart && data) {
-        auto *result = static_cast<SettingApiReadFlagTimeStartData *>(data);
-        std::get<0>(*result) = mork_api_read_flag;
-    } else if (cmd == SettingApiActivate) {
-        mork_api_read_flag = !mork_api_read_flag;
-        printf("SettingApiActivate\n");
+    if (adb_pending || adb_initialized) return;
+    adb_pending = true;
+    try {
+        adb_api.query_status([](settings_adb::Result result) {
+            std::lock_guard<std::mutex> lock(adb_api_mutex);
+            adb_pending = false;
+            if (result.ok() && result.status_valid) {
+                adb_enabled = result.status.enabled;
+                adb_initialized = true;
+            }
+        });
+    } catch (...) {
+        adb_pending = false;
     }
 }
 
-#ifdef LAUNCHER_BUILD
-SettingApiCallBackFunc launcher_app_setting_api(AppDescriptor desc)
-{
-    return [desc](int cmd, void *data) {
-        if (cmd == SettingApiReadFlag && data) {
-            *static_cast<bool *>(data) = launcher_app_registry_is_enabled(desc);
-            return;
-        }
-        if (cmd == SettingApiReadFlagTimeStart && data) {
-            auto *result = static_cast<SettingApiReadFlagTimeStartData *>(data);
-            std::get<0>(*result) = launcher_app_registry_is_enabled(desc);
-            return;
-        }
-        if (cmd != SettingApiActivate) return;
+} // namespace
 
-        const bool enabled = launcher_app_registry_is_enabled(desc);
-        if (launcher_app_registry_set_enabled(desc, !enabled))
-            launcher_app_registry_notify_changed();
-    };
+void adb_guide_api(int, void *)
+{
 }
-#endif
+
+void adb_toggle_api(int cmd, void *data)
+{
+    if (cmd == SettingApiReadFlag && data) {
+        {
+            std::lock_guard<std::mutex> lock(adb_api_mutex);
+            refresh_adb_status();
+        }
+        *static_cast<bool *>(data) = adb_enabled;
+        return;
+    }
+    if (cmd == SettingApiReadFlagTimeStart && data) {
+        auto *result = static_cast<SettingApiReadFlagTimeStartData *>(data);
+        {
+            std::lock_guard<std::mutex> lock(adb_api_mutex);
+            refresh_adb_status();
+            std::get<0>(*result) = adb_enabled;
+            if (std::get<1>(*result)) std::get<1>(*result)->store(adb_pending);
+        }
+        return;
+    }
+    if (cmd != SettingApiActivate) return;
+
+    bool desired = false;
+    {
+        std::lock_guard<std::mutex> lock(adb_api_mutex);
+        if (adb_pending) return;
+        desired = !adb_enabled;
+        adb_pending = true;
+    }
+    try {
+        adb_api.set_enabled(desired, [desired](settings_adb::Result result) {
+            std::lock_guard<std::mutex> callback_lock(adb_api_mutex);
+            adb_pending = false;
+            if (result.ok()) {
+                adb_enabled = desired;
+                adb_initialized = true;
+            }
+        });
+    } catch (...) {
+        adb_pending = false;
+    }
+}

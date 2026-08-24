@@ -2,9 +2,11 @@
 
 #include "lvgl/lvgl.h"
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <future>
 #include <functional>
@@ -41,16 +43,24 @@ static void lvgl_bind_context_free(void *data)
 static void LvglBindCallback(lv_event_t *event)
 {
     LvglBindContext *context = static_cast<LvglBindContext *>(lv_event_get_user_data(event));
+    if (!context || !context->fun) return;
     context->fun(event);
 }
 
 template <typename Fun>
-void lvgl_bind_event(lv_obj_t *obj, lv_event_code_t event_code, void *user_data, Fun &&fun)
+bool lvgl_bind_event(lv_obj_t *obj, lv_event_code_t event_code, void *user_data, Fun &&fun)
 {
+    if (!obj) return false;
+
     LvglBindContext *context =
         new LvglBindContext{std::function<void(lv_event_t *)>(std::forward<Fun>(fun)), user_data};
     lv_event_dsc_t *dsc = lv_obj_add_event_cb(obj, LvglBindCallback, event_code, context);
+    if (!dsc) {
+        delete context;
+        return false;
+    }
     lv_event_desc_set_external_data(dsc, context, lvgl_bind_context_free);
+    return true;
 }
 // #endif
 
@@ -89,6 +99,11 @@ public:
         std::function<void(AsyncTaskContext &)> on_timeout;
         std::function<void(AsyncTaskContext &)> on_schedule_failed;
     };
+
+    using AsyncDispatch = SettingsAsync::Dispatch;
+    using AsyncToken = AsyncDispatch::Token;
+    using LifetimeToken = AsyncToken;
+    using AsyncTaskRegistry = SettingsAsync::SettingsAsyncTaskRegistry;
 
     lv_obj_t *ComponensObj = nullptr;
     bool NextActive = false;
@@ -141,44 +156,114 @@ public:
         cancel_async_tasks();
     }
 
-    void cancel_async_tasks()
+    bool ensure_async_dispatch()
     {
-        async_lifetime_token_.reset();
+        if (async_dispatch_timer_) return true;
+        if (async_dispatch_unavailable_) return false;
+
+        async_dispatch_timer_ = lv_timer_create(&LvglComponensBase::async_dispatch_timer_cb, 20, this);
+        if (!async_dispatch_timer_) {
+            async_dispatch_unavailable_ = true;
+            async_dispatch_ready_.store(false, std::memory_order_release);
+            async_dispatch_.cancel();
+            return false;
+        }
+        async_dispatch_ready_.store(true, std::memory_order_release);
+        return true;
+    }
+
+    AsyncToken async_token() const noexcept
+    {
+        return async_dispatch_.token();
+    }
+
+    LifetimeToken lifetime_token() const noexcept
+    {
+        return async_token();
+    }
+
+    bool enqueue_async(AsyncToken token, std::function<void()> callback) noexcept
+    {
+        if (!async_dispatch_ready_.load(std::memory_order_acquire)) return false;
+        return AsyncDispatch::enqueue_from_callback(token, std::move(callback));
+    }
+
+    bool enqueue_async(std::function<void()> callback) noexcept
+    {
+        return enqueue_async(async_token(), std::move(callback));
+    }
+
+    uint64_t advance_async_generation() noexcept
+    {
+        return async_dispatch_.advance_generation();
+    }
+
+    void cancel_async_tasks() noexcept
+    {
+        async_dispatch_ready_.store(false, std::memory_order_release);
+        async_dispatch_.cancel();
+        if (async_dispatch_timer_) {
+            lv_timer_delete(async_dispatch_timer_);
+            async_dispatch_timer_ = nullptr;
+        }
+        async_task_registry_.cancel();
+        async_task_registry_.join_all();
+    }
+
+    void cancel() noexcept
+    {
+        cancel_async_tasks();
+    }
+
+    void reap_finished()
+    {
+        async_task_registry_.reap_finished();
+    }
+
+    void join_all() noexcept
+    {
+        async_task_registry_.join_all();
+    }
+
+    AsyncTaskRegistry &async_tasks() noexcept
+    {
+        return async_task_registry_;
     }
 
     template <typename Result>
     bool run_async_task(AsyncTaskCallbacks<Result> callbacks, AsyncTaskOptions options = {})
     {
         AsyncTaskContext failed_context;
-        if (!callbacks.execute || !async_lifetime_token_) {
+        if (!callbacks.execute || !ensure_async_dispatch()) {
             failed_context.stage = AsyncTaskStage::ScheduleFailed;
             invoke_async_callback(callbacks.on_schedule_failed, failed_context);
             return false;
         }
 
         const auto on_schedule_failed = callbacks.on_schedule_failed;
-        auto *state = new (std::nothrow) AsyncTaskState<Result>(std::move(callbacks), options, async_lifetime_token_);
-        if (!state) {
+        std::shared_ptr<AsyncTaskState<Result>> state;
+        try {
+            state = std::make_shared<AsyncTaskState<Result>>(std::move(callbacks), options, async_token());
+        } catch (...) {
             failed_context.stage = AsyncTaskStage::ScheduleFailed;
             invoke_async_callback(on_schedule_failed, failed_context);
             return false;
         }
-
-        state->context.stage = AsyncTaskStage::Starting;
-        invoke_async_callback(state->callbacks.on_start, state->context);
-        if (state->lifetime.expired()) {
-            delete state;
+        if (!state->token.valid()) {
+            state->context.stage = AsyncTaskStage::ScheduleFailed;
+            invoke_async_callback(state->callbacks.on_schedule_failed, state->context);
             return false;
         }
 
-        if (lv_async_call(process_async_task<Result>, state) == LV_RESULT_OK) {
-            return true;
-        }
+        invoke_async_callback(state->callbacks.on_start, state->context);
+        if (!state->token.valid()) return false;
 
-        state->context.stage = AsyncTaskStage::ScheduleFailed;
-        invoke_async_callback(state->callbacks.on_schedule_failed, state->context);
-        delete state;
-        return false;
+        if (!enqueue_async(state->token, [this, state] { process_async_task(state); })) {
+            state->context.stage = AsyncTaskStage::ScheduleFailed;
+            invoke_async_callback(state->callbacks.on_schedule_failed, state->context);
+            return false;
+        }
+        return true;
     }
 
     virtual void create_ui(lv_obj_t *parent) = 0;
@@ -189,13 +274,14 @@ private:
         AsyncTaskCallbacks<Result> callbacks;
         AsyncTaskOptions options;
         AsyncTaskContext context;
+        std::promise<Result> promise;
         std::shared_future<Result> future;
-        std::weak_ptr<bool> lifetime;
+        AsyncToken token;
         bool submitted = false;
 
         AsyncTaskState(AsyncTaskCallbacks<Result> task_callbacks, AsyncTaskOptions task_options,
-                       std::weak_ptr<bool> task_lifetime)
-            : callbacks(std::move(task_callbacks)), options(task_options), lifetime(std::move(task_lifetime))
+                       AsyncToken task_token)
+            : callbacks(std::move(task_callbacks)), options(task_options), token(std::move(task_token))
         {
         }
     };
@@ -210,11 +296,28 @@ private:
         }
     }
 
-    template <typename Result>
-    static void process_async_task(void *user_data)
+    static void async_dispatch_timer_cb(lv_timer_t *timer)
     {
-        std::unique_ptr<AsyncTaskState<Result>> state(static_cast<AsyncTaskState<Result> *>(user_data));
-        if (!state || state->lifetime.expired()) return;
+        auto *self = timer ? static_cast<LvglComponensBase *>(lv_timer_get_user_data(timer)) : nullptr;
+        if (!self) return;
+        self->async_task_registry_.reap_finished();
+        self->async_dispatch_.drain();
+    }
+
+    template <typename Result>
+    void schedule_async_task(const std::shared_ptr<AsyncTaskState<Result>> &state)
+    {
+        if (!state || !state->token.valid()) return;
+        if (enqueue_async(state->token, [this, state] { process_async_task(state); })) return;
+
+        state->context.stage = AsyncTaskStage::ScheduleFailed;
+        invoke_async_callback(state->callbacks.on_schedule_failed, state->context);
+    }
+
+    template <typename Result>
+    void process_async_task(const std::shared_ptr<AsyncTaskState<Result>> &state)
+    {
+        if (!state || !AsyncDispatch::token_is_current(state->token)) return;
 
         if (!state->submitted) {
             state->submitted            = true;
@@ -223,10 +326,23 @@ private:
             state->context.last_poll_at = state->context.started_at;
 
             try {
-                auto execute  = std::move(state->callbacks.execute);
-                state->future = std::async(std::launch::async, [execute = std::move(execute)]() mutable -> Result {
-                                    return execute();
-                                }).share();
+                auto execute = std::move(state->callbacks.execute);
+                state->future = state->promise.get_future().share();
+                if (!async_task_registry_.start(
+                        [state, execute = std::move(execute)]() mutable {
+                            try {
+                                state->promise.set_value(execute());
+                            } catch (...) {
+                                try {
+                                    state->promise.set_exception(std::current_exception());
+                                } catch (...) {
+                                }
+                            }
+                        })) {
+                    state->context.stage = AsyncTaskStage::Failed;
+                    invoke_async_callback(state->callbacks.on_exception, state->context, std::exception_ptr{});
+                    return;
+                }
             } catch (...) {
                 state->context.stage = AsyncTaskStage::Failed;
                 invoke_async_callback(state->callbacks.on_exception, state->context, std::current_exception());
@@ -234,14 +350,8 @@ private:
             }
 
             invoke_async_callback(state->callbacks.on_submitted, state->context);
-            if (state->lifetime.expired()) return;
-
-            if (lv_async_call(process_async_task<Result>, state.get()) == LV_RESULT_OK) {
-                state.release();
-            } else {
-                state->context.stage = AsyncTaskStage::ScheduleFailed;
-                invoke_async_callback(state->callbacks.on_schedule_failed, state->context);
-            }
+            if (!state->token.valid()) return;
+            schedule_async_task(state);
             return;
         }
 
@@ -259,14 +369,8 @@ private:
             state->context.last_poll_at = now;
             ++state->context.poll_count;
             invoke_async_callback(state->callbacks.on_wait, state->context);
-            if (state->lifetime.expired()) return;
-
-            if (lv_async_call(process_async_task<Result>, state.get()) == LV_RESULT_OK) {
-                state.release();
-            } else {
-                state->context.stage = AsyncTaskStage::ScheduleFailed;
-                invoke_async_callback(state->callbacks.on_schedule_failed, state->context);
-            }
+            if (!state->token.valid()) return;
+            schedule_async_task(state);
             return;
         }
 
@@ -280,7 +384,11 @@ private:
         }
     }
 
-    std::shared_ptr<bool> async_lifetime_token_ = std::make_shared<bool>(true);
+    AsyncDispatch async_dispatch_;
+    AsyncTaskRegistry async_task_registry_;
+    lv_timer_t *async_dispatch_timer_ = nullptr;
+    std::atomic_bool async_dispatch_ready_{false};
+    bool async_dispatch_unavailable_ = false;
 };
 
 class HelloWorldComponens : public LvglComponensBase {
@@ -343,7 +451,7 @@ public:
     }
 };
 
-#if !defined(LVGL_COMPONENTS_ROLLER1_ONLY)
+#if defined(LVGL_COMPONENTS_ENABLE_EXAMPLES)
 class LvExampleGetStarted3 : public LvglComponensBase {
 public:
     inline static lv_style_t style_btn;
@@ -5961,7 +6069,7 @@ public:
     }
 };
 
-#if !defined(LVGL_COMPONENTS_ROLLER1_ONLY)
+#if defined(LVGL_COMPONENTS_ENABLE_EXAMPLES)
 class LvExampleRoller2 : public LvglComponensBase {
 public:
     static void event_handler(lv_event_t *e)
@@ -6119,7 +6227,7 @@ public:
     }
 };
 
-#if !defined(LVGL_COMPONENTS_ROLLER1_ONLY)
+#if defined(LVGL_COMPONENTS_ENABLE_EXAMPLES)
 class LvExampleScale1 : public LvglComponensBase {
 public:
     /**
@@ -7786,6 +7894,21 @@ public:
 
 class LvSettingValuePage3Base : public DComponens::LvglComponensBase {
 public:
+    struct ActivationSink {
+        AsyncToken dispatch_token;
+        std::weak_ptr<SettingRequestState> request_state;
+        uint64_t generation = 0;
+        int32_t index = -1;
+        LvSettingValuePage3Base *owner = nullptr;
+
+        bool valid() const noexcept
+        {
+            auto state = request_state.lock();
+            return owner != nullptr && state && state->is_current(generation) && state->pending() &&
+                   dispatch_token.valid();
+        }
+    };
+
     enum class LayoutMetric : int {
         ScreenW         = 320,
         ScreenH         = 150,
@@ -7813,6 +7936,37 @@ public:
 
     LvSettingValuePage3Base() = default;
 
+    bool activation_pending() const noexcept
+    {
+        return activation_pending_;
+    }
+
+    SettingComponentState activation_state() const noexcept
+    {
+        auto state = activation_state_.lock();
+        return state ? state->state() : SettingComponentState::Read;
+    }
+
+    ActivationSink activation_sink() const noexcept
+    {
+        return activation_sink_;
+    }
+
+    static bool enqueue_activation_result(const ActivationSink &sink, SettingApiResult result) noexcept
+    {
+        if (!sink.valid()) return false;
+
+        return SettingsAsync::Dispatch::enqueue_from_callback(
+            sink.dispatch_token,
+            [sink, result] {
+                auto state = sink.request_state.lock();
+                if (!state || !sink.owner || !state->is_current(sink.generation) ||
+                    !state->pending() || sink.owner->activation_index_ != sink.index)
+                    return;
+                sink.owner->finish_activation(sink, result);
+            });
+    }
+
     void AnimateNextIn(std::function<void()> animate_over_func) override
     {
         if (animate_over_func) animate_over_func();
@@ -7831,6 +7985,8 @@ public:
 
     ~LvSettingValuePage3Base() override
     {
+        cancel_activation(false);
+        cancel_async_tasks();
         if (ComponensObj) {
             lv_anim_del(ComponensObj, nullptr);
             lv_obj_delete(ComponensObj);
@@ -7968,6 +8124,75 @@ public:
         return row == value_rows_.end() ? nullptr : *row;
     }
 
+    void restore_activation_focus()
+    {
+        if (!ComponensObj) return;
+        lv_group_t *group = lv_obj_get_group(ComponensObj);
+        if (group) lv_group_focus_obj(ComponensObj);
+    }
+
+    void finish_activation(const ActivationSink &sink, SettingApiResult result)
+    {
+        if (sink.owner != this || sink.index != activation_index_) return;
+        auto state = activation_state_.lock();
+        if (!state || state != sink.request_state.lock() || !state->is_current(sink.generation) ||
+            !state->pending())
+            return;
+        apply_activation_result(sink, result);
+    }
+
+    void apply_activation_result(const ActivationSink &sink, SettingApiResult result)
+    {
+        auto state = activation_state_.lock();
+        if (!state || state != sink.request_state.lock() || !state->is_current(sink.generation)) return;
+
+        if (result == SettingApiResult::Pending) {
+            if (state->mark_pending(sink.generation)) {
+                activation_pending_ = true;
+            } else {
+                state->mark_failure(sink.generation);
+                activation_pending_    = false;
+                activation_index_       = -1;
+                activation_generation_  = 0;
+                restore_activation_focus();
+            }
+            return;
+        }
+
+        if (result == SettingApiResult::Success) {
+            if (!state->mark_success(sink.generation)) return;
+            activation_pending_    = false;
+            activation_index_      = -1;
+            activation_generation_ = 0;
+            restore_activation_focus();
+            if (LeaveSelfPage) LeaveSelfPage();
+            return;
+        }
+
+        if (result == SettingApiResult::Cancelled)
+            state->mark_cancelled(sink.generation);
+        else if (result == SettingApiResult::Failure)
+            state->mark_failure(sink.generation);
+        else
+            state->mark_read();
+
+        activation_pending_    = false;
+        activation_index_      = -1;
+        activation_generation_ = 0;
+        restore_activation_focus();
+    }
+
+    void cancel_activation(bool restore_focus = true)
+    {
+        auto state = activation_state_.lock();
+        if (state && activation_index_ >= 0 && state->is_current(activation_generation_))
+            state->mark_cancelled(activation_generation_);
+        activation_pending_    = false;
+        activation_index_      = -1;
+        activation_generation_ = 0;
+        if (restore_focus) restore_activation_focus();
+    }
+
 protected:
     LvSettingValuePage3Base(const NodeIter &parent_node, std::function<void()> back_callback)
         : parent_node_(parent_node)
@@ -7987,13 +8212,62 @@ protected:
 
     virtual int initial_selection() const = 0;
 
-    virtual void activate_selected()
+    virtual SettingApiResult activate_selected()
     {
-        if (item_count_ == 0) return;
+        if (item_count_ == 0 || activation_pending_ || selected_index < 0 ||
+            selected_index >= static_cast<int32_t>(item_count_))
+            return SettingApiResult::NotHandled;
 
         auto selected_node = std::next(parent_node_.begin(), selected_index);
-        if (selected_node->Componens_api) selected_node->Componens_api(SettingApiActivate, this);
-        if (LeaveSelfPage) LeaveSelfPage();
+        if (!selected_node->has_api()) return SettingApiResult::NotHandled;
+
+        const auto request_state = selected_node->request_state;
+        const uint64_t generation = request_state->begin_activation();
+        if (generation == 0) {
+            activation_state_ = request_state;
+            restore_activation_focus();
+            return SettingApiResult::Pending;
+        }
+
+        activation_state_      = request_state;
+        activation_generation_ = generation;
+        activation_index_      = selected_index;
+
+        if (!ensure_async_dispatch()) {
+            request_state->mark_failure(generation);
+            activation_generation_ = 0;
+            activation_index_      = -1;
+            restore_activation_focus();
+            return SettingApiResult::Failure;
+        }
+
+        activation_pending_     = true;
+        activation_sink_        = ActivationSink{async_token(), activation_state_, generation, selected_index, this};
+        if (!activation_sink_.valid()) {
+            request_state->mark_failure(generation);
+            activation_pending_     = false;
+            activation_generation_ = 0;
+            activation_index_      = -1;
+            restore_activation_focus();
+            return SettingApiResult::Failure;
+        }
+
+        SettingApiResult result = SettingApiResult::NotHandled;
+        try {
+            if (selected_node->Async_api) {
+                result = selected_node->Async_api(SettingApiActivate, this);
+            } else if (selected_node->Componens_api) {
+                selected_node->Componens_api(SettingApiActivate, this);
+                result = selected_node->activation_policy == SettingActivationPolicy::WaitForResult
+                             ? SettingApiResult::Pending
+                             : SettingApiResult::Success;
+            }
+        } catch (...) {
+            result = SettingApiResult::Failure;
+        }
+
+        apply_activation_result(activation_sink_, result);
+        return result;
     }
 
     void handle_key_event(lv_event_t *event)
@@ -8002,6 +8276,7 @@ protected:
 
         const uint32_t key = lv_event_get_key(event);
         if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
+            if (activation_pending_) cancel_activation();
             if (LeaveSelfPage) LeaveSelfPage();
             lv_event_stop_processing(event);
             return;
@@ -8027,6 +8302,8 @@ protected:
     void create_ui(lv_obj_t *parent) override
     {
         if (!parent) return;
+
+        ensure_async_dispatch();
 
         ComponensObj = lv_obj_create(parent);
         if (!ComponensObj) return;
@@ -8142,6 +8419,11 @@ private:
     NodeIter parent_node_;
     uint32_t item_count_ = 0;
     std::list<lv_obj_t *> value_rows_;
+    std::weak_ptr<SettingRequestState> activation_state_;
+    ActivationSink activation_sink_;
+    uint64_t activation_generation_ = 0;
+    int32_t activation_index_       = -1;
+    bool activation_pending_        = false;
     lv_obj_t *selection_bg_ = nullptr;
     lv_obj_t *value_list_   = nullptr;
     lv_obj_t *right_arrow_  = nullptr;

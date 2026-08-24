@@ -11,10 +11,7 @@
 #endif
 
 void adb_guide_api(int cmd, void *data);
-void mork_api(int cmd, void *data);
-#ifdef LAUNCHER_BUILD
-SettingApiCallBackFunc launcher_app_setting_api(AppDescriptor desc);
-#endif
+void adb_toggle_api(int cmd, void *data);
 
 class UISettingTreePage : public AppPage {
 public:
