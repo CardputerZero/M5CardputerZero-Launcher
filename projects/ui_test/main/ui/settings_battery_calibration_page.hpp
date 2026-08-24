@@ -3,7 +3,7 @@
 #include <functional>
 #include <utility>
 
-#include "lvgl_componens.hpp"
+#include "lvgl_components.hpp"
 
 class LvSettingBQCalibratePage3 : public LvSettingValuePage3Base {
 public:

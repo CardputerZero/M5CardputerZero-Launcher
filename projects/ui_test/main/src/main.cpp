@@ -1,5 +1,5 @@
 #include "cp0_lvgl_app_runner.hpp"
-#include "setting_tree.hpp"
+#include "settings_page.hpp"
 
 int main(int argc, char *argv[])
 {

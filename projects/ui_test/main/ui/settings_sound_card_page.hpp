@@ -1,6 +1,6 @@
 #pragma once
 
-#include "setting_soundcard_detail_page.hpp"
+#include "settings_sound_card_detail_page.hpp"
 
 class LvSettingSoundCardPage4 : public DComponens::LvglComponensBase {
 public:

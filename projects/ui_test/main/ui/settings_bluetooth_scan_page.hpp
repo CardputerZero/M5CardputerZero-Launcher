@@ -3,7 +3,7 @@
 #include <functional>
 #include <utility>
 
-#include "setting_bluetooth_page.hpp"
+#include "settings_bluetooth_page.hpp"
 
 class LvSettingBluetoothScanPage3 : public LvSettingBluetoothPage3 {
 public:

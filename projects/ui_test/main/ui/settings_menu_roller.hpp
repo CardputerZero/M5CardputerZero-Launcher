@@ -13,9 +13,9 @@
 
 #include "cp0_font_service.hpp"
 #define LVGL_COMPONENTS_ROLLER1_ONLY
-#include "lvgl_componens.hpp"
+#include "lvgl_components.hpp"
 #undef LVGL_COMPONENTS_ROLLER1_ONLY
-#include "setting_tree_types.hpp"
+#include "settings_tree_types.hpp"
 
 extern "C" {
 extern const lv_image_dsc_t setting_red_up;

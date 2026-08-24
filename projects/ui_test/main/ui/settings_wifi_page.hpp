@@ -22,10 +22,10 @@
 #include "cp0_font_service.hpp"
 #include "input_keys.h"
 #include "keyboard_input.h"
-#include "setting_tree_types.hpp"
+#include "settings_tree_types.hpp"
 
 #define LVGL_COMPONENTS_ROLLER1_ONLY
-#include "lvgl_componens.hpp"
+#include "lvgl_components.hpp"
 #undef LVGL_COMPONENTS_ROLLER1_ONLY
 
 extern "C" {

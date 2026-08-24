@@ -18,7 +18,7 @@
 #include <utility>
 
 #include "cp0_font_service.hpp"
-#include "setting_tree_types.hpp"
+#include "settings_tree_types.hpp"
 
 extern "C" {
 extern const lv_image_dsc_t setting_red_up;
