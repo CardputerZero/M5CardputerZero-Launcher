@@ -63,6 +63,16 @@ public:
         initialize(parent);
     }
 
+    LvSettingWifiScanPage3(lv_obj_t *parent,
+                           const NodeIter &parent_node,
+                           std::function<void()> back_callback,
+                           bool hidden_network)
+        : parent_node_(parent_node), hidden_network_(hidden_network)
+    {
+        LeaveSelfPage = std::move(back_callback);
+        initialize(parent);
+    }
+
     void AnimateNextIn(std::function<void()> animate_over_func) override
     {
         if (animate_over_func) animate_over_func();
@@ -197,8 +207,12 @@ public:
 
         initialize_mock_data();
         refresh_status();
-        render();
-        start_scan();
+        if (hidden_network_) {
+            show_hidden_ssid_prompt();
+        } else {
+            render();
+            start_scan();
+        }
     }
 
 private:
@@ -224,7 +238,7 @@ private:
         return static_cast<int>(value);
     }
 
-    enum class View { List, Password, Connecting };
+    enum class View { List, HiddenSsid, Password, Connecting };
     enum class NetworkOperation { Connect, Forget };
     enum class ConnectionOrigin { OpenNetwork, SavedProfile, PasswordEntry };
 
@@ -431,6 +445,21 @@ private:
     {
         if (!password_panel_) return;
         lv_obj_remove_flag(password_panel_, LV_OBJ_FLAG_HIDDEN);
+
+        if (view_ == View::HiddenSsid) {
+            if (password_title_) lv_label_set_text(password_title_, "Add Hidden WiFi");
+            if (password_network_) lv_label_set_text(password_network_, "Enter network name (SSID)");
+            if (password_value_) lv_label_set_text(password_value_, (password_ + "_").c_str());
+            if (password_status_) {
+                lv_label_set_text(password_status_, password_error_.c_str());
+                lv_obj_set_style_text_color(
+                    password_status_,
+                    lv_color_hex(password_error_.empty() ? 0x666666 : 0xFF4444),
+                    LV_PART_MAIN);
+            }
+            if (password_hint_) lv_label_set_text(password_hint_, "OK:next  ESC:back");
+            return;
+        }
 
         if (view_ == View::Connecting) {
             const bool forgetting = connection_state_ &&
@@ -710,7 +739,23 @@ private:
         render();
     }
 
-    void leave_password_prompt()
+    void show_hidden_ssid_prompt(const std::string &initial = {})
+    {
+        stop_scan();
+        stop_connection();
+        hidden_network_ = true;
+        view_ = View::HiddenSsid;
+        password_ssid_.clear();
+        password_security_ = "WPA2";
+        password_error_.clear();
+        password_visible_ = false;
+        clear_password();
+        if (!initial.empty()) append_password_text(initial.c_str());
+        enter_text_input_mode();
+        render();
+    }
+
+    void leave_hidden_ssid_prompt()
     {
         restore_text_input_mode();
         clear_password();
@@ -718,6 +763,45 @@ private:
         password_security_.clear();
         password_error_.clear();
         password_visible_ = false;
+        hidden_network_ = false;
+        view_ = View::List;
+        render();
+        start_scan();
+    }
+
+    void submit_hidden_ssid()
+    {
+        if (view_ != View::HiddenSsid) return;
+        if (password_.empty()) {
+            password_error_ = "SSID required";
+            render();
+            return;
+        }
+
+        hidden_ssid_ = password_;
+        clear_password();
+        password_ssid_ = hidden_ssid_;
+        password_security_ = "WPA2";
+        password_error_.clear();
+        password_visible_ = false;
+        view_ = View::Password;
+        render();
+    }
+
+    void leave_password_prompt()
+    {
+        if (hidden_network_ && view_ == View::Password) {
+            show_hidden_ssid_prompt(hidden_ssid_);
+            return;
+        }
+        restore_text_input_mode();
+        clear_password();
+        password_ssid_.clear();
+        password_security_.clear();
+        password_error_.clear();
+        password_visible_ = false;
+        hidden_ssid_.clear();
+        hidden_network_ = false;
         view_ = View::List;
     }
 
@@ -922,12 +1006,18 @@ private:
                              item->key_state == KBD_KEY_REPEATED;
         if (!pressed) return;
 
-        if (self->view_ == View::Password) {
+        if (self->view_ == View::HiddenSsid || self->view_ == View::Password) {
             if (item->key_code == KEY_ESC) {
-                self->leave_password_prompt();
-                self->start_scan();
+                if (self->view_ == View::HiddenSsid) {
+                    self->leave_hidden_ssid_prompt();
+                } else {
+                    self->leave_password_prompt();
+                }
             } else if (item->key_code == KEY_ENTER || item->key_code == KEY_KPENTER) {
-                self->submit_password();
+                if (self->view_ == View::HiddenSsid)
+                    self->submit_hidden_ssid();
+                else
+                    self->submit_password();
             } else if (item->key_code == KEY_BACKSPACE || item->key_code == KEY_DELETE) {
                 self->erase_password_last();
                 self->render();
@@ -937,7 +1027,7 @@ private:
             } else if (item->key_code == KEY_RIGHT) {
                 self->move_password_cursor_right();
                 self->render();
-            } else if (item->key_code == KEY_LEFTALT) {
+            } else if (self->view_ == View::Password && item->key_code == KEY_LEFTALT) {
                 self->password_visible_ = !self->password_visible_;
                 self->render();
             } else if (item->utf8[0]) {
@@ -1093,12 +1183,18 @@ private:
         if (!event || lv_event_get_code(event) != LV_EVENT_KEY) return;
         const uint32_t key = lv_event_get_key(event);
 
-        if (view_ == View::Password) {
+        if (view_ == View::HiddenSsid || view_ == View::Password) {
             if (key == LV_KEY_ESC) {
-                leave_password_prompt();
-                start_scan();
+                if (view_ == View::HiddenSsid) {
+                    leave_hidden_ssid_prompt();
+                } else {
+                    leave_password_prompt();
+                }
             } else if (key == LV_KEY_ENTER) {
-                submit_password();
+                if (view_ == View::HiddenSsid)
+                    submit_hidden_ssid();
+                else
+                    submit_password();
             } else if (key == LV_KEY_BACKSPACE || key == LV_KEY_DEL) {
                 erase_password_last();
                 render();
@@ -1169,8 +1265,10 @@ private:
     std::string password_security_;
     std::string password_;
     std::string password_error_;
+    std::string hidden_ssid_;
     std::size_t password_cursor_byte_ = 0;
     bool password_visible_ = false;
+    bool hidden_network_ = false;
     bool keyboard_mode_saved_ = false;
     int previous_keypad_intercept_ = 0;
     cp0_keyboard_input_context_t previous_input_context_ = KBD_INPUT_CONTEXT_NAVIGATION;

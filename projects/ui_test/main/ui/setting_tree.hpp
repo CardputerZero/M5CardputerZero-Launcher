@@ -93,6 +93,13 @@ static std::unique_ptr<DComponens::LvglComponensBase> wifi_scan_page3_factory(lv
     return std::make_unique<LvSettingWifiScanPage3>(parent, page_node, std::move(on_back));
 }
 
+static std::unique_ptr<DComponens::LvglComponensBase> wifi_add_hidden_page_factory(lv_obj_t *parent,
+                                                                                   const NodeIter &page_node,
+                                                                                   std::function<void()> on_back)
+{
+    return std::make_unique<LvSettingWifiScanPage3>(parent, page_node, std::move(on_back), true);
+}
+
 static std::unique_ptr<DComponens::LvglComponensBase> adb_guide_page_factory(lv_obj_t *parent,
                                                                              const NodeIter &page_node,
                                                                              std::function<void()> on_back)
@@ -211,7 +218,9 @@ public:
             NodeIter wifi = mode_tree.append_child(root, SettingEntry{"WiFi", roller_page_factory});
             mode_tree.append_child(wifi, SettingEntry{"Power", mork_api, true});
             mode_tree.append_child(wifi, SettingEntry{"Scan", wifi_scan_page3_factory, PageType::FullCustom});
-            mode_tree.append_child(wifi, SettingEntry{"Add Hidden WiFi"});
+            mode_tree.append_child(
+                wifi,
+                SettingEntry{"Add Hidden WiFi", wifi_add_hidden_page_factory, PageType::FullCustom});
             // mode_tree.append_child(wifi, SettingEntry{"Power Warning"});
         }
 
@@ -274,7 +283,9 @@ public:
         {
             NodeIter developer = mode_tree.append_child(root, SettingEntry{"Developer", roller_page_factory});
             mode_tree.append_child(developer, SettingEntry{"ADB", mork_api, true});
-            mode_tree.append_child(developer, SettingEntry{"ADB guide", adb_guide_page_factory, adb_guide_api});
+            mode_tree.append_child(
+                developer,
+                SettingEntry{"ADB guide", adb_guide_page_factory, adb_guide_api, PageType::FullCustom});
             // mode_tree.append_child(developer, SettingEntry{"ADB_PAIR"});
             // mode_tree.append_child(developer, SettingEntry{"ADB_AUTHORIZATIONS"});
         }
@@ -320,8 +331,12 @@ public:
             mode_tree.append_child(bluetooth, SettingEntry{"Alias: CardputerZero"});
             mode_tree.append_child(bluetooth, SettingEntry{"Discoverable", mork_api, true});
             mode_tree.append_child(bluetooth, SettingEntry{"Named Only", mork_api, true});
-            mode_tree.append_child(bluetooth, SettingEntry{"Connected", bluetooth_connected_page_factory});
-            mode_tree.append_child(bluetooth, SettingEntry{"Scan", bluetooth_scan_page_factory});
+            mode_tree.append_child(
+                bluetooth,
+                SettingEntry{"Connected", bluetooth_connected_page_factory, PageType::FullCustom});
+            mode_tree.append_child(
+                bluetooth,
+                SettingEntry{"Scan", bluetooth_scan_page_factory, PageType::FullCustom});
             // mode_tree.append_child(bluetooth, SettingEntry{"Power Warning"});
         }
 
@@ -348,7 +363,7 @@ public:
 
         {
             NodeIter sound_card = mode_tree.append_child(root, SettingEntry{"SoundCard", roller_page_factory});
-            mode_tree.append_child(sound_card, SettingEntry{"Open Mixer", soundcard_page4_factory});
+            mode_tree.append_child(sound_card, SettingEntry{"Open Mixer", soundcard_page4_factory, PageType::FullCustom});
         }
     }
     static void _back_home(void *data)
