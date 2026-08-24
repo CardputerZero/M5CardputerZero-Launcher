@@ -201,15 +201,17 @@ public:
         lv_obj_set_y(label, label_y < 0 ? 0 : label_y);
     }
 
-    void refresh_status_label_layout(lv_obj_t *label)
+    void set_status_hint(const char *text, uint32_t color)
     {
-        if (!label || !ComponensObj) return;
-
-        lv_obj_t *row = lv_obj_get_parent(label);
-        if (!row || lv_obj_get_parent(row) != ComponensObj) return;
-
-        const int index = static_cast<int>(lv_obj_get_index(row));
-        style_label(label, std::abs(index - selected_index), NextActive);
+        if (!hint_) return;
+        lv_label_set_text(hint_, text ? text : "");
+        lv_obj_set_style_text_color(hint_, lv_color_hex(color), LV_PART_MAIN);
+        lv_obj_update_layout(hint_);
+        lv_obj_set_pos(
+            hint_,
+            metric(LayoutMetric::PanelX) + metric(LayoutMetric::PanelW) - 6 - lv_obj_get_width(hint_),
+            metric(LayoutMetric::BarY) + (metric(LayoutMetric::BarH) - lv_obj_get_height(hint_)) / 2);
+        hint_base_x_ = lv_obj_get_x(hint_);
     }
 
     void SetSelfUiMode(PageType mode) override
@@ -410,15 +412,14 @@ public:
                        (metric(LayoutMetric::RowH) - lv_obj_get_height(icon_obj)) / 2);
     }
 
-    static void set_status_error(lv_obj_t *icon_obj, lv_obj_t *status_label)
+    static void set_status_error(lv_obj_t *icon_obj)
     {
-        if (status_label) lv_label_set_text(status_label, "Err");
         set_status_icon(icon_obj, false);
     }
 
-    void request_status_refresh(lv_obj_t *icon_obj, lv_obj_t *status_label, const NodeIter &selected_node)
+    void request_status_refresh(lv_obj_t *icon_obj, const NodeIter &selected_node)
     {
-        if (!icon_obj || !status_label || !selected_node->Componens_api) return;
+        if (!icon_obj || !selected_node->Componens_api) return;
 
         auto dot_count         = std::make_shared<uint8_t>(0);
         auto last_label_update = std::make_shared<AsyncTaskContext::Clock::time_point>(AsyncTaskContext::Clock::now());
@@ -430,51 +431,46 @@ public:
             selected_node->Componens_api(SettingApiReadFlagTimeStart, &result);
             return {true, std::get<0>(result)};
         };
-        callbacks.on_start = [this, status_label](AsyncTaskContext &) {
-            lv_label_set_text(status_label, "Sel.");
-            refresh_status_label_layout(status_label);
+        callbacks.on_start = [this](AsyncTaskContext &) {
+            set_status_hint("Sel.", 0xF0C850);
         };
-        callbacks.on_submitted = [this, status_label, last_label_update](AsyncTaskContext &) {
+        callbacks.on_submitted = [this, last_label_update](AsyncTaskContext &) {
             *last_label_update = AsyncTaskContext::Clock::now();
-            lv_label_set_text(status_label, "Chk.");
-            refresh_status_label_layout(status_label);
+            set_status_hint("Chk.", 0xF0C850);
         };
-        callbacks.on_wait = [this, status_label, dot_count, last_label_update](AsyncTaskContext &) {
+        callbacks.on_wait = [this, dot_count, last_label_update](AsyncTaskContext &) {
             const auto now = AsyncTaskContext::Clock::now();
             if (now - *last_label_update < std::chrono::seconds(1)) return;
 
             *last_label_update = now;
             *dot_count         = static_cast<uint8_t>((*dot_count + 1) % 2);
-            lv_label_set_text(status_label, *dot_count ? "Wait" : "Chk.");
-            refresh_status_label_layout(status_label);
+            set_status_hint(*dot_count ? "Wait" : "Chk.", 0xF0C850);
         };
-        callbacks.on_complete = [this, icon_obj, status_label, selected_node](AsyncTaskContext &,
-                                                                                const StatusQueryResult &result) {
+        callbacks.on_complete = [this, icon_obj](AsyncTaskContext &, const StatusQueryResult &result) {
             if (!result.success) {
                 std::printf("[LvSettingRollerPage2] status query failed\n");
-                set_status_error(icon_obj, status_label);
-                refresh_status_label_layout(status_label);
+                set_status_error(icon_obj);
+                set_status_hint("Err", 0xEB5F5F);
                 return;
             }
 
-            lv_label_set_text(status_label, selected_node->label.c_str());
             set_status_icon(icon_obj, result.enabled);
-            refresh_status_label_layout(status_label);
+            set_status_hint("ok:enter", 0x00CC66);
         };
-        callbacks.on_exception = [this, icon_obj, status_label](AsyncTaskContext &, std::exception_ptr) {
+        callbacks.on_exception = [this, icon_obj](AsyncTaskContext &, std::exception_ptr) {
             std::printf("[LvSettingRollerPage2] status query raised an exception\n");
-            set_status_error(icon_obj, status_label);
-            refresh_status_label_layout(status_label);
+            set_status_error(icon_obj);
+            set_status_hint("Err", 0xEB5F5F);
         };
-        callbacks.on_timeout = [this, icon_obj, status_label](AsyncTaskContext &) {
+        callbacks.on_timeout = [this, icon_obj](AsyncTaskContext &) {
             std::printf("[LvSettingRollerPage2] status query timed out\n");
-            set_status_error(icon_obj, status_label);
-            refresh_status_label_layout(status_label);
+            set_status_error(icon_obj);
+            set_status_hint("Err", 0xEB5F5F);
         };
-        callbacks.on_schedule_failed = [this, icon_obj, status_label](AsyncTaskContext &) {
+        callbacks.on_schedule_failed = [this, icon_obj](AsyncTaskContext &) {
             std::printf("[LvSettingRollerPage2] status query could not be scheduled\n");
-            set_status_error(icon_obj, status_label);
-            refresh_status_label_layout(status_label);
+            set_status_error(icon_obj);
+            set_status_hint("Err", 0xEB5F5F);
         };
 
         run_async_task(std::move(callbacks));
@@ -813,7 +809,7 @@ public:
 
             if (it->icon_enabled) {
                 lv_obj_t *status_icon = lv_img_create(row);
-                request_status_refresh(status_icon, label, it);
+                request_status_refresh(status_icon, it);
             }
         }
         item_count_ = lv_obj_get_child_count(ComponensObj);
@@ -902,9 +898,7 @@ public:
 
                 if (selected_node->icon_enabled) {
                     request_status_refresh(
-                        lv_obj_get_child(lv_obj_get_child(cont, selected_index), 1),
-                        lv_obj_get_child(lv_obj_get_child(cont, selected_index), 0),
-                        selected_node);
+                        lv_obj_get_child(lv_obj_get_child(cont, selected_index), 1), selected_node);
                 }
             } else if (on_selected_page) {
                 on_selected_page(selected_index);

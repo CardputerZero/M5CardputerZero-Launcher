@@ -441,23 +441,25 @@ void UISettingTreePage::create_page_detail()
         mode_tree.append_child(volume, SettingEntry{"10%"});
         mode_tree.append_child(volume, SettingEntry{"0%"});
     }
-
+#if 0
     {
         NodeIter camera = mode_tree.append_child(root, SettingEntry{"Camera", roller_page_factory});
         NodeIter resolution = mode_tree.append_child(camera, SettingEntry{"Resolution", resolution_page3_factory});
         mode_tree.append_child(resolution, SettingEntry{"1280x720"});
         mode_tree.append_child(resolution, SettingEntry{"640x480"});
     }
-
+#endif
     {
-        NodeIter info = mode_tree.append_child(root, SettingEntry{"Info", roller_page_factory});
+        NodeIter info = mode_tree.append_child(root, SettingEntry{"Battery", roller_page_factory});
         mode_tree.append_child(
-            info, SettingEntry{"Battery", settings_battery_info_page_factory, PageType::FullCustom});
+            info, SettingEntry{"Info", settings_battery_info_page_factory, PageType::FullCustom});
+#if 0
         NodeIter bq_calibrate = mode_tree.append_child(info, SettingEntry{"BQ Calibrate", bq_calibrate_page3_factory});
         mode_tree.append_child(bq_calibrate, SettingEntry{"Enter CAL"});
         mode_tree.append_child(bq_calibrate, SettingEntry{"CC Offset"});
         mode_tree.append_child(bq_calibrate, SettingEntry{"Board Offset"});
         mode_tree.append_child(bq_calibrate, SettingEntry{"Exit CAL"});
+#endif
     }
 
     {

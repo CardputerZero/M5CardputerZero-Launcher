@@ -13,12 +13,17 @@ bool adb_enabled = false;
 bool adb_initialized = false;
 bool adb_pending = false;
 
-void refresh_adb_status()
+bool start_adb_status_refresh()
 {
-    if (adb_pending || adb_initialized) return;
-    adb_pending = true;
+    {
+        std::lock_guard<std::mutex> lock(adb_api_mutex);
+        if (adb_pending || adb_initialized) return false;
+        adb_pending = true;
+    }
+
+    bool started = false;
     try {
-        adb_api.query_status([](settings_adb::Result result) {
+        started = adb_api.query_status([](settings_adb::Result result) {
             std::lock_guard<std::mutex> lock(adb_api_mutex);
             adb_pending = false;
             if (result.ok() && result.status_valid) {
@@ -27,8 +32,14 @@ void refresh_adb_status()
             }
         });
     } catch (...) {
+        started = false;
+    }
+
+    if (!started) {
+        std::lock_guard<std::mutex> lock(adb_api_mutex);
         adb_pending = false;
     }
+    return started;
 }
 
 } // namespace
@@ -40,21 +51,26 @@ void adb_guide_api(int, void *)
 void adb_toggle_api(int cmd, void *data)
 {
     if (cmd == SettingApiReadFlag && data) {
+        bool should_refresh = false;
         {
             std::lock_guard<std::mutex> lock(adb_api_mutex);
-            refresh_adb_status();
+            should_refresh = !adb_pending && !adb_initialized;
         }
+        if (should_refresh) start_adb_status_refresh();
+        std::lock_guard<std::mutex> lock(adb_api_mutex);
         *static_cast<bool *>(data) = adb_enabled;
         return;
     }
     if (cmd == SettingApiReadFlagTimeStart && data) {
         auto *result = static_cast<SettingApiReadFlagTimeStartData *>(data);
+        bool pending = false;
         {
             std::lock_guard<std::mutex> lock(adb_api_mutex);
-            refresh_adb_status();
             std::get<0>(*result) = adb_enabled;
-            if (std::get<1>(*result)) std::get<1>(*result)->store(adb_pending);
+            pending = adb_pending;
         }
+        if (!pending) pending = start_adb_status_refresh();
+        if (std::get<1>(*result)) std::get<1>(*result)->store(pending);
         return;
     }
     if (cmd != SettingApiActivate) return;
@@ -66,8 +82,9 @@ void adb_toggle_api(int cmd, void *data)
         desired = !adb_enabled;
         adb_pending = true;
     }
+    bool started = false;
     try {
-        adb_api.set_enabled(desired, [desired](settings_adb::Result result) {
+        started = adb_api.set_enabled(desired, [desired](settings_adb::Result result) {
             std::lock_guard<std::mutex> callback_lock(adb_api_mutex);
             adb_pending = false;
             if (result.ok()) {
@@ -76,6 +93,10 @@ void adb_toggle_api(int cmd, void *data)
             }
         });
     } catch (...) {
+        started = false;
+    }
+    if (!started) {
+        std::lock_guard<std::mutex> lock(adb_api_mutex);
         adb_pending = false;
     }
 }
