@@ -116,6 +116,12 @@ public:
     ~LvSettingRollerPage2()
     {
         cancel_async_tasks();
+        if (power_warning_) {
+            if (lv_group_t *group = ComponensObj ? lv_obj_get_group(ComponensObj) : nullptr)
+                lv_group_remove_obj(power_warning_);
+            lv_obj_delete(power_warning_);
+            power_warning_ = nullptr;
+        }
         if (roller3_ && roller3_->Get()) {
             lv_anim_del(roller3_->Get(), nullptr);
             if (input_group_) lv_group_remove_obj(roller3_->Get());
@@ -237,6 +243,87 @@ public:
         }
     }
 
+    std::string selected_entry_label() const
+    {
+        if (selected_index < 0 ||
+            selected_index >= static_cast<int32_t>(item_count_))
+            return {};
+        return std::next(parent_node_.begin(), selected_index)->label;
+    }
+
+    void show_power_warning()
+    {
+        if (power_warning_ || !parent_) return;
+        power_warning_ = lv_obj_create(parent_);
+        if (!power_warning_) return;
+        lv_obj_set_size(power_warning_, 280, 92);
+        lv_obj_center(power_warning_);
+        lv_obj_set_style_radius(power_warning_, 4, LV_PART_MAIN);
+        lv_obj_set_style_border_width(power_warning_, 1, LV_PART_MAIN);
+        lv_obj_set_style_border_color(power_warning_, lv_color_hex(0xFFAA00), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(power_warning_, lv_color_hex(0x171717), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(power_warning_, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(power_warning_, 0, LV_PART_MAIN);
+        lv_obj_clear_flag(power_warning_, LV_OBJ_FLAG_SCROLLABLE);
+        auto add_label = [this](const char *text, int x, int y, int width,
+                                uint32_t color, const lv_font_t *font) {
+            lv_obj_t *label = lv_label_create(power_warning_);
+            if (!label) return;
+            lv_label_set_text(label, text);
+            lv_obj_set_pos(label, x, y);
+            lv_obj_set_width(label, width);
+            lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
+            lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
+        };
+        add_label("Bluetooth power is off", 12, 10, 250, 0xFFAA00, &lv_font_montserrat_14);
+        add_label("Turn on Power before continuing.", 12, 36, 250, 0xCCCCCC,
+                  &lv_font_montserrat_12);
+        add_label("OK", 246, 68, 28, 0x58A6FF, &lv_font_montserrat_12);
+        lv_group_t *group = lv_obj_get_group(ComponensObj);
+        if (group) {
+            lv_group_add_obj(group, power_warning_);
+            lv_group_focus_obj(power_warning_);
+        }
+        DComponens::lvgl_bind_event(
+            power_warning_,
+            LV_EVENT_KEY,
+            nullptr,
+            std::bind(&LvSettingRollerPage2::handle_power_warning_key,
+                      this,
+                      std::placeholders::_1));
+    }
+
+    void set_compact_mode(bool enabled)
+    {
+        compact_mode_ = enabled;
+        update_arrow_visibility();
+
+        if (right_arrow_) {
+            if (enabled)
+                lv_obj_add_flag(right_arrow_, LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_remove_flag(right_arrow_, LV_OBJ_FLAG_HIDDEN);
+        }
+
+        if (hint_) {
+            if (enabled)
+                lv_obj_add_flag(hint_, LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_remove_flag(hint_, LV_OBJ_FLAG_HIDDEN);
+        }
+
+        if (!ComponensObj) return;
+        const uint32_t child_count = lv_obj_get_child_count(ComponensObj);
+        for (uint32_t index = 0; index < child_count; ++index) {
+            lv_obj_t *row   = lv_obj_get_child(ComponensObj, index);
+            lv_obj_t *label = row ? lv_obj_get_child(row, 0) : nullptr;
+            if (!label) continue;
+
+            const int distance = std::abs(static_cast<int32_t>(index) - selected_index);
+            style_label(label, distance, enabled);
+        }
+    }
+
     void update_arrow_visibility()
     {
         const bool show_arrows = item_count_ > 1 && !NextActive;
@@ -330,6 +417,102 @@ public:
         };
 
         run_async_task(std::move(callbacks));
+    }
+
+    void handle_key_event(lv_event_t *event)
+    {
+        lv_obj_t *cont = lv_event_get_target(event);
+        if (!cont || lv_event_get_code(event) != LV_EVENT_KEY) return;
+
+        const uint32_t key = lv_event_get_key(event);
+        if (power_warning_) {
+            if (key == LV_KEY_ESC || key == LV_KEY_LEFT || key == LV_KEY_ENTER ||
+                key == LV_KEY_RIGHT)
+                close_power_warning();
+            lv_event_stop_processing(event);
+            return;
+        }
+        if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
+            if (LeaveSelfPage) LeaveSelfPage();
+            lv_event_stop_processing(event);
+            return;
+        }
+        if (item_count_ == 0) {
+            lv_event_stop_processing(event);
+            return;
+        }
+
+        if (key == LV_KEY_UP) {
+            const bool wrapped = selected_index == 0;
+            selected_index     = wrapped ? static_cast<int32_t>(item_count_ - 1) : selected_index - 1;
+            scroll_to_selected(cont, !wrapped);
+        } else if (key == LV_KEY_DOWN) {
+            const bool wrapped = selected_index == static_cast<int32_t>(item_count_ - 1);
+            selected_index     = wrapped ? 0 : selected_index + 1;
+            scroll_to_selected(cont, !wrapped);
+        } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
+            auto selected_node = std::next(parent_node_.begin(), selected_index);
+            if (selected_node->page_factory) {
+                LoadNextPage();
+            } else if (selected_node->Componens_api) {
+                selected_node->Componens_api(SettingApiActivate, this);
+
+                if (selected_node->icon_enabled) {
+                    request_status_refresh(
+                        lv_obj_get_child(lv_obj_get_child(cont, selected_index), 1),
+                        lv_obj_get_child(lv_obj_get_child(cont, selected_index), 0),
+                        selected_node);
+                }
+            } else if (on_selected_page) {
+                on_selected_page(selected_index);
+            }
+        }
+
+        lv_event_stop_processing(event);
+    }
+
+    void handle_power_warning_key(lv_event_t *event)
+    {
+        handle_key_event(event);
+    }
+
+    void close_power_warning()
+    {
+        if (!power_warning_) return;
+        lv_group_t *group = lv_obj_get_group(ComponensObj);
+        if (group) lv_group_remove_obj(power_warning_);
+        lv_obj_delete(power_warning_);
+        power_warning_ = nullptr;
+        if (group) {
+            lv_group_add_obj(group, ComponensObj);
+            lv_group_focus_obj(ComponensObj);
+        }
+    }
+
+    void create_third_page(const NodeIter &page_node)
+    {
+        if (page3_transitioning_ || roller3_ || !page_node->page_factory || !parent_)
+            return;
+
+        lv_group_t *group = ComponensObj ? lv_obj_get_group(ComponensObj) : nullptr;
+        if (ComponensObj && group) lv_group_remove_obj(ComponensObj);
+        input_group_ = group;
+
+        roller3_ = page_node->page_factory(
+            parent_,
+            page_node,
+            std::bind(&LvSettingRollerPage2::LeaveNextPage, this));
+        if (!roller3_ || !roller3_->Get()) {
+            roller3_.reset();
+            if (ComponensObj && group) {
+                lv_group_add_obj(group, ComponensObj);
+                lv_group_focus_obj(ComponensObj);
+            }
+            return;
+        }
+
+        lv_obj_set_style_translate_x(roller3_->Get(), metric(LayoutMetric::PageWidth), LV_PART_MAIN);
+        AnimateNextOut(nullptr);
     }
 
     void back_from_third_page()
@@ -661,64 +844,6 @@ public:
         }
         update_arrow_visibility();
     }
-    void handle_key_event(lv_event_t *event)
-    {
-        lv_obj_t *cont = lv_event_get_target(event);
-        if (!cont || lv_event_get_code(event) != LV_EVENT_KEY) return;
-
-        const uint32_t key = lv_event_get_key(event);
-        if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
-            if (LeaveSelfPage) LeaveSelfPage();
-            lv_event_stop_processing(event);
-            return;
-        }
-        if (item_count_ == 0) {
-            lv_event_stop_processing(event);
-            return;
-        }
-
-        if (key == LV_KEY_UP) {
-            const bool wrapped = selected_index == 0;
-            selected_index     = wrapped ? static_cast<int32_t>(item_count_ - 1) : selected_index - 1;
-            scroll_to_selected(cont, !wrapped);
-        } else if (key == LV_KEY_DOWN) {
-            const bool wrapped = selected_index == static_cast<int32_t>(item_count_ - 1);
-            selected_index     = wrapped ? 0 : selected_index + 1;
-            scroll_to_selected(cont, !wrapped);
-        } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
-            // Find the setting node corresponding to the currently selected item.
-            auto selected_node = std::next(parent_node_.begin(), selected_index);
-
-            // Open the next page when the selected node provides a page factory.
-            if (selected_node->page_factory) {
-                LoadNextPage();
-                // Activate the selected component through its settings API.
-            } else if (selected_node->Componens_api) {
-                selected_node->Componens_api(SettingApiActivate, this);
-                // Refresh the status icon and label when the node displays an icon.
-                if (selected_node->icon_enabled) {
-                    request_status_refresh(get_selection_icon(selected_index), get_selection_lable(selected_index),
-                                           selected_node);
-                }
-                // Fall back to the page-selection callback when no other handler is available.
-            } else if (on_selected_page) {
-                on_selected_page(selected_index);
-            }
-        }
-
-        lv_event_stop_processing(event);
-    }
-
-private:
-    lv_obj_t *get_selection_lable(int index)
-    {
-        return lv_obj_get_child(lv_obj_get_child(ComponensObj, index), 0);
-    }
-    lv_obj_t *get_selection_icon(int index)
-    {
-        return lv_obj_get_child(lv_obj_get_child(ComponensObj, index), 1);
-    }
-
 private:
     lv_obj_t *parent_          = nullptr;
     lv_obj_t *ui_APP_Container = nullptr;
@@ -728,6 +853,7 @@ private:
     bool page3_transitioning_                   = false;
     std::function<void()> page3_animation_over_ = nullptr;
     lv_group_t *input_group_                    = nullptr;
+    bool compact_mode_                          = false;
     int arrow_up_base_x_                        = 0;
     int arrow_down_base_x_                      = 0;
     int right_arrow_base_x_                     = 0;
@@ -738,4 +864,5 @@ private:
     lv_obj_t *arrow_up_                         = nullptr;
     lv_obj_t *arrow_down_                       = nullptr;
     lv_obj_t *utility_obj_                      = nullptr;
+    lv_obj_t *power_warning_              = nullptr;
 };

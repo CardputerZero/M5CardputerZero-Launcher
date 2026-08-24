@@ -9,6 +9,7 @@
 #include "../cp0_signal_registration.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <functional>
 #include <list>
@@ -19,6 +20,8 @@
 
 namespace sdl_bluetooth_settings {
 namespace {
+
+std::atomic_bool simulated_bt_discoverable{false};
 
 class BluetoothSettings
 {
@@ -36,9 +39,17 @@ public:
         cp0::bluetooth::invoke_backend(callback, [&]() -> cp0::bluetooth::Reply {
             using cp0::bluetooth::Command;
             if (request.command == Command::Status) return {0, encode_status(status())};
-            if (request.command == Command::Power) return {hal_bt_set_power(request.value), {}};
-            if (request.command == Command::Alias || request.command == Command::Discoverable)
+            if (request.command == Command::Power) {
+                const int result = hal_bt_set_power(request.value);
+                if (result == 0 && request.value == 0)
+                    simulated_bt_discoverable.store(false, std::memory_order_release);
+                return {result, {}};
+            }
+            if (request.command == Command::Alias) return {0, {}};
+            if (request.command == Command::Discoverable) {
+                simulated_bt_discoverable.store(request.value != 0, std::memory_order_release);
                 return {0, {}};
+            }
             if (request.command == Command::Scan || request.command == Command::List ||
                 request.command == Command::ConnectedList) {
                 std::vector<cp0_bt_device_t> devices(static_cast<size_t>(request.max_count));
@@ -61,7 +72,7 @@ private:
         const hal_bt_status_t source = hal_bt_get_status();
         cp0_bt_status_t result{};
         result.powered = source.powered;
-        result.discoverable = source.discoverable;
+        result.discoverable = simulated_bt_discoverable.load(std::memory_order_acquire) ? 1 : 0;
         cp0_copy_string(result.address, sizeof(result.address), source.address);
         cp0_copy_string(result.alias, sizeof(result.alias), source.alias);
         return result;
