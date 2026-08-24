@@ -79,7 +79,7 @@ public:
         auto selected_node = std::next(parent_node_.begin(), selected_index);
         if (!selected_node->page_factory) return;
 
-        SetSelfUiMode(PageType::NextPageNeeded);
+        SetSelfUiMode(selected_node->page_type);
         input_group_ = ComponensObj ? lv_obj_get_group(ComponensObj) : nullptr;
         if (ComponensObj && input_group_) {
             lv_group_remove_obj(ComponensObj);
@@ -232,6 +232,8 @@ public:
      */
     void SetSelfUiMode(PageType mode) override
     {
+        if (mode == PageType::FullCustom) return;
+
         const bool enabled = mode == PageType::NextPageNeeded;
         NextActive = enabled;
         if (ComponensObj) {

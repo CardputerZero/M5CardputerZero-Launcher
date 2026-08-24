@@ -100,7 +100,7 @@ public:
 
         if (ComponensObj && group) lv_group_remove_obj(ComponensObj);
         input_group_ = group;
-        SetSelfUiMode(PageType::NextPageNeeded);
+        SetSelfUiMode(selected_node->page_type);
 
         lv_obj_set_style_translate_x(roller3_->Get(), 0, LV_PART_MAIN);
         lv_obj_set_x(roller3_->Get(), metric(LayoutMetric::PageWidth));
@@ -202,6 +202,17 @@ public:
         lv_obj_set_y(label, label_y < 0 ? 0 : label_y);
     }
 
+    void refresh_status_label_layout(lv_obj_t *label)
+    {
+        if (!label || !ComponensObj) return;
+
+        lv_obj_t *row = lv_obj_get_parent(label);
+        if (!row || lv_obj_get_parent(row) != ComponensObj) return;
+
+        const int index = static_cast<int>(lv_obj_get_index(row));
+        style_label(label, std::abs(index - selected_index), NextActive);
+    }
+
     void SetSelfUiMode(PageType mode) override
     {
         if (mode == PageType::FullCustom) return;
@@ -292,41 +303,51 @@ public:
             selected_node->Componens_api(SettingApiReadFlagTimeStart, &result);
             return {true, std::get<0>(result)};
         };
-        callbacks.on_start     = [status_label](AsyncTaskContext &) { lv_label_set_text(status_label, "Sel."); };
-        callbacks.on_submitted = [status_label, last_label_update](AsyncTaskContext &) {
+        callbacks.on_start = [this, status_label](AsyncTaskContext &) {
+            lv_label_set_text(status_label, "Sel.");
+            refresh_status_label_layout(status_label);
+        };
+        callbacks.on_submitted = [this, status_label, last_label_update](AsyncTaskContext &) {
             *last_label_update = AsyncTaskContext::Clock::now();
             lv_label_set_text(status_label, "Chk.");
+            refresh_status_label_layout(status_label);
         };
-        callbacks.on_wait = [status_label, dot_count, last_label_update](AsyncTaskContext &) {
+        callbacks.on_wait = [this, status_label, dot_count, last_label_update](AsyncTaskContext &) {
             const auto now = AsyncTaskContext::Clock::now();
             if (now - *last_label_update < std::chrono::seconds(1)) return;
 
             *last_label_update = now;
             *dot_count         = static_cast<uint8_t>((*dot_count + 1) % 2);
             lv_label_set_text(status_label, *dot_count ? "Wait" : "Chk.");
+            refresh_status_label_layout(status_label);
         };
-        callbacks.on_complete = [icon_obj, status_label, selected_node](AsyncTaskContext &,
-                                                                        const StatusQueryResult &result) {
+        callbacks.on_complete = [this, icon_obj, status_label, selected_node](AsyncTaskContext &,
+                                                                                const StatusQueryResult &result) {
             if (!result.success) {
                 std::printf("[LvSettingRollerPage2] status query failed\n");
                 set_status_error(icon_obj, status_label);
+                refresh_status_label_layout(status_label);
                 return;
             }
 
             lv_label_set_text(status_label, selected_node->label.c_str());
             set_status_icon(icon_obj, result.enabled);
+            refresh_status_label_layout(status_label);
         };
-        callbacks.on_exception = [icon_obj, status_label](AsyncTaskContext &, std::exception_ptr) {
+        callbacks.on_exception = [this, icon_obj, status_label](AsyncTaskContext &, std::exception_ptr) {
             std::printf("[LvSettingRollerPage2] status query raised an exception\n");
             set_status_error(icon_obj, status_label);
+            refresh_status_label_layout(status_label);
         };
-        callbacks.on_timeout = [icon_obj, status_label](AsyncTaskContext &) {
+        callbacks.on_timeout = [this, icon_obj, status_label](AsyncTaskContext &) {
             std::printf("[LvSettingRollerPage2] status query timed out\n");
             set_status_error(icon_obj, status_label);
+            refresh_status_label_layout(status_label);
         };
-        callbacks.on_schedule_failed = [icon_obj, status_label](AsyncTaskContext &) {
+        callbacks.on_schedule_failed = [this, icon_obj, status_label](AsyncTaskContext &) {
             std::printf("[LvSettingRollerPage2] status query could not be scheduled\n");
             set_status_error(icon_obj, status_label);
+            refresh_status_label_layout(status_label);
         };
 
         run_async_task(std::move(callbacks));
@@ -657,6 +678,7 @@ public:
         }
 
         if (item_count_ > 0) {
+            lv_obj_update_layout(ComponensObj);
             scroll_to_selected(ComponensObj, false);
         }
         update_arrow_visibility();

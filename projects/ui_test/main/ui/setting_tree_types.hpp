@@ -68,6 +68,10 @@ struct SettingEntry {
     SettingEntry(const std::string &name, SettingPageFactory factory) : label(name), page_factory(std::move(factory))
     {
     }
+    SettingEntry(const std::string &name, SettingPageFactory factory, PageType type)
+        : label(name), page_factory(std::move(factory)), page_type(type)
+    {
+    }
     SettingEntry(const std::string &name, SettingPageFactory factory, SettingApiCallBackFunc func)
         : label(name), page_factory(std::move(factory))
     {

@@ -210,7 +210,7 @@ public:
         {
             NodeIter wifi = mode_tree.append_child(root, SettingEntry{"WiFi", roller_page_factory});
             mode_tree.append_child(wifi, SettingEntry{"Power", mork_api, true});
-            mode_tree.append_child(wifi, SettingEntry{"Scan", wifi_scan_page3_factory});
+            mode_tree.append_child(wifi, SettingEntry{"Scan", wifi_scan_page3_factory, PageType::FullCustom});
             mode_tree.append_child(wifi, SettingEntry{"Add Hidden WiFi"});
             // mode_tree.append_child(wifi, SettingEntry{"Power Warning"});
         }
