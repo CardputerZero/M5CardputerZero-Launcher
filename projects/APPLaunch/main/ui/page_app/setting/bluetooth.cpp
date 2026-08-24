@@ -448,6 +448,7 @@ void BluetoothUiSession::handle_list_key(UISetupPage &page, uint32_t key)
         action_operation_.abort(action_token_);
         action_busy_ = false;
         SetupPageAccess access(page);
+        refresh_status(page);
         access.set_view(SetupViewState::SUB);
         access.build_sub_view();
         break;
