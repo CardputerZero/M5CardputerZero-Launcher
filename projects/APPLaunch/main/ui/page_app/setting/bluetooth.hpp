@@ -42,7 +42,7 @@ public:
     void toggle_discoverable(UISetupPage &page);
     void start_scan_timer(UISetupPage &page);
     void stop_scan_timer();
-    void refresh_devices();
+    bool refresh_devices();
     void do_scan(UISetupPage &page);
 
 private:

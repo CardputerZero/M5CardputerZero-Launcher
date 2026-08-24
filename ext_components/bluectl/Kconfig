@@ -1,0 +1,19 @@
+
+menuconfig BLUECTL_COMPONENT_ENABLED
+    bool "Enable bluectl (BlueZ D-Bus bluetooth operation library)"
+    default n
+
+    config BLUECTL_AGENT_ENABLED
+        bool "compile pairing agent support"
+        default y
+        depends on BLUECTL_COMPONENT_ENABLED
+
+    config BLUECTL_MEDIA_ENABLED
+        bool "compile media player control (AVRCP) support"
+        default n
+        depends on BLUECTL_COMPONENT_ENABLED
+
+    config BLUECTL_DYNAMIC
+        bool "compile component as dynamic(shared) lib"
+        default n
+        depends on BLUECTL_COMPONENT_ENABLED

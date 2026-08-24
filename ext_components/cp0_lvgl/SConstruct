@@ -69,6 +69,8 @@ if "CONFIG_CP0_LVGL_COMPONENT_ENABLED" in os.environ or "CONFIG_SIGSLOT_COMPONEN
         platform_srcs = Glob('src/cp0/*.c*')
         REQUIREMENTS += ['input', 'xkbcommon', 'udev', 'pthread']
         REQUIREMENTS += [':libdbus-1.so.3']
+        REQUIREMENTS += pkg_config_ldflags('gio-2.0')
+        DEFINITIONS += pkg_config_cflags('gio-2.0')
         if service_enabled('CAMERA'):
             REQUIREMENTS += ['camera', 'camera-base', 'jpeg']
         PRIVATE_INCLUDE += [toolchain_path('usr', 'include', 'dbus-1.0'),

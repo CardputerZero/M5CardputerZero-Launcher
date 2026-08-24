@@ -1,0 +1,66 @@
+# component/SConscript
+Import('env')
+import os
+from pathlib import Path
+
+with open(env['PROJECT_TOOL_S']) as f:
+    exec(f.read())
+
+if 'CONFIG_BLUECTL_COMPONENT_ENABLED' in os.environ:
+    SRCS = []
+    INCLUDE = [ADir('src')]
+    PRIVATE_INCLUDE = []
+    REQUIREMENTS = []
+    STATIC_LIB = []
+    DYNAMIC_LIB = []
+    DEFINITIONS = []
+    DEFINITIONS_PRIVATE = []
+    LDFLAGS = []
+    LINK_SEARCH_PATH = []
+
+    SRCS += AGlob('src/bluectl_core.c')
+    SRCS += AGlob('src/bluectl_adapter.c')
+    SRCS += AGlob('src/bluectl_device.c')
+
+    if 'CONFIG_BLUECTL_AGENT_ENABLED' in os.environ:
+        SRCS += AGlob('src/bluectl_agent.c')
+        DEFINITIONS += ['-DCONFIG_BLUECTL_AGENT_ENABLED=1']
+
+    if 'CONFIG_BLUECTL_MEDIA_ENABLED' in os.environ:
+        SRCS += AGlob('src/bluectl_media.c')
+        DEFINITIONS += ['-DCONFIG_BLUECTL_MEDIA_ENABLED=1']
+
+    sysroot = os.environ.get('CONFIG_TOOLCHAIN_SYSROOT', '')
+    if sysroot:
+        # 交叉编译: sysroot 内只带 libdbus-1.so.3 (无 libdbus-1.so 开发链接),
+        # 头文件在 usr/include/dbus-1.0 与 usr/lib/<triplet>/dbus-1.0/include
+        triplet = env.get('GCC_DUMPMACHINE', '')
+        PRIVATE_INCLUDE += [str(Path(sysroot) / 'usr' / 'include' / 'dbus-1.0')]
+        arch_dbus_include = Path(sysroot) / 'usr' / 'lib' / triplet / 'dbus-1.0' / 'include'
+        if arch_dbus_include.exists():
+            PRIVATE_INCLUDE += [str(arch_dbus_include)]
+        REQUIREMENTS += [':libdbus-1.so.3']
+    else:
+        # 本机构建: 优先 pkg-config 获取 dbus-1 编译/链接参数
+        dbus_cflags = pkg_config_cflags('dbus-1')
+        if dbus_cflags:
+            DEFINITIONS_PRIVATE += dbus_cflags
+            REQUIREMENTS += pkg_config_ldflags('dbus-1')
+        else:
+            DEFINITIONS_PRIVATE += ['-I/usr/include/dbus-1.0',
+                                    '-I/usr/lib/dbus-1.0/include']
+            REQUIREMENTS += ['-ldbus-1']
+
+    env['COMPONENTS'].append({'target': os.path.basename(env['component_dir']),
+                              'SRCS': SRCS,
+                              'INCLUDE': INCLUDE,
+                              'PRIVATE_INCLUDE': PRIVATE_INCLUDE,
+                              'REQUIREMENTS': REQUIREMENTS,
+                              'STATIC_LIB': STATIC_LIB,
+                              'DYNAMIC_LIB': DYNAMIC_LIB,
+                              'DEFINITIONS': DEFINITIONS,
+                              'DEFINITIONS_PRIVATE': DEFINITIONS_PRIVATE,
+                              'LDFLAGS': LDFLAGS,
+                              'LINK_SEARCH_PATH': LINK_SEARCH_PATH,
+                              'REGISTER': 'shared' if 'CONFIG_BLUECTL_DYNAMIC' in os.environ else 'static'
+                              })

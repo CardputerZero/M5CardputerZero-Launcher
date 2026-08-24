@@ -108,8 +108,7 @@ void cp0_zmq_log(const char *topic, const char *message)
 #if CP0_LVGL_USE_ZMQ_LOG
     publisher().publish(topic, message);
 #else
-    (void)topic;
-    (void)message;
+    std::fprintf(stderr, "[%s] %s\n", topic && topic[0] ? topic : "log", message ? message : "");
 #endif
 }
 
@@ -126,7 +125,13 @@ void cp0_zmq_logf(const char *topic, const char *fmt, ...)
     va_end(args);
     cp0_zmq_log(topic, buf);
 #else
-    (void)topic;
-    (void)fmt;
+    if (!fmt)
+        return;
+    char buf[1024] = {};
+    va_list args;
+    va_start(args, fmt);
+    std::vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    cp0_zmq_log(topic, buf);
 #endif
 }

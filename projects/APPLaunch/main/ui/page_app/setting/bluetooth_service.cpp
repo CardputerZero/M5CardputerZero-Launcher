@@ -5,6 +5,7 @@
 #include <memory>
 #include <new>
 #include <chrono>
+#include <cstring>
 #include <future>
 #include <thread>
 
@@ -70,9 +71,8 @@ int BluetoothUiSession::decode_devices(const std::string &data, cp0_bt_device_t 
 
 int BluetoothUiSession::api_int(std::list<std::string> args, int default_value)
 {
-    int result = default_value;
-    cp0_signal_bt_api(std::move(args), [&](int code, std::string) { result = code; });
-    return result;
+    cp0_signal_bt_api(std::move(args), [](int, std::string) {});
+    return default_value;
 }
 
 cp0_bt_status_t BluetoothUiSession::get_status()
@@ -87,7 +87,7 @@ cp0_bt_status_t BluetoothUiSession::get_status()
 
 int BluetoothUiSession::set_power(int enabled)
 {
-    return api_int({"BtPower", std::to_string(enabled)});
+    return api_int({"BtPower", std::to_string(enabled)}, 0);
 }
 
 int BluetoothUiSession::rfkill_blocked()
@@ -114,18 +114,18 @@ int BluetoothUiSession::rfkill_blocked()
 
 int BluetoothUiSession::set_alias(const std::string &alias)
 {
-    return api_int({"BtAlias", alias});
+    return api_int({"BtAlias", alias}, 0);
 }
 
 int BluetoothUiSession::set_discoverable(int enabled)
 {
-    return api_int({"BtDiscoverable", std::to_string(enabled)});
+    return api_int({"BtDiscoverable", std::to_string(enabled)}, 0);
 }
 
 int BluetoothUiSession::device_command(const char *command, const char *address)
 {
     return api_int({command ? std::string(command) : std::string(),
-                    address ? std::string(address) : std::string()});
+                    address ? std::string(address) : std::string()}, 0);
 }
 
 int BluetoothUiSession::device_list(const char *command, cp0_bt_device_t *out, int max_devices)
@@ -322,7 +322,9 @@ void BluetoothUiSession::start_scan_timer(UISetupPage &page)
 {
     if (!require_power_enabled(page)) return;
     stop_scan_timer();
+    std::fprintf(stderr, "[bt] settings scan start requested\n");
     discovery_active_ = api_int({"BtDiscoveryStart"}, 0) == 0;
+    std::fprintf(stderr, "[bt] settings scan discovery_active=%d\n", discovery_active_ ? 1 : 0);
     refresh_devices();
     build_list(page);
     if (!discovery_active_)
@@ -360,8 +362,10 @@ void BluetoothUiSession::scan_timer_cb(lv_timer_t *timer) noexcept
             if (!access.is_view(SetupViewState::BT_LIST)) return;
             bluetooth->show_action(*page, "Bluetooth action failed", 0xFF4444);
         }
-        bluetooth->refresh_devices();
-        bluetooth->build_list(*page);
+        const bool changed = bluetooth->refresh_devices();
+        std::fprintf(stderr, "[bt] settings scan timer refreshed count=%d\n", bluetooth->device_count_);
+        if (changed)
+            bluetooth->build_list(*page);
     } catch (...) {
         bluetooth->scan_callback_enabled_ = false;
     }
@@ -372,6 +376,7 @@ void BluetoothUiSession::suspend_scan_discovery()
     if (!discovery_active_)
         return;
     api_int({"BtDiscoveryStop"}, 0);
+    std::fprintf(stderr, "[bt] settings scan suspended\n");
     discovery_active_ = false;
 }
 
@@ -381,6 +386,7 @@ void BluetoothUiSession::resume_scan_discovery()
         return;
     if (!require_power_enabled(*scan_page_)) return;
     discovery_active_ = api_int({"BtDiscoveryStart"}, 0) == 0;
+    std::fprintf(stderr, "[bt] settings scan resumed active=%d\n", discovery_active_ ? 1 : 0);
 }
 
 void BluetoothUiSession::stop_scan_timer()
@@ -394,16 +400,28 @@ void BluetoothUiSession::stop_scan_timer()
     suspend_scan_discovery();
 }
 
-void BluetoothUiSession::refresh_devices()
+bool BluetoothUiSession::refresh_devices()
 {
+    cp0_bt_device_t refreshed[CP0_BT_DEVICE_MAX]{};
+    int refreshed_count = 0;
     if (model_.list_mode() == BluetoothListMode::MANAGED)
-        device_count_ = device_list("BtConnectedList", devices_, CP0_BT_DEVICE_MAX);
+        refreshed_count = device_list("BtConnectedList", refreshed, CP0_BT_DEVICE_MAX);
     else
-        device_count_ = device_list("BtList", devices_, CP0_BT_DEVICE_MAX);
-    if (device_count_ < 0)
-        device_count_ = 0;
+        refreshed_count = device_list("BtList", refreshed, CP0_BT_DEVICE_MAX);
+    if (refreshed_count < 0)
+        refreshed_count = 0;
+    const bool changed = refreshed_count != device_count_ ||
+                         std::memcmp(refreshed, devices_,
+                                     sizeof(cp0_bt_device_t) * refreshed_count) != 0;
+    if (changed) {
+        std::memcpy(devices_, refreshed, sizeof(cp0_bt_device_t) * refreshed_count);
+        device_count_ = refreshed_count;
+    }
     if (device_count_ == 0)
         model_.clear_selection();
+    std::fprintf(stderr, "[bt] settings devices refreshed mode=%d count=%d\n",
+                 static_cast<int>(model_.list_mode()), device_count_);
+    return changed;
 }
 
 void BluetoothUiSession::do_scan(UISetupPage &page)

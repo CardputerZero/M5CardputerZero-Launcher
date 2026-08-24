@@ -1,4 +1,6 @@
 #include "cp0_bluetooth_backend.hpp"
+#include "cp0_bluez_dbus_client.hpp"
+#include "cp0_lvgl_log.h"
 #include "../cp0_init_once.hpp"
 #include "../cp0_bluetooth_api_contract.hpp"
 
@@ -194,8 +196,13 @@ void session_deinit(uint64_t session_id,
 void api_call(std::list<std::string> args, std::function<void(int, std::string)> callback)
 {
     using namespace cp0_bluetooth_backend;
+    std::ostringstream raw_request;
+    for (const auto &arg : args)
+        raw_request << '[' << arg << ']';
+    cp0_zmq_logf("bt", "api request=%s", raw_request.str().c_str());
     cp0::bluetooth::Request request;
     if (!cp0::bluetooth::parse_request(args, request)) {
+        cp0_zmq_log("bt", "api request rejected by parser");
         report(callback, -1, "invalid bt api request");
         return;
     }
@@ -263,23 +270,56 @@ void api_call(std::list<std::string> args, std::function<void(int, std::string)>
         report(callback, 0, "ok");
         return;
     }
-    cp0::bluetooth::invoke_backend(callback, [&]() -> cp0::bluetooth::Reply {
-        if(request.command == Command::Status) return {0, encode_status(cp0_bluetooth_backend::status())};
-        if(request.command == Command::Power) return {cp0_bluetooth_backend::set_power(request.value), {}};
-        if(request.command == Command::Alias) return {cp0_bluetooth_backend::set_alias(request.text.c_str()), {}};
-        if(request.command == Command::Discoverable) return {cp0_bluetooth_backend::set_discoverable(request.value), {}};
-        if(request.command == Command::Scan) return load_devices(request.max_count, cp0_bluetooth_backend::scan);
-        if(request.command == Command::DiscoveryStart) return {cp0_bluetooth_backend::start_discovery(), {}};
-        if(request.command == Command::DiscoveryStop) return {cp0_bluetooth_backend::stop_discovery(), {}};
-        if(request.command == Command::List)
-            return load_devices(request.max_count, [](cp0_bt_device_t *out, int count) { return cp0_bluetooth_backend::list(out, count, false); });
-        if(request.command == Command::ConnectedList)
-            return load_devices(request.max_count, [](cp0_bt_device_t *out, int count) { return cp0_bluetooth_backend::list(out, count, true); });
-        if(request.command == Command::Pair) return {cp0_bluetooth_backend::pair(request.text.c_str()), {}};
-        if(request.command == Command::Connect) return {cp0_bluetooth_backend::connect(request.text.c_str()), {}};
-        if(request.command == Command::Disconnect) return {cp0_bluetooth_backend::disconnect(request.text.c_str()), {}};
-        return {cp0_bluetooth_backend::remove(request.text.c_str()), {}};
-    });
+    if (request.command == Command::Status) {
+        report(callback, 0, encode_status(cp0_bluetooth_backend::status()));
+        return;
+    }
+    if (request.command == Command::List || request.command == Command::ConnectedList) {
+        const bool connected_only = request.command == Command::ConnectedList;
+        const auto reply = load_devices(request.max_count,
+            [connected_only](cp0_bt_device_t *out, int count) {
+                return cp0_bluetooth_backend::list(out, count, connected_only);
+            });
+        report(callback, reply.code, reply.data);
+        return;
+    }
+    if (request.command == Command::Scan) {
+        cp0_bluez_dbus::start_discovery_async([request, callback](int code, const std::string &message) {
+            if (code != 0) {
+                report(callback, code, message);
+                return;
+            }
+            const auto reply = load_devices(request.max_count,
+                [](cp0_bt_device_t *out, int count) {
+                    return cp0_bluetooth_backend::list(out, count, false);
+                });
+            report(callback, reply.code, reply.data);
+        });
+        return;
+    }
+
+    auto completion = [callback](int code, const std::string &message) {
+        cp0_zmq_logf("bt", "api async completion code=%d message=%s", code, message.c_str());
+        report(callback, code, message == "ok" ? std::string() : message);
+    };
+    if (request.command == Command::Power)
+        cp0_bluez_dbus::set_power_async(request.value, std::move(completion));
+    else if (request.command == Command::Alias)
+        cp0_bluez_dbus::set_alias_async(request.text.c_str(), std::move(completion));
+    else if (request.command == Command::Discoverable)
+        cp0_bluez_dbus::set_discoverable_async(request.value, std::move(completion));
+    else if (request.command == Command::DiscoveryStart)
+        cp0_bluez_dbus::start_discovery_async(std::move(completion));
+    else if (request.command == Command::DiscoveryStop)
+        cp0_bluez_dbus::stop_discovery_async(std::move(completion));
+    else if (request.command == Command::Pair)
+        cp0_bluez_dbus::pair_async(request.text.c_str(), std::move(completion));
+    else if (request.command == Command::Connect)
+        cp0_bluez_dbus::connect_async(request.text.c_str(), std::move(completion));
+    else if (request.command == Command::Disconnect)
+        cp0_bluez_dbus::disconnect_async(request.text.c_str(), std::move(completion));
+    else
+        cp0_bluez_dbus::remove_async(request.text.c_str(), std::move(completion));
 }
 
 } // namespace
@@ -288,6 +328,7 @@ extern "C" void init_bluetooth(void)
 {
     static cp0::InitOnce initialized;
     initialized.run([] {
+        cp0_bluez_dbus::initialize();
         return static_cast<bool>(cp0_signal_bt_api.append(
             [](std::list<std::string> args,
                std::function<void(int, std::string)> callback) {
