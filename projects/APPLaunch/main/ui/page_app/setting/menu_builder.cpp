@@ -14,7 +14,6 @@ void build_menu(UISetupPage &page)
     access.screen().append(page, candidate);
     access.wifi().append(page, candidate);
     access.speaker().append(page, candidate);
-    access.camera().append(page, candidate);
     access.info().append(page, candidate);
     About::append(page, candidate);
     Help::append(page, candidate);
