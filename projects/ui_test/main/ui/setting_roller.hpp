@@ -42,6 +42,8 @@ extern const lv_image_dsc_t setting_right_arrow;
  */
 class LvSettingRoller : public DComponens::LvglComponensBase {
 public:
+    using Page3TransitionCallback = LvSettingRollerPage2::Page3TransitionCallback;
+
     // Fixed height of each row. Scroll distance, selection area, and text vertical centering are calculated from this value.
     static constexpr int ROW_H = 21;
 
@@ -213,13 +215,16 @@ public:
         auto *self = static_cast<LvSettingRoller *>(p);
         if (!self) return;
 
+        lv_group_t *group = self->input_group_;
         if (self->roller2_ && self->roller2_->Get()) {
             lv_group_remove_obj(self->roller2_->Get());
         }
         self->roller2_.reset();
         self->set_secondary_mode(false);
 
-        if (self->ComponensObj) {
+        if (self->ComponensObj && group) {
+            lv_group_add_obj(group, self->ComponensObj);
+            self->top_in_group_ = true;
             lv_group_focus_obj(self->ComponensObj);
         }
     }
@@ -305,11 +310,23 @@ public:
      */
     void load_second(const NodeIter &parent_node)
     {
+        input_group_ = ComponensObj ? lv_obj_get_group(ComponensObj) : nullptr;
+        if (ComponensObj && input_group_) {
+            lv_group_remove_obj(ComponensObj);
+            top_in_group_ = false;
+        }
         roller2_ = parent_node->page_factory(
             ui_APP_Container,
             parent_node,
             std::bind(&LvSettingRoller::back_this, this));
-        lv_group_add_obj(lv_obj_get_group(ComponensObj), roller2_->Get());
+        if (auto *page2 = dynamic_cast<LvSettingRollerPage2 *>(roller2_.get())) {
+            page2->set_page3_transition_callback(
+                std::bind(&LvSettingRoller::page3_transition_cb, this,
+                          std::placeholders::_1, std::placeholders::_2));
+        }
+        if (input_group_ && roller2_ && roller2_->Get()) {
+            lv_group_add_obj(input_group_, roller2_->Get());
+        }
         lv_group_focus_obj(roller2_->Get());
     }
 
@@ -318,6 +335,58 @@ public:
     {
         set_secondary_mode();
         load_second(parent_node);
+    }
+
+    void page3_transition_cb(bool entering, bool completed)
+    {
+        if (completed) {
+            if (!entering && input_group_ && ComponensObj) {
+                lv_group_add_obj(input_group_, ComponensObj);
+                top_in_group_ = true;
+            }
+            page3_transitioning_ = false;
+            return;
+        }
+
+        page3_transitioning_ = true;
+        animate_page3_object(selection_bg_, entering);
+        animate_page3_object(ComponensObj, entering);
+        animate_page3_object(arrow_up_, entering);
+        animate_page3_object(arrow_down_, entering);
+        animate_page3_object(right_arrow_, entering);
+    }
+
+    static void page3_anim_exec_cb(void *object, int32_t value)
+    {
+        if (object) lv_obj_set_x(static_cast<lv_obj_t *>(object), value);
+    }
+
+    void animate_page3_object(lv_obj_t *object, bool entering)
+    {
+        if (!object) return;
+
+        lv_anim_del(object, nullptr);
+        const int start_x = lv_obj_get_x(object);
+        const int end_x = page3_object_base_x(object) + (entering ? -PAGE3_SHIFT : 0);
+
+        lv_anim_t animation;
+        lv_anim_init(&animation);
+        lv_anim_set_var(&animation, object);
+        lv_anim_set_values(&animation, start_x, end_x);
+        lv_anim_set_time(&animation, PAGE3_ANIM_MS);
+        lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
+        lv_anim_set_exec_cb(&animation, page3_anim_exec_cb);
+        if (!lv_anim_start(&animation)) lv_obj_set_x(object, end_x);
+    }
+
+    int page3_object_base_x(lv_obj_t *object) const
+    {
+        if (object == selection_bg_) return selection_bg_base_x_;
+        if (object == ComponensObj) return componens_base_x_;
+        if (object == arrow_up_) return arrow_up_base_x_;
+        if (object == arrow_down_) return arrow_down_base_x_;
+        if (object == right_arrow_) return right_arrow_base_x_;
+        return object ? lv_obj_get_x(object) : 0;
     }
 
     /**
@@ -397,9 +466,11 @@ public:
     void create_ui(lv_obj_t *parent) override
     {
         // Create the center highlight background. It does not accept input or scroll itself.
-        lv_obj_t *selection_bg = lv_obj_create(parent);
+        selection_bg_ = lv_obj_create(parent);
+        lv_obj_t *selection_bg = selection_bg_;
         lv_obj_set_size(selection_bg, 312, 21);
         lv_obj_set_pos(selection_bg, 4, 66);
+        selection_bg_base_x_ = lv_obj_get_x(selection_bg);
         lv_obj_set_style_bg_color(selection_bg, lv_color_hex(0x2A2A2A), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(selection_bg, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_border_width(selection_bg, 0, LV_PART_MAIN);
@@ -412,6 +483,7 @@ public:
         lv_obj_set_size(ComponensObj, 320, 150);
         lv_obj_set_pos(ComponensObj, 0, 20);
         lv_obj_center(ComponensObj);
+        componens_base_x_ = lv_obj_get_x(ComponensObj);
         lv_obj_set_style_bg_opa(ComponensObj, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_set_style_border_width(ComponensObj, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(ComponensObj, 0, LV_PART_MAIN);
@@ -428,6 +500,7 @@ public:
             lv_obj_set_pos(arrow_up_,
                            LABEL_CENTER_X - lv_obj_get_width(arrow_up_) / 2,
                            2);
+            arrow_up_base_x_ = lv_obj_get_x(arrow_up_);
         }
 
         arrow_down_ = lv_img_create(parent);
@@ -437,12 +510,14 @@ public:
             lv_obj_set_pos(arrow_down_,
                            LABEL_CENTER_X - lv_obj_get_width(arrow_down_) / 2,
                            150 - lv_obj_get_height(arrow_down_) - 4);
+            arrow_down_base_x_ = lv_obj_get_x(arrow_down_);
         }
 
         // Show the right arrow only after entering a second-level page; hide it initially.
         right_arrow_ = lv_img_create(parent);
         lv_img_set_src(right_arrow_, &setting_right_arrow);
         lv_obj_set_pos(right_arrow_, 100, 65);
+        right_arrow_base_x_ = lv_obj_get_x(right_arrow_);
         lv_obj_add_flag(right_arrow_, LV_OBJ_FLAG_HIDDEN);
         
 
@@ -485,6 +560,9 @@ public:
     }
 
 private:
+    static constexpr int PAGE3_ANIM_MS = 200;
+    static constexpr int PAGE3_SHIFT = 320;
+
     // Tree node iterator for the current top-level page.
     NodeIter parent_node_;
 
@@ -496,6 +574,16 @@ private:
 
     // Collection of all top-level entry containers, used to adjust Labels when entering or leaving a second-level page.
     std::list<lv_obj_t *> item_containers_;
+
+    lv_group_t *input_group_ = nullptr;
+    bool top_in_group_ = true;
+    bool page3_transitioning_ = false;
+    lv_obj_t *selection_bg_ = nullptr;
+    int selection_bg_base_x_ = 0;
+    int componens_base_x_ = 0;
+    int arrow_up_base_x_ = 0;
+    int arrow_down_base_x_ = 0;
+    int right_arrow_base_x_ = 0;
 
     // Up arrow, Down arrow, and second-level page entry arrow.
     lv_obj_t *arrow_up_ = nullptr;

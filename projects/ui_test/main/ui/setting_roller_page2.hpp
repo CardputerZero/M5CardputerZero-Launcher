@@ -11,7 +11,7 @@
 #include <functional>
 #include <iterator>
 #include <chrono>
-#include <future>
+#include <exception>
 #include <memory>
 #include <utility>
 #include <tuple>
@@ -33,6 +33,8 @@ extern const lv_image_dsc_t setting_cross;
 
 class LvSettingRollerPage2 : public DComponens::LvglComponensBase {
 public:
+    using Page3TransitionCallback = std::function<void(bool entering, bool completed)>;
+
     static constexpr int PANEL_X        = 120;
     static constexpr int PANEL_W        = 200;
     static constexpr int PANEL_H        = 150;
@@ -51,11 +53,12 @@ public:
     int32_t selected_index                    = 0;
     std::function<void(int)> on_selected_page = nullptr;
     std::function<void()> on_back             = nullptr;
+    Page3TransitionCallback on_page3_transition = nullptr;
 
     LvSettingRollerPage2() = default;
     ~LvSettingRollerPage2()
     {
-        lifetime_token_.reset();
+        cancel_async_tasks();
         if (roller3_ && roller3_->Get()) {
             lv_anim_del(roller3_->Get(), nullptr);
             if (input_group_)
@@ -97,7 +100,7 @@ public:
         create_ui(parent);
     }
 
-    static void style_label(lv_obj_t *label, int distance)
+    static void style_label(lv_obj_t *label, int distance, bool compact = false)
     {
         if (!label) return;
 
@@ -129,7 +132,11 @@ public:
 
         const bool focused      = distance == 0;
         const int natural_width = lv_obj_get_width(label);
-        if (natural_width > LABEL_BOX_W) {
+        if (compact) {
+            lv_obj_set_width(label, LABEL_BOX_W);
+            lv_label_set_long_mode(label, focused ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP);
+            lv_obj_set_x(label, LABEL_BOX_X);
+        } else if (natural_width > LABEL_BOX_W) {
             lv_obj_set_width(label, LABEL_BOX_W);
             lv_label_set_long_mode(label, focused ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP);
             lv_obj_set_x(label, LABEL_BOX_X);
@@ -145,9 +152,45 @@ public:
         lv_obj_set_y(label, label_y < 0 ? 0 : label_y);
     }
 
+    void set_page3_transition_callback(Page3TransitionCallback callback)
+    {
+        on_page3_transition = std::move(callback);
+    }
+
+    void set_compact_mode(bool enabled)
+    {
+        compact_mode_ = enabled;
+        update_arrow_visibility();
+
+        if (hint_) {
+            if (enabled)
+                lv_obj_add_flag(hint_, LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_remove_flag(hint_, LV_OBJ_FLAG_HIDDEN);
+        }
+
+        if (!ComponensObj) return;
+        const uint32_t child_count = lv_obj_get_child_count(ComponensObj);
+        for (uint32_t index = 0; index < child_count; ++index) {
+            lv_obj_t *row = lv_obj_get_child(ComponensObj, index);
+            lv_obj_t *label = row ? lv_obj_get_child(row, 0) : nullptr;
+            if (!label) continue;
+
+            if (enabled) {
+                lv_obj_set_width(label, LABEL_BOX_W);
+                lv_obj_set_x(label, LABEL_BOX_X);
+                lv_label_set_long_mode(
+                    label, index == static_cast<uint32_t>(selected_index)
+                        ? LV_LABEL_LONG_SCROLL_CIRCULAR
+                        : LV_LABEL_LONG_CLIP);
+            }
+        }
+        lv_obj_send_event(ComponensObj, LV_EVENT_SCROLL, ComponensObj);
+    }
+
     void update_arrow_visibility()
     {
-        const bool show_arrows = item_count_ > 1;
+        const bool show_arrows = item_count_ > 1 && !compact_mode_;
         if (arrow_up_) {
             if (show_arrows)
                 lv_obj_remove_flag(arrow_up_, LV_OBJ_FLAG_HIDDEN);
@@ -162,143 +205,90 @@ public:
         }
     }
 
-    struct StatusContext {
-        struct QueryResult {
-            bool success = false;
-            bool enabled = false;
-        };
-
-        lv_obj_t *icon_obj     = nullptr;
-        lv_obj_t *status_label = nullptr;
-        NodeIter selected_node;
-        std::chrono::system_clock::time_point timestamp;
-        std::chrono::system_clock::time_point last_label_update;
-        uint8_t dot_count = 0;
-        bool waiting = false;
-        std::shared_ptr<std::atomic_bool> timestarted = std::make_shared<std::atomic_bool>(true);
-        std::shared_future<QueryResult> result;
-        std::weak_ptr<bool> lifetime_token;
-
-        StatusContext(lv_obj_t *icon, lv_obj_t *label, const NodeIter &node, std::weak_ptr<bool> token)
-            : icon_obj(icon),
-              status_label(label),
-              selected_node(node),
-              timestamp(std::chrono::system_clock::now()),
-              last_label_update(timestamp),
-              lifetime_token(std::move(token))
-        {
-        }
+    struct StatusQueryResult {
+        bool success = false;
+        bool enabled = false;
     };
 
-    static void async_update_status_icon(void *user_data)
+    using AsyncTaskContext = DComponens::LvglComponensBase::AsyncTaskContext;
+    using StatusTaskCallbacks =
+        DComponens::LvglComponensBase::AsyncTaskCallbacks<StatusQueryResult>;
+
+    static void set_status_icon(lv_obj_t *icon_obj, bool enabled)
     {
-        auto *context = static_cast<StatusContext *>(user_data);
-        if (!context) return;
+        if (!icon_obj) return;
 
-        if (context->lifetime_token.expired()) {
-            delete context;
-            return;
-        }
-
-        if (!context->icon_obj || !context->selected_node->Componens_api) {
-            delete context;
-            return;
-        }
-
-        if (!context->waiting) {
-            const auto selected_node  = context->selected_node;
-            const auto lifetime_token = context->lifetime_token;
-            const auto timestarted = context->timestarted;
-
-            context->timestarted->store(true, std::memory_order_release);
-
-            context->result = std::async(
-                                  std::launch::async,
-                                  [selected_node, lifetime_token, timestarted]() -> StatusContext::QueryResult {
-                                      if (lifetime_token.expired()) return {};
-                                      try {
-                                          SettingApiReadFlagTimeStartData result =
-                                              std::make_tuple(false, timestarted.get());
-                                          selected_node->Componens_api(SettingApiReadFlagTimeStart, &result);
-                                          return {true, std::get<0>(result)};
-                                      } catch (...) {
-                                          return {};
-                                      }
-                                  })
-                                  .share();
-            context->waiting = true;
-            context->timestamp         = std::chrono::system_clock::now();
-            context->last_label_update = context->timestamp;
-            context->dot_count         = 0;
-            lv_label_set_text(context->status_label, "Chk.");
-            if (lv_async_call(async_update_status_icon, context) != LV_RESULT_OK) {
-                delete context;
-            }
-            return;
-        }
-
-        const auto now = std::chrono::system_clock::now();
-        if (!context->timestarted->load(std::memory_order_acquire)) {
-            context->timestamp = now;
-            if (now - context->last_label_update >= std::chrono::seconds(1)) {
-                context->dot_count = static_cast<uint8_t>((context->dot_count + 1) % 2);
-                lv_label_set_text(context->status_label, context->dot_count ? "Wait" : "Chk.");
-                context->last_label_update = now;
-            }
-        } else {
-            if (now - context->timestamp >= std::chrono::seconds(3)) {
-                std::printf("[LvSettingRollerPage2] status icon query failed: timeout\n");
-                lv_label_set_text(context->status_label, "Err");
-                lv_img_set_src(context->icon_obj, &setting_cross);
-                delete context;
-                return;
-            }
-        }
-
-        if (context->result.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready) {
-            if (lv_async_call(async_update_status_icon, context) != LV_RESULT_OK) {
-                delete context;
-            }
-            return;
-        }
-
-        const auto query_result = context->result.get();
-        if (!query_result.success) {
-            std::printf("[LvSettingRollerPage2] status icon query failed\n");
-            lv_label_set_text(context->status_label, "Err");
-            lv_img_set_src(context->icon_obj, &setting_cross);
-            delete context;
-            return;
-        }
-
-        lv_label_set_text(context->status_label, context->selected_node->label.c_str());
-        lv_img_set_src(context->icon_obj, query_result.enabled ? &setting_ok : &setting_cross);
-        lv_obj_update_layout(context->icon_obj);
-        lv_obj_set_pos(context->icon_obj, STATUS_ICON_X + (query_result.enabled ? 0 : 1),
-                       (ROW_H - lv_obj_get_height(context->icon_obj)) / 2);
-        delete context;
+        lv_img_set_src(icon_obj, enabled ? &setting_ok : &setting_cross);
+        lv_obj_update_layout(icon_obj);
+        lv_obj_set_pos(icon_obj,
+                       STATUS_ICON_X + (enabled ? 0 : 1),
+                       (ROW_H - lv_obj_get_height(icon_obj)) / 2);
     }
 
-    void lvgl_async_update_status_icon(lv_obj_t *icon_obj, lv_obj_t *status_label, const NodeIter &selected_node)
+    static void set_status_error(lv_obj_t *icon_obj, lv_obj_t *status_label)
+    {
+        if (status_label) lv_label_set_text(status_label, "Err");
+        set_status_icon(icon_obj, false);
+    }
+
+    void request_status_refresh(lv_obj_t *icon_obj,
+                                lv_obj_t *status_label,
+                                const NodeIter &selected_node)
     {
         if (!icon_obj || !status_label || !selected_node->Componens_api) return;
 
-        lv_label_set_text(status_label, "Sel.");
-        auto *context = new StatusContext(icon_obj, status_label, selected_node, lifetime_token_);
-        if (lv_async_call(LvSettingRollerPage2::async_update_status_icon, context) != LV_RESULT_OK) {
-            delete context;
-        }
-    }
+        auto dot_count = std::make_shared<uint8_t>(0);
+        auto last_label_update = std::make_shared<AsyncTaskContext::Clock::time_point>(
+            AsyncTaskContext::Clock::now());
+        auto operation_started = std::make_shared<std::atomic_bool>(false);
 
-    void update_status_icon(lv_obj_t *icon_obj, const NodeIter &selected_node)
-    {
-        if (!icon_obj || !selected_node->Componens_api) return;
+        StatusTaskCallbacks callbacks;
+        callbacks.execute = [selected_node, operation_started]() -> StatusQueryResult {
+            SettingApiReadFlagTimeStartData result =
+                std::make_tuple(false, operation_started.get());
+            selected_node->Componens_api(SettingApiReadFlagTimeStart, &result);
+            return {true, std::get<0>(result)};
+        };
+        callbacks.on_start = [status_label](AsyncTaskContext &) {
+            lv_label_set_text(status_label, "Sel.");
+        };
+        callbacks.on_submitted = [status_label, last_label_update](AsyncTaskContext &) {
+            *last_label_update = AsyncTaskContext::Clock::now();
+            lv_label_set_text(status_label, "Chk.");
+        };
+        callbacks.on_wait = [status_label, dot_count, last_label_update](AsyncTaskContext &) {
+            const auto now = AsyncTaskContext::Clock::now();
+            if (now - *last_label_update < std::chrono::seconds(1)) return;
 
-        bool enabled = false;
-        selected_node->Componens_api(SettingApiReadFlag, &enabled);
-        lv_img_set_src(icon_obj, enabled ? &setting_ok : &setting_cross);
-        lv_obj_update_layout(icon_obj);
-        lv_obj_set_pos(icon_obj, STATUS_ICON_X + (enabled ? 0 : 1), (ROW_H - lv_obj_get_height(icon_obj)) / 2);
+            *last_label_update = now;
+            *dot_count = static_cast<uint8_t>((*dot_count + 1) % 2);
+            lv_label_set_text(status_label, *dot_count ? "Wait" : "Chk.");
+        };
+        callbacks.on_complete = [icon_obj, status_label, selected_node](
+                                    AsyncTaskContext &, const StatusQueryResult &result) {
+            if (!result.success) {
+                std::printf("[LvSettingRollerPage2] status query failed\n");
+                set_status_error(icon_obj, status_label);
+                return;
+            }
+
+            lv_label_set_text(status_label, selected_node->label.c_str());
+            set_status_icon(icon_obj, result.enabled);
+        };
+        callbacks.on_exception = [icon_obj, status_label](AsyncTaskContext &, std::exception_ptr) {
+            std::printf("[LvSettingRollerPage2] status query raised an exception\n");
+            set_status_error(icon_obj, status_label);
+        };
+        callbacks.on_timeout = [icon_obj, status_label](AsyncTaskContext &) {
+            std::printf("[LvSettingRollerPage2] status query timed out\n");
+            set_status_error(icon_obj, status_label);
+        };
+        callbacks.on_schedule_failed = [icon_obj, status_label](AsyncTaskContext &) {
+            std::printf("[LvSettingRollerPage2] status query could not be scheduled\n");
+            set_status_error(icon_obj, status_label);
+        };
+
+        run_async_task(std::move(callbacks));
     }
 
     void key_event_cb(lv_event_t *event)
@@ -327,14 +317,17 @@ public:
             scroll_to_selected(cont, !wrapped);
         } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
             auto selected_node = std::next(parent_node_.begin(), selected_index);
-            if (selected_node->Componens_api) {
+            if (selected_node->page_factory) {
+                create_third_page(selected_node);
+            } else if (selected_node->Componens_api) {
                 selected_node->Componens_api(SettingApiActivate, this);
 
                 if (selected_node->icon_enabled) {
-                    update_status_icon(lv_obj_get_child(lv_obj_get_child(cont, selected_index), 1), selected_node);
+                    request_status_refresh(
+                        lv_obj_get_child(lv_obj_get_child(cont, selected_index), 1),
+                        lv_obj_get_child(lv_obj_get_child(cont, selected_index), 0),
+                        selected_node);
                 }
-            } else if (selected_node->page_factory) {
-                create_third_page(selected_node);
             } else if (on_selected_page) {
                 on_selected_page(selected_index);
             }
@@ -365,17 +358,13 @@ public:
             return;
         }
 
-        lv_obj_set_x(roller3_->Get(), PAGE_WIDTH);
-        if (group) {
-            lv_group_add_obj(group, roller3_->Get());
-            lv_group_focus_obj(roller3_->Get());
-        }
+        lv_obj_set_style_translate_x(roller3_->Get(), PAGE_WIDTH, LV_PART_MAIN);
         start_page3_transition(true);
     }
 
     void back_from_third_page()
     {
-        if (!roller3_ || (page3_transitioning_ && !page3_entering_)) return;
+        if (!roller3_ || page3_transitioning_) return;
         start_page3_transition(false);
     }
 
@@ -389,6 +378,7 @@ public:
         stop(arrow_up_);
         stop(arrow_down_);
         stop(hint_);
+        if (roller3_ && roller3_->Get()) stop(roller3_->Get());
     }
 
     int page_object_base_x(lv_obj_t *object) const
@@ -423,12 +413,18 @@ public:
 
         lv_obj_t *root = roller3_->Get();
         lv_anim_del(root, nullptr);
-        const int start_x = lv_obj_get_x(root);
+        const int start_x = lv_obj_get_style_translate_x(root, LV_PART_MAIN);
         const int end_x   = entering ? 0 : PAGE_WIDTH;
         lv_anim_t animation;
         lv_anim_init(&animation);
         lv_anim_set_var(&animation, root);
-        lv_anim_set_exec_cb(&animation, reinterpret_cast<lv_anim_exec_xcb_t>(lv_obj_set_x));
+        lv_anim_set_exec_cb(
+            &animation,
+            [](void *object, int32_t value) {
+                if (object) {
+                    lv_obj_set_style_translate_x(static_cast<lv_obj_t *>(object), value, LV_PART_MAIN);
+                }
+            });
         lv_anim_set_values(&animation, start_x, end_x);
         lv_anim_set_time(&animation, PAGE3_ANIM_MS);
         lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
@@ -437,7 +433,7 @@ public:
                                  entering ? &LvSettingRollerPage2::page3_enter_done_cb
                                           : &LvSettingRollerPage2::page3_leave_done_cb);
         if (!lv_anim_start(&animation)) {
-            lv_obj_set_x(root, end_x);
+            lv_obj_set_style_translate_x(root, end_x, LV_PART_MAIN);
             finish_page3_transition(entering);
         }
     }
@@ -448,6 +444,12 @@ public:
 
         page3_transitioning_ = true;
         page3_entering_      = entering;
+        if (entering) {
+            set_compact_mode(true);
+        } else if (input_group_) {
+            lv_group_remove_obj(roller3_->Get());
+        }
+        if (on_page3_transition) on_page3_transition(entering, false);
         animate_page_object(selection_bg_, entering);
         animate_page_object(ComponensObj, entering);
         animate_page_object(arrow_up_, entering);
@@ -472,9 +474,13 @@ public:
     {
         if (entering) {
             if (roller3_ && roller3_->Get()) {
-                lv_obj_set_x(roller3_->Get(), 0);
-                if (input_group_) lv_group_focus_obj(roller3_->Get());
+                lv_obj_set_style_translate_x(roller3_->Get(), 0, LV_PART_MAIN);
+                if (input_group_) {
+                    lv_group_add_obj(input_group_, roller3_->Get());
+                    lv_group_focus_obj(roller3_->Get());
+                }
             }
+            if (on_page3_transition) on_page3_transition(true, true);
             page3_transitioning_ = false;
             page3_entering_      = false;
             return;
@@ -489,6 +495,8 @@ public:
             lv_group_add_obj(group, ComponensObj);
             lv_group_focus_obj(ComponensObj);
         }
+        set_compact_mode(false);
+        if (on_page3_transition) on_page3_transition(false, true);
         page3_transitioning_ = false;
         page3_entering_      = false;
     }
@@ -535,7 +543,7 @@ public:
             if (!label) continue;
 
             const int distance = std::abs(static_cast<int32_t>(i) - page->selected_index);
-            style_label(label, distance);
+            style_label(label, distance, page->compact_mode_);
         }
     }
 
@@ -592,7 +600,7 @@ public:
 
             if (it->icon_enabled) {
                 lv_obj_t *status_icon = lv_img_create(row);
-                update_status_icon(status_icon, it);
+                request_status_refresh(status_icon, label, it);
             }
         }
         item_count_ = lv_obj_get_child_count(ComponensObj);
@@ -635,12 +643,12 @@ public:
 private:
     lv_obj_t *parent_ = nullptr;
     NodeIter parent_node_;
-    std::shared_ptr<bool> lifetime_token_ = std::make_shared<bool>(true);
     uint32_t item_count_                  = 0;
     std::unique_ptr<DComponens::LvglComponensBase> roller3_;
     bool page3_transitioning_ = false;
     bool page3_entering_      = false;
     lv_group_t *input_group_ = nullptr;
+    bool compact_mode_ = false;
     int arrow_up_base_x_ = 0;
     int arrow_down_base_x_ = 0;
     int hint_base_x_ = 0;

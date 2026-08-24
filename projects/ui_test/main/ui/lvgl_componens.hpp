@@ -1,10 +1,16 @@
 #pragma once
 
 #include "lvgl/lvgl.h"
+#include <chrono>
 #include <cstdio>
+#include <cstddef>
+#include <exception>
+#include <future>
 #include <functional>
-#include <utility>
 #include <cstring>
+#include <memory>
+#include <new>
+#include <utility>
 
 #define lv_event_get_target(e) (lv_obj_t *)lv_event_get_target(e)
 
@@ -50,6 +56,41 @@ void lvgl_bind_event(lv_obj_t *obj,
 class LvglComponensBase
 {
 public:
+    enum class AsyncTaskStage {
+        Starting,
+        Submitted,
+        Waiting,
+        Completed,
+        TimedOut,
+        Failed,
+        ScheduleFailed,
+    };
+
+    struct AsyncTaskContext {
+        using Clock = std::chrono::steady_clock;
+
+        AsyncTaskStage stage = AsyncTaskStage::Starting;
+        Clock::time_point started_at = Clock::now();
+        Clock::time_point last_poll_at = started_at;
+        std::size_t poll_count = 0;
+    };
+
+    struct AsyncTaskOptions {
+        std::chrono::milliseconds timeout{3000};
+    };
+
+    template<typename Result>
+    struct AsyncTaskCallbacks {
+        std::function<Result()> execute;
+        std::function<void(AsyncTaskContext &)> on_start;
+        std::function<void(AsyncTaskContext &)> on_submitted;
+        std::function<void(AsyncTaskContext &)> on_wait;
+        std::function<void(AsyncTaskContext &, const Result &)> on_complete;
+        std::function<void(AsyncTaskContext &, std::exception_ptr)> on_exception;
+        std::function<void(AsyncTaskContext &)> on_timeout;
+        std::function<void(AsyncTaskContext &)> on_schedule_failed;
+    };
+
     lv_obj_t * ComponensObj = nullptr;
     lv_obj_t *Get() const { return ComponensObj; }
     void SetPos(int32_t x, int32_t y) const { lv_obj_set_pos(ComponensObj, x, y); }
@@ -61,8 +102,167 @@ public:
     void SetHeight(int32_t h) const { lv_obj_set_height(ComponensObj, h); }
 
     LvglComponensBase() = default;
-    virtual ~LvglComponensBase() = default;
+    virtual ~LvglComponensBase()
+    {
+        cancel_async_tasks();
+    }
+
+    void cancel_async_tasks()
+    {
+        async_lifetime_token_.reset();
+    }
+
+    template<typename Result>
+    bool run_async_task(AsyncTaskCallbacks<Result> callbacks,
+                        AsyncTaskOptions options = {})
+    {
+        AsyncTaskContext failed_context;
+        if (!callbacks.execute || !async_lifetime_token_) {
+            failed_context.stage = AsyncTaskStage::ScheduleFailed;
+            invoke_async_callback(callbacks.on_schedule_failed, failed_context);
+            return false;
+        }
+
+        const auto on_schedule_failed = callbacks.on_schedule_failed;
+        auto *state = new (std::nothrow) AsyncTaskState<Result>(
+            std::move(callbacks), options, async_lifetime_token_);
+        if (!state) {
+            failed_context.stage = AsyncTaskStage::ScheduleFailed;
+            invoke_async_callback(on_schedule_failed, failed_context);
+            return false;
+        }
+
+        state->context.stage = AsyncTaskStage::Starting;
+        invoke_async_callback(state->callbacks.on_start, state->context);
+        if (state->lifetime.expired()) {
+            delete state;
+            return false;
+        }
+
+        if (lv_async_call(process_async_task<Result>, state) == LV_RESULT_OK) {
+            return true;
+        }
+
+        state->context.stage = AsyncTaskStage::ScheduleFailed;
+        invoke_async_callback(state->callbacks.on_schedule_failed, state->context);
+        delete state;
+        return false;
+    }
+
     virtual void create_ui(lv_obj_t *parent) = 0;
+
+private:
+    template<typename Result>
+    struct AsyncTaskState {
+        AsyncTaskCallbacks<Result> callbacks;
+        AsyncTaskOptions options;
+        AsyncTaskContext context;
+        std::shared_future<Result> future;
+        std::weak_ptr<bool> lifetime;
+        bool submitted = false;
+
+        AsyncTaskState(AsyncTaskCallbacks<Result> task_callbacks,
+                       AsyncTaskOptions task_options,
+                       std::weak_ptr<bool> task_lifetime)
+            : callbacks(std::move(task_callbacks)),
+              options(task_options),
+              lifetime(std::move(task_lifetime))
+        {
+        }
+    };
+
+    template<typename Callback, typename... Args>
+    static void invoke_async_callback(const Callback &callback, Args &&...args) noexcept
+    {
+        if (!callback) return;
+        try {
+            callback(std::forward<Args>(args)...);
+        } catch (...) {
+        }
+    }
+
+    template<typename Result>
+    static void process_async_task(void *user_data)
+    {
+        std::unique_ptr<AsyncTaskState<Result>> state(
+            static_cast<AsyncTaskState<Result> *>(user_data));
+        if (!state || state->lifetime.expired()) return;
+
+        if (!state->submitted) {
+            state->submitted = true;
+            state->context.stage = AsyncTaskStage::Submitted;
+            state->context.started_at = AsyncTaskContext::Clock::now();
+            state->context.last_poll_at = state->context.started_at;
+
+            try {
+                auto execute = std::move(state->callbacks.execute);
+                state->future = std::async(
+                                    std::launch::async,
+                                    [execute = std::move(execute)]() mutable -> Result {
+                                        return execute();
+                                    })
+                                    .share();
+            } catch (...) {
+                state->context.stage = AsyncTaskStage::Failed;
+                invoke_async_callback(
+                    state->callbacks.on_exception,
+                    state->context,
+                    std::current_exception());
+                return;
+            }
+
+            invoke_async_callback(state->callbacks.on_submitted, state->context);
+            if (state->lifetime.expired()) return;
+
+            if (lv_async_call(process_async_task<Result>, state.get()) == LV_RESULT_OK) {
+                state.release();
+            } else {
+                state->context.stage = AsyncTaskStage::ScheduleFailed;
+                invoke_async_callback(state->callbacks.on_schedule_failed, state->context);
+            }
+            return;
+        }
+
+        const auto now = AsyncTaskContext::Clock::now();
+        const bool ready = state->future.wait_for(std::chrono::milliseconds(0)) ==
+                           std::future_status::ready;
+        if (!ready && state->options.timeout.count() >= 0 &&
+            now - state->context.started_at >= state->options.timeout) {
+            state->context.stage = AsyncTaskStage::TimedOut;
+            invoke_async_callback(state->callbacks.on_timeout, state->context);
+            return;
+        }
+
+        if (!ready) {
+            state->context.stage = AsyncTaskStage::Waiting;
+            state->context.last_poll_at = now;
+            ++state->context.poll_count;
+            invoke_async_callback(state->callbacks.on_wait, state->context);
+            if (state->lifetime.expired()) return;
+
+            if (lv_async_call(process_async_task<Result>, state.get()) == LV_RESULT_OK) {
+                state.release();
+            } else {
+                state->context.stage = AsyncTaskStage::ScheduleFailed;
+                invoke_async_callback(state->callbacks.on_schedule_failed, state->context);
+            }
+            return;
+        }
+
+        try {
+            const Result &result = state->future.get();
+            state->context.stage = AsyncTaskStage::Completed;
+            invoke_async_callback(state->callbacks.on_complete, state->context, result);
+        } catch (...) {
+            state->context.stage = AsyncTaskStage::Failed;
+            invoke_async_callback(
+                state->callbacks.on_exception,
+                state->context,
+                std::current_exception());
+        }
+    }
+
+    std::shared_ptr<bool> async_lifetime_token_ = std::make_shared<bool>(true);
 };
 
 
