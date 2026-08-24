@@ -14,6 +14,7 @@
 #include "setting_bluetooth_connected_page3.hpp"
 #include "setting_bluetooth_scan_page3.hpp"
 #include "setting_roller.hpp"
+#include "setting_roller_page2.hpp"
 #include "setting_wifi_scan_page3.hpp"
 #include "setting_roller_page3.hpp"
 #include "setting_brightness_page3.hpp"

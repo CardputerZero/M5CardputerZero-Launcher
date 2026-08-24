@@ -15,7 +15,6 @@
 #define LVGL_COMPONENTS_ROLLER1_ONLY
 #include "lvgl_componens.hpp"
 #undef LVGL_COMPONENTS_ROLLER1_ONLY
-#include "setting_roller_page2.hpp"
 #include "setting_tree_types.hpp"
 
 extern "C" {
@@ -42,8 +41,6 @@ extern const lv_image_dsc_t setting_right_arrow;
  */
 class LvSettingRoller : public DComponens::LvglComponensBase {
 public:
-    using Page3TransitionCallback = LvSettingRollerPage2::Page3TransitionCallback;
-
     enum class LayoutMetric : int {
         RowH        = 21,
         CenterRow   = 3,
@@ -66,12 +63,12 @@ public:
 
     void AnimateNextIn(std::function<void()> animate_over_func) override
     {
-        animate_page3_objects(false, std::move(animate_over_func));
+        slide_page_objects(false, std::move(animate_over_func));
     }
 
     void AnimateNextOut(std::function<void()> animate_over_func) override
     {
-        animate_page3_objects(true, std::move(animate_over_func));
+        slide_page_objects(true, std::move(animate_over_func));
     }
 
     void LoadNextPage() override
@@ -95,16 +92,13 @@ public:
             ui_APP_Container,
             selected_node,
             std::bind(&LvSettingRoller::LeaveNextPage, this));
-        if (auto *page2 = dynamic_cast<LvSettingRollerPage2 *>(roller2_.get())) {
-            page2->set_page3_transition_callback(
-                std::bind(&LvSettingRoller::page3_transition_cb, this,
-                          std::placeholders::_1, std::placeholders::_2));
-        }
-        if (input_group_ && roller2_ && roller2_->Get()) {
-            lv_group_add_obj(input_group_, roller2_->Get());
-            lv_group_focus_obj(roller2_->Get());
-        }
-        AnimateNextIn(nullptr);
+        AnimateNextIn([this]() {
+            if (!input_group_ || !roller2_ || !roller2_->Get()) return;
+
+            auto *page = roller2_->Get();
+            lv_group_add_obj(input_group_, page);
+            lv_group_focus_obj(page);
+        });
     }
 
     void LeaveNextPage() override
@@ -339,43 +333,33 @@ public:
             lv_obj_send_event(ComponensObj, LV_EVENT_SCROLL, ComponensObj);
         }
     }
-    void page3_transition_cb(bool entering, bool completed)
-    {
-        if (completed) {
-            if (!entering && input_group_ && ComponensObj) {
-                lv_group_add_obj(input_group_, ComponensObj);
-                top_in_group_ = true;
-            }
-            page3_transitioning_ = false;
-            return;
-        }
-
-        page3_transitioning_ = true;
-        if (entering) {
-            AnimateNextOut(nullptr);
-        } else {
-            AnimateNextIn(nullptr);
-        }
-    }
-
-    static void page3_anim_exec_cb(void *object, int32_t value)
+    static void page_anim_exec_cb(void *object, int32_t value)
     {
         if (object) lv_obj_set_x(static_cast<lv_obj_t *>(object), value);
     }
 
-    static void page3_animation_completed_cb(lv_anim_t *animation)
+    static void page_animation_completed_cb(lv_anim_t *animation)
     {
         auto *self = static_cast<LvSettingRoller *>(lv_anim_get_user_data(animation));
         if (!self) return;
 
-        auto animate_over_func = std::move(self->page3_animation_over_);
-        self->page3_animation_over_ = nullptr;
+        auto animate_over_func = std::move(self->page_animation_over_);
+        self->page_animation_over_ = nullptr;
         if (animate_over_func) animate_over_func();
     }
 
-    void animate_page3_objects(bool entering, std::function<void()> animate_over_func)
+    /**
+     * Slide the page's objects (selection bar, roller container, arrows) to or
+     * from their resting positions to perform a page transition.
+     *
+     * @param leaving          When true, slide the whole page one screen-width
+     *                         off-screen to the left (page slides away);
+     *                         when false, slide it back to its resting position.
+     * @param animate_over_func Completion callback fired once the slide finishes.
+     */
+    void slide_page_objects(bool leaving, std::function<void()> animate_over_func)
     {
-        page3_animation_over_ = nullptr;
+        page_animation_over_ = nullptr;
 
         lv_obj_t *completion_object = ComponensObj ? ComponensObj : selection_bg_;
         if (!completion_object) {
@@ -383,53 +367,53 @@ public:
             return;
         }
 
-        animate_page3_object(selection_bg_, entering,
+        slide_page_object(selection_bg_, leaving,
                              completion_object == selection_bg_ ? std::move(animate_over_func)
                                                                 : nullptr);
-        animate_page3_object(ComponensObj, entering,
+        slide_page_object(ComponensObj, leaving,
                              completion_object == ComponensObj ? std::move(animate_over_func)
                                                                 : nullptr);
-        animate_page3_object(arrow_up_, entering,
+        slide_page_object(arrow_up_, leaving,
                              completion_object == arrow_up_ ? std::move(animate_over_func)
                                                              : nullptr);
-        animate_page3_object(arrow_down_, entering,
+        slide_page_object(arrow_down_, leaving,
                              completion_object == arrow_down_ ? std::move(animate_over_func)
                                                                : nullptr);
-        animate_page3_object(right_arrow_, entering,
+        slide_page_object(right_arrow_, leaving,
                              completion_object == right_arrow_ ? std::move(animate_over_func)
                                                                 : nullptr);
     }
 
-    void animate_page3_object(lv_obj_t *object,
-                              bool entering,
+    void slide_page_object(lv_obj_t *object,
+                              bool leaving,
                               std::function<void()> animate_over_func = nullptr)
     {
         if (!object) return;
 
         lv_anim_del(object, nullptr);
         const int start_x = lv_obj_get_x(object);
-        const int end_x = page3_object_base_x(object) +
-                          (entering ? -animation_metric(AnimationMetric::Page3Shift) : 0);
+        const int end_x = page_object_base_x(object) +
+                          (leaving ? -animation_metric(AnimationMetric::PageShift) : 0);
 
         lv_anim_t animation;
         lv_anim_init(&animation);
         lv_anim_set_var(&animation, object);
         lv_anim_set_values(&animation, start_x, end_x);
-        lv_anim_set_time(&animation, animation_metric(AnimationMetric::Page3AnimMs));
+        lv_anim_set_time(&animation, animation_metric(AnimationMetric::PageAnimMs));
         lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
-        lv_anim_set_exec_cb(&animation, page3_anim_exec_cb);
+        lv_anim_set_exec_cb(&animation, page_anim_exec_cb);
         if (animate_over_func) {
-            page3_animation_over_ = std::move(animate_over_func);
+            page_animation_over_ = std::move(animate_over_func);
             lv_anim_set_user_data(&animation, this);
-            lv_anim_set_completed_cb(&animation, page3_animation_completed_cb);
+            lv_anim_set_completed_cb(&animation, page_animation_completed_cb);
         }
         if (!lv_anim_start(&animation)) {
             lv_obj_set_x(object, end_x);
-            page3_animation_completed_cb(&animation);
+            page_animation_completed_cb(&animation);
         }
     }
 
-    int page3_object_base_x(lv_obj_t *object) const
+    int page_object_base_x(lv_obj_t *object) const
     {
         if (object == selection_bg_) return selection_bg_base_x_;
         if (object == ComponensObj) return componens_base_x_;
@@ -609,8 +593,8 @@ public:
 
 private:
     enum class AnimationMetric : int {
-        Page3AnimMs = 200,
-        Page3Shift  = 320,
+        PageAnimMs = 200,
+        PageShift  = 320,
     };
 
     static constexpr int animation_metric(AnimationMetric value)
@@ -632,14 +616,13 @@ private:
 
     lv_group_t *input_group_ = nullptr;
     bool top_in_group_ = true;
-    bool page3_transitioning_ = false;
     lv_obj_t *selection_bg_ = nullptr;
     int selection_bg_base_x_ = 0;
     int componens_base_x_ = 0;
     int arrow_up_base_x_ = 0;
     int arrow_down_base_x_ = 0;
     int right_arrow_base_x_ = 0;
-    std::function<void()> page3_animation_over_ = nullptr;
+    std::function<void()> page_animation_over_ = nullptr;
 
     // Up arrow, Down arrow, and second-level page entry arrow.
     lv_obj_t *arrow_up_ = nullptr;

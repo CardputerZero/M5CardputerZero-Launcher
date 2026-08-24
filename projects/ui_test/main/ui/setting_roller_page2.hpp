@@ -33,8 +33,6 @@ extern const lv_image_dsc_t setting_cross;
 
 class LvSettingRollerPage2 : public DComponens::LvglComponensBase {
 public:
-    using Page3TransitionCallback = std::function<void(bool entering, bool completed)>;
-
     enum class LayoutMetric : int {
         PanelX       = 120,
         PanelW       = 200,
@@ -59,7 +57,6 @@ public:
 
     int32_t selected_index                    = 0;
     std::function<void(int)> on_selected_page = nullptr;
-    Page3TransitionCallback on_page3_transition = nullptr;
 
     void AnimateNextIn(std::function<void()> animate_over_func) override
     {
@@ -195,11 +192,6 @@ public:
 
         const int label_y = (metric(LayoutMetric::RowH) - lv_obj_get_height(label)) / 2;
         lv_obj_set_y(label, label_y < 0 ? 0 : label_y);
-    }
-
-    void set_page3_transition_callback(Page3TransitionCallback callback)
-    {
-        on_page3_transition = std::move(callback);
     }
 
     void set_compact_mode(bool enabled)
@@ -489,13 +481,12 @@ public:
         if (!roller3_ || !roller3_->Get()) return;
 
         page3_transitioning_ = true;
-        page3_entering_      = entering;
         if (entering) {
             set_compact_mode(true);
+            set_previous_pages_hidden(true);
         } else if (input_group_) {
             lv_group_remove_obj(roller3_->Get());
         }
-        if (on_page3_transition) on_page3_transition(entering, false);
         animate_page_object(selection_bg_, entering);
         animate_page_object(ComponensObj, entering);
         animate_page_object(arrow_up_, entering);
@@ -526,9 +517,7 @@ public:
                     lv_group_focus_obj(roller3_->Get());
                 }
             }
-            if (on_page3_transition) on_page3_transition(true, true);
             page3_transitioning_ = false;
-            page3_entering_      = false;
             invoke_page3_animation_callback();
             return;
         }
@@ -543,9 +532,8 @@ public:
             lv_group_focus_obj(ComponensObj);
         }
         set_compact_mode(false);
-        if (on_page3_transition) on_page3_transition(false, true);
+        set_previous_pages_hidden(false);
         page3_transitioning_ = false;
-        page3_entering_      = false;
         invoke_page3_animation_callback();
     }
 
@@ -554,6 +542,23 @@ public:
         auto animate_over_func = std::move(page3_animation_over_);
         page3_animation_over_ = nullptr;
         if (animate_over_func) animate_over_func();
+    }
+
+    void set_previous_pages_hidden(bool hidden)
+    {
+        if (!parent_ || !selection_bg_) return;
+
+        const uint32_t current_page_index = lv_obj_get_index(selection_bg_);
+        for (uint32_t index = 0; index < current_page_index; ++index) {
+            lv_obj_t *object = lv_obj_get_child(parent_, index);
+            if (!object) continue;
+
+            if (hidden) {
+                lv_obj_add_flag(object, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_remove_flag(object, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
     }
 
     void scroll_to_selected(lv_obj_t *cont, bool animated)
@@ -711,7 +716,6 @@ private:
     uint32_t item_count_                  = 0;
     std::unique_ptr<DComponens::LvglComponensBase> roller3_;
     bool page3_transitioning_ = false;
-    bool page3_entering_      = false;
     std::function<void()> page3_animation_over_ = nullptr;
     lv_group_t *input_group_ = nullptr;
     bool compact_mode_ = false;
