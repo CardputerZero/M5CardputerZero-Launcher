@@ -79,7 +79,7 @@ public:
         auto selected_node = std::next(parent_node_.begin(), selected_index);
         if (!selected_node->page_factory) return;
 
-        set_secondary_mode();
+        SetSelfUiMode(PageType::NextPageNeeded);
         input_group_ = ComponensObj ? lv_obj_get_group(ComponensObj) : nullptr;
         if (ComponensObj && input_group_) {
             lv_group_remove_obj(ComponensObj);
@@ -205,7 +205,7 @@ public:
             lv_group_remove_obj(self->roller2_->Get());
         }
         self->roller2_.reset();
-        self->set_secondary_mode(false);
+        self->SetSelfUiMode(PageType::Normal);
 
         if (self->ComponensObj && group) {
             lv_group_add_obj(group, self->ComponensObj);
@@ -230,9 +230,10 @@ public:
      * - Recalculate the top-level menu styles from the current scroll position;
      * - Show the Up and Down arrows and hide the right entry arrow.
      */
-    void set_secondary_mode(bool enabled = true)
+    void SetSelfUiMode(PageType mode) override
     {
-        secondary_active_ = enabled;
+        const bool enabled = mode == PageType::NextPageNeeded;
+        NextActive = enabled;
         if (ComponensObj) {
             lv_obj_update_layout(ComponensObj);
         }
@@ -392,7 +393,7 @@ public:
             lv_obj_set_style_translate_x(child, 0, 0);
             lv_obj_t *label    = lv_obj_get_child(child, 0);
             const int distance = std::abs(static_cast<int32_t>(i) - self->selected_index);
-            style_label(label, distance, self && self->secondary_active_);
+            style_label(label, distance, self && self->NextActive);
         }
     }
 
@@ -556,9 +557,6 @@ private:
 
     // Number of entries successfully created for the current top-level page.
     uint32_t item_count_ = 0;
-
-    // true means the top-level roller is displayed as the second-level page sidebar.
-    bool secondary_active_ = false;
 
     // Collection of all top-level entry containers, used to adjust Labels when entering or leaving a second-level page.
     std::list<lv_obj_t *> item_containers_;

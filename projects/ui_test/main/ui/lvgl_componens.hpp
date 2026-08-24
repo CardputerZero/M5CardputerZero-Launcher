@@ -70,7 +70,6 @@ public:
         Failed,
         ScheduleFailed,
     };
-
     struct AsyncTaskContext {
         using Clock = std::chrono::steady_clock;
 
@@ -97,6 +96,8 @@ public:
     };
 
     lv_obj_t *ComponensObj = nullptr;
+    bool NextActive = false;
+
     lv_obj_t *Get() const
     {
         return ComponensObj;
@@ -131,8 +132,12 @@ public:
     {
         if (AnimateOverFunc) AnimateOverFunc();
     };
-    virtual void LoadNextPage()         = 0;
-    virtual void LeaveNextPage()        = 0;
+
+    virtual void LoadNextPage()  = 0;
+    virtual void LeaveNextPage() = 0;
+
+    virtual void SetSelfUiMode(PageType) {}
+
     std::function<void()> LeaveSelfPage = nullptr;
 
     LvglComponensBase() = default;
@@ -2813,13 +2818,17 @@ public:
 
         lv_obj_t *label = lv_label_create(obj);
         lv_label_set_text(label,
-                          "میکروکُنترولر (به انگلیسی: Microcontroller) گونه‌ای ریزپردازنده است که دارای حافظهٔ دسترسی "
+                          "میکروکُنترولر (به انگلیسی: Microcontroller) گونه‌ای ریزپردازنده است که دارای حافظهٔ "
+                          "دسترسی "
                           "تصادفی (RAM) و "
-                          "حافظهٔ فقط‌خواندنی (ROM)، تایمر، پورت‌های ورودی و خروجی (I/O) و درگاه ترتیبی (Serial "
+                          "حافظهٔ فقط‌خواندنی (ROM)، تایمر، پورت‌های ورودی و خروجی (I/O) و درگاه ترتیبی "
+                          "(Serial "
                           "Port پورت سریال)، "
-                          "درون خود تراشه است، و می‌تواند به تنهایی ابزارهای دیگر را کنترل کند. به عبارت دیگر یک "
+                          "درون خود تراشه است، و می‌تواند به تنهایی ابزارهای دیگر را کنترل کند. به عبارت دیگر "
+                          "یک "
                           "میکروکنترلر، مدار "
-                          "مجتمع کوچکی است که از یک CPU کوچک و اجزای دیگری مانند تایمر، درگاه‌های ورودی و خروجی "
+                          "مجتمع کوچکی است که از یک CPU کوچک و اجزای دیگری مانند تایمر، درگاه‌های ورودی و "
+                          "خروجی "
                           "آنالوگ و دیجیتال و "
                           "حافظه تشکیل شده‌است.");
         lv_obj_set_width(label, 400);
