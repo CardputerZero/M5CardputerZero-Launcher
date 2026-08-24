@@ -44,7 +44,11 @@ public:
         RowY           = 30,
         TitleW         = 300,
         MockApMax      = 32,
+        MaxSsidBytes   = 32,
         MaxPasswordBytes = 64,
+        HiddenInputX   = 82,
+        HiddenInputW   = 216,
+        HiddenInputH   = 28,
     };
 
     static constexpr int metric(LayoutMetric value)
@@ -107,6 +111,10 @@ public:
         title_ = nullptr;
         empty_ = nullptr;
         hint_ = nullptr;
+        hidden_panel_ = nullptr;
+        hidden_ssid_input_ = nullptr;
+        hidden_password_input_ = nullptr;
+        hidden_hint_ = nullptr;
         for (auto &row : rows_) row = {};
     }
 
@@ -204,6 +212,7 @@ public:
             0x555555,
             &lv_font_montserrat_10);
         create_password_panel();
+        create_hidden_network_panel();
 
         initialize_mock_data();
         refresh_status();
@@ -240,7 +249,12 @@ private:
 
     enum class View { List, HiddenSsid, Password, Connecting };
     enum class NetworkOperation { Connect, Forget };
-    enum class ConnectionOrigin { OpenNetwork, SavedProfile, PasswordEntry };
+    enum class ConnectionOrigin {
+        OpenNetwork,
+        SavedProfile,
+        PasswordEntry,
+        HiddenPasswordEntry,
+    };
 
     struct RowObjects {
         lv_obj_t *background = nullptr;
@@ -354,6 +368,15 @@ private:
         return end;
     }
 
+    static std::size_t utf8_cursor_position(const std::string &value, std::size_t cursor)
+    {
+        std::size_t position = 0;
+        for (std::size_t index = 0; index < cursor && index < value.size(); ++index) {
+            if (!is_utf8_continuation(static_cast<unsigned char>(value[index]))) ++position;
+        }
+        return position;
+    }
+
     static std::string masked_password(const std::string &password, bool visible)
     {
         if (visible) return password + "_";
@@ -415,6 +438,75 @@ private:
         lv_obj_add_flag(password_panel_, LV_OBJ_FLAG_HIDDEN);
     }
 
+    static lv_obj_t *create_hidden_input(lv_obj_t *parent, int y, uint32_t max_length)
+    {
+        if (!parent) return nullptr;
+
+        lv_obj_t *input = lv_textarea_create(parent);
+        if (!input) return nullptr;
+        lv_obj_remove_style_all(input);
+        lv_obj_set_pos(input, metric(LayoutMetric::HiddenInputX), y);
+        lv_obj_set_size(input,
+                        metric(LayoutMetric::HiddenInputW),
+                        metric(LayoutMetric::HiddenInputH));
+        lv_textarea_set_one_line(input, true);
+        lv_textarea_set_max_length(input, max_length);
+        lv_textarea_set_text(input, "");
+        lv_obj_set_style_text_font(input, &lv_font_montserrat_14, LV_PART_MAIN);
+        lv_obj_set_style_text_color(input, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+        lv_obj_set_style_bg_color(input, lv_color_hex(0x181818), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(input, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_color(input, lv_color_hex(0x444444), LV_PART_MAIN);
+        lv_obj_set_style_border_width(input, 1, LV_PART_MAIN);
+        lv_obj_set_style_radius(input, 3, LV_PART_MAIN);
+        lv_obj_set_style_pad_left(input, 6, LV_PART_MAIN);
+        lv_obj_set_style_pad_top(input, 3, LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(input, LV_OPA_TRANSP, LV_PART_CURSOR);
+        lv_obj_set_style_border_color(input, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
+        lv_obj_set_style_border_width(input, 2, LV_PART_CURSOR);
+        lv_obj_set_style_border_side(input, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
+        lv_obj_set_style_anim_duration(input, 400, LV_PART_CURSOR);
+        return input;
+    }
+
+    void create_hidden_network_panel()
+    {
+        hidden_panel_ = lv_obj_create(ComponensObj);
+        if (!hidden_panel_) return;
+        lv_obj_set_size(hidden_panel_, metric(LayoutMetric::ScreenW), metric(LayoutMetric::ScreenH));
+        lv_obj_set_pos(hidden_panel_, 0, 0);
+        lv_obj_set_style_bg_color(hidden_panel_, lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(hidden_panel_, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_width(hidden_panel_, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(hidden_panel_, 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(hidden_panel_, 0, LV_PART_MAIN);
+        lv_obj_remove_flag(hidden_panel_, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_remove_flag(hidden_panel_, LV_OBJ_FLAG_SCROLLABLE);
+
+        create_label(hidden_panel_, "Add Hidden WiFi", 10, 4, 0x58A6FF, &lv_font_montserrat_12);
+        create_label(hidden_panel_, "SSID", 10, 25, 0xCCCCCC, &lv_font_montserrat_10);
+        create_label(hidden_panel_, "PASSWORD", 10, 59, 0xCCCCCC, &lv_font_montserrat_10);
+
+        hidden_ssid_input_ = create_hidden_input(
+            hidden_panel_, 18, metric(LayoutMetric::MaxSsidBytes));
+        hidden_password_input_ = create_hidden_input(
+            hidden_panel_, 52, metric(LayoutMetric::MaxPasswordBytes));
+        if (!hidden_ssid_input_ || !hidden_password_input_) return;
+
+        lv_textarea_set_password_bullet(hidden_password_input_, "*");
+        lv_textarea_set_password_show_time(hidden_password_input_, 0);
+        lv_textarea_set_password_mode(hidden_password_input_, true);
+
+        hidden_hint_ = create_label(
+            hidden_panel_,
+            "TAB:switch  ALT:show  OK:connect",
+            10,
+            metric(LayoutMetric::ScreenH) - 14,
+            0x555555,
+            &lv_font_montserrat_10);
+        lv_obj_add_flag(hidden_panel_, LV_OBJ_FLAG_HIDDEN);
+    }
+
     static MockAccessPoint make_mock_access_point(const char *ssid,
                                                   const char *security,
                                                   int signal,
@@ -444,22 +536,8 @@ private:
     void render_password_panel()
     {
         if (!password_panel_) return;
+        if (hidden_panel_) lv_obj_add_flag(hidden_panel_, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(password_panel_, LV_OBJ_FLAG_HIDDEN);
-
-        if (view_ == View::HiddenSsid) {
-            if (password_title_) lv_label_set_text(password_title_, "Add Hidden WiFi");
-            if (password_network_) lv_label_set_text(password_network_, "Enter network name (SSID)");
-            if (password_value_) lv_label_set_text(password_value_, (password_ + "_").c_str());
-            if (password_status_) {
-                lv_label_set_text(password_status_, password_error_.c_str());
-                lv_obj_set_style_text_color(
-                    password_status_,
-                    lv_color_hex(password_error_.empty() ? 0x666666 : 0xFF4444),
-                    LV_PART_MAIN);
-            }
-            if (password_hint_) lv_label_set_text(password_hint_, "OK:next  ESC:back");
-            return;
-        }
 
         if (view_ == View::Connecting) {
             const bool forgetting = connection_state_ &&
@@ -512,6 +590,64 @@ private:
         }
     }
 
+    void update_hidden_input(lv_obj_t *input,
+                             const std::string &value,
+                             std::size_t cursor_position)
+    {
+        if (!input) return;
+        lv_textarea_set_text(input, value.c_str());
+        lv_textarea_set_cursor_pos(
+            input,
+            static_cast<int32_t>(utf8_cursor_position(value, cursor_position)));
+    }
+
+    void set_hidden_focus(int focus)
+    {
+        hidden_focus_ = focus == 0 ? 0 : 1;
+        if (!hidden_ssid_input_ || !hidden_password_input_) return;
+
+        lv_obj_t *focused = hidden_focus_ == 0 ? hidden_ssid_input_ : hidden_password_input_;
+        lv_obj_t *unfocused = hidden_focus_ == 0 ? hidden_password_input_ : hidden_ssid_input_;
+        lv_obj_add_state(focused, LV_STATE_FOCUSED);
+        lv_obj_remove_state(unfocused, LV_STATE_FOCUSED);
+        lv_obj_set_style_border_color(focused, lv_color_hex(0x58A6FF), LV_PART_MAIN);
+        lv_obj_set_style_border_color(unfocused, lv_color_hex(0x444444), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(focused, LV_OPA_TRANSP, LV_PART_CURSOR);
+        lv_obj_set_style_border_color(focused, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
+        lv_obj_set_style_border_width(focused, 2, LV_PART_CURSOR);
+        lv_obj_set_style_border_side(focused, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
+        lv_obj_set_style_bg_opa(unfocused, LV_OPA_TRANSP, LV_PART_CURSOR);
+        lv_obj_set_style_border_width(unfocused, 0, LV_PART_CURSOR);
+        lv_obj_invalidate(focused);
+        lv_obj_invalidate(unfocused);
+    }
+
+    void render_hidden_network_panel()
+    {
+        if (!hidden_panel_) return;
+        if (password_panel_) lv_obj_add_flag(password_panel_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(hidden_panel_, LV_OBJ_FLAG_HIDDEN);
+
+        update_hidden_input(hidden_ssid_input_, hidden_ssid_, hidden_ssid_cursor_byte_);
+        update_hidden_input(hidden_password_input_, password_, password_cursor_byte_);
+        lv_textarea_set_password_mode(hidden_password_input_, !password_visible_);
+        set_hidden_focus(hidden_focus_);
+
+        if (!hidden_hint_) return;
+        const char *hint = connection_pending_
+            ? "Connecting..."
+            : password_error_.empty()
+                ? (password_visible_
+                    ? "TAB:switch  ALT:hide  OK:connect"
+                    : "TAB:switch  ALT:show  OK:connect")
+                : password_error_.c_str();
+        lv_label_set_text(hidden_hint_, hint);
+        lv_obj_set_style_text_color(
+            hidden_hint_,
+            lv_color_hex(password_error_.empty() ? 0x555555 : 0xFF4444),
+            LV_PART_MAIN);
+    }
+
     void refresh_status()
     {
         if (!mock_connected_ssid_.empty()) {
@@ -528,10 +664,16 @@ private:
     {
         if (!ComponensObj) return;
 
+        if (view_ == View::HiddenSsid) {
+            render_hidden_network_panel();
+            return;
+        }
         if (view_ != View::List) {
             render_password_panel();
             return;
         }
+        if (hidden_panel_)
+            lv_obj_add_flag(hidden_panel_, LV_OBJ_FLAG_HIDDEN);
         if (password_panel_)
             lv_obj_add_flag(password_panel_, LV_OBJ_FLAG_HIDDEN);
 
@@ -657,20 +799,45 @@ private:
         password_cursor_byte_ = 0;
     }
 
-    bool append_password_text(const char *text)
+    void clear_hidden_ssid()
+    {
+        volatile char *bytes = hidden_ssid_.empty() ? nullptr : hidden_ssid_.data();
+        for (std::size_t index = 0; bytes && index < hidden_ssid_.size(); ++index)
+            bytes[index] = '\0';
+        hidden_ssid_.clear();
+        hidden_ssid_cursor_byte_ = 0;
+    }
+
+    static bool append_text(std::string &value,
+                            std::size_t &cursor,
+                            const char *text,
+                            std::size_t max_bytes)
     {
         if (!text || !text[0]) return false;
-        const std::string value(text);
-        if (value.empty() ||
-            password_.size() + value.size() >
-                static_cast<std::size_t>(metric(LayoutMetric::MaxPasswordBytes)))
-            return false;
-        for (unsigned char byte : value) {
+        const std::string input(text);
+        if (input.empty() || value.size() + input.size() > max_bytes) return false;
+        for (unsigned char byte : input) {
             if (byte < 0x20u || byte == 0x7Fu) return false;
         }
-        password_.insert(password_cursor_byte_, value);
-        password_cursor_byte_ += value.size();
+        value.insert(cursor, input);
+        cursor += input.size();
         return true;
+    }
+
+    bool append_password_text(const char *text)
+    {
+        return append_text(password_,
+                           password_cursor_byte_,
+                           text,
+                           static_cast<std::size_t>(metric(LayoutMetric::MaxPasswordBytes)));
+    }
+
+    bool append_hidden_ssid_text(const char *text)
+    {
+        return append_text(hidden_ssid_,
+                           hidden_ssid_cursor_byte_,
+                           text,
+                           static_cast<std::size_t>(metric(LayoutMetric::MaxSsidBytes)));
     }
 
     bool erase_password_last()
@@ -699,6 +866,54 @@ private:
         if (next == password_cursor_byte_) return false;
         password_cursor_byte_ = next;
         return true;
+    }
+
+    bool erase_hidden_ssid_last()
+    {
+        if (hidden_ssid_cursor_byte_ == 0) return false;
+        const std::size_t start = previous_utf8_start(hidden_ssid_, hidden_ssid_cursor_byte_);
+        volatile char *bytes = hidden_ssid_.data();
+        for (std::size_t index = start; index < hidden_ssid_cursor_byte_; ++index)
+            bytes[index] = '\0';
+        hidden_ssid_.erase(start, hidden_ssid_cursor_byte_ - start);
+        hidden_ssid_cursor_byte_ = start;
+        return true;
+    }
+
+    bool move_hidden_ssid_cursor_left()
+    {
+        const std::size_t next = previous_utf8_start(hidden_ssid_, hidden_ssid_cursor_byte_);
+        if (next == hidden_ssid_cursor_byte_) return false;
+        hidden_ssid_cursor_byte_ = next;
+        return true;
+    }
+
+    bool move_hidden_ssid_cursor_right()
+    {
+        const std::size_t next = next_utf8_end(hidden_ssid_, hidden_ssid_cursor_byte_);
+        if (next == hidden_ssid_cursor_byte_) return false;
+        hidden_ssid_cursor_byte_ = next;
+        return true;
+    }
+
+    bool append_hidden_text(const char *text)
+    {
+        return hidden_focus_ == 0 ? append_hidden_ssid_text(text) : append_password_text(text);
+    }
+
+    bool erase_hidden_text()
+    {
+        return hidden_focus_ == 0 ? erase_hidden_ssid_last() : erase_password_last();
+    }
+
+    bool move_hidden_cursor_left()
+    {
+        return hidden_focus_ == 0 ? move_hidden_ssid_cursor_left() : move_password_cursor_left();
+    }
+
+    bool move_hidden_cursor_right()
+    {
+        return hidden_focus_ == 0 ? move_hidden_ssid_cursor_right() : move_password_cursor_right();
     }
 
     std::string password_validation_error() const
@@ -749,8 +964,10 @@ private:
         password_security_ = "WPA2";
         password_error_.clear();
         password_visible_ = false;
+        hidden_focus_ = 0;
+        clear_hidden_ssid();
         clear_password();
-        if (!initial.empty()) append_password_text(initial.c_str());
+        if (!initial.empty()) append_hidden_ssid_text(initial.c_str());
         enter_text_input_mode();
         render();
     }
@@ -758,12 +975,17 @@ private:
     void leave_hidden_ssid_prompt()
     {
         restore_text_input_mode();
+        clear_hidden_ssid();
         clear_password();
         password_ssid_.clear();
         password_security_.clear();
         password_error_.clear();
         password_visible_ = false;
         hidden_network_ = false;
+        if (LeaveSelfPage) {
+            LeaveSelfPage();
+            return;
+        }
         view_ = View::List;
         render();
         start_scan();
@@ -771,21 +993,18 @@ private:
 
     void submit_hidden_ssid()
     {
-        if (view_ != View::HiddenSsid) return;
-        if (password_.empty()) {
+        if (view_ != View::HiddenSsid || connection_pending_) return;
+        if (hidden_ssid_.empty()) {
             password_error_ = "SSID required";
             render();
             return;
         }
 
-        hidden_ssid_ = password_;
-        clear_password();
-        password_ssid_ = hidden_ssid_;
-        password_security_ = "WPA2";
         password_error_.clear();
-        password_visible_ = false;
-        view_ = View::Password;
-        render();
+        if (!start_connection(hidden_ssid_, password_, ConnectionOrigin::HiddenPasswordEntry)) {
+            password_error_ = "Unable to start connection";
+            render();
+        }
     }
 
     void leave_password_prompt()
@@ -837,9 +1056,13 @@ private:
         connection_pending_ = true;
         password_ssid_ = ssid;
         password_security_ = security;
-        restore_text_input_mode();
-        clear_password();
-        view_ = View::Connecting;
+        if (origin != ConnectionOrigin::HiddenPasswordEntry) {
+            restore_text_input_mode();
+            clear_password();
+        }
+        view_ = origin == ConnectionOrigin::HiddenPasswordEntry
+            ? View::HiddenSsid
+            : View::Connecting;
         render();
 
         connection_tasks_.reap_finished();
@@ -903,6 +1126,34 @@ private:
         const auto state = result->state;
         self->connection_state_.reset();
         self->connection_pending_ = false;
+
+        if (state->origin == ConnectionOrigin::HiddenPasswordEntry) {
+            if (result->result == 0) {
+                self->mock_connected_ssid_ = state->ssid;
+                self->mock_ip_ = "192.168.1.99";
+                for (auto &access_point : self->mock_networks_)
+                    access_point.in_use = state->ssid == access_point.ssid ? 1 : 0;
+                self->restore_text_input_mode();
+                self->clear_hidden_ssid();
+                self->clear_password();
+                self->password_ssid_.clear();
+                self->password_security_.clear();
+                self->password_error_.clear();
+                self->password_visible_ = false;
+                self->hidden_network_ = false;
+                self->view_ = View::List;
+                self->refresh_status();
+                self->render();
+                self->start_scan();
+                return;
+            }
+
+            self->password_error_ = connection_error_message(result->result);
+            self->clear_password();
+            self->view_ = View::HiddenSsid;
+            self->render();
+            return;
+        }
 
         if (state->operation == NetworkOperation::Forget) {
             if (result->result == 0) {
@@ -1006,18 +1257,46 @@ private:
                              item->key_state == KBD_KEY_REPEATED;
         if (!pressed) return;
 
-        if (self->view_ == View::HiddenSsid || self->view_ == View::Password) {
+        if (self->view_ == View::HiddenSsid) {
+            if (self->connection_pending_) {
+                lv_event_stop_processing(event);
+                return;
+            }
             if (item->key_code == KEY_ESC) {
-                if (self->view_ == View::HiddenSsid) {
-                    self->leave_hidden_ssid_prompt();
-                } else {
-                    self->leave_password_prompt();
-                }
+                self->leave_hidden_ssid_prompt();
+            } else if (item->key_code == KEY_TAB) {
+                self->set_hidden_focus(self->hidden_focus_ == 0 ? 1 : 0);
+                self->render();
+            } else if (item->key_code == KEY_UP || item->key_code == KEY_DOWN) {
+                self->set_hidden_focus(item->key_code == KEY_UP ? 0 : 1);
+                self->render();
             } else if (item->key_code == KEY_ENTER || item->key_code == KEY_KPENTER) {
-                if (self->view_ == View::HiddenSsid)
-                    self->submit_hidden_ssid();
-                else
-                    self->submit_password();
+                self->submit_hidden_ssid();
+            } else if (item->key_code == KEY_LEFTALT) {
+                self->password_visible_ = !self->password_visible_;
+                self->render();
+            } else if (item->key_code == KEY_BACKSPACE || item->key_code == KEY_DELETE) {
+                self->erase_hidden_text();
+                self->render();
+            } else if (item->key_code == KEY_LEFT) {
+                self->move_hidden_cursor_left();
+                self->render();
+            } else if (item->key_code == KEY_RIGHT) {
+                self->move_hidden_cursor_right();
+                self->render();
+            } else if (item->utf8[0]) {
+                self->append_hidden_text(item->utf8);
+                self->render();
+            }
+            lv_event_stop_processing(event);
+            return;
+        }
+
+        if (self->view_ == View::Password) {
+            if (item->key_code == KEY_ESC) {
+                self->leave_password_prompt();
+            } else if (item->key_code == KEY_ENTER || item->key_code == KEY_KPENTER) {
+                self->submit_password();
             } else if (item->key_code == KEY_BACKSPACE || item->key_code == KEY_DELETE) {
                 self->erase_password_last();
                 self->render();
@@ -1027,7 +1306,7 @@ private:
             } else if (item->key_code == KEY_RIGHT) {
                 self->move_password_cursor_right();
                 self->render();
-            } else if (self->view_ == View::Password && item->key_code == KEY_LEFTALT) {
+            } else if (item->key_code == KEY_LEFTALT) {
                 self->password_visible_ = !self->password_visible_;
                 self->render();
             } else if (item->utf8[0]) {
@@ -1183,18 +1462,35 @@ private:
         if (!event || lv_event_get_code(event) != LV_EVENT_KEY) return;
         const uint32_t key = lv_event_get_key(event);
 
-        if (view_ == View::HiddenSsid || view_ == View::Password) {
-            if (key == LV_KEY_ESC) {
-                if (view_ == View::HiddenSsid) {
+        if (view_ == View::HiddenSsid) {
+            if (!connection_pending_) {
+                if (key == LV_KEY_ESC) {
                     leave_hidden_ssid_prompt();
-                } else {
-                    leave_password_prompt();
-                }
-            } else if (key == LV_KEY_ENTER) {
-                if (view_ == View::HiddenSsid)
+                } else if (key == LV_KEY_UP || key == LV_KEY_DOWN) {
+                    set_hidden_focus(key == LV_KEY_UP ? 0 : 1);
+                    render();
+                } else if (key == LV_KEY_ENTER) {
                     submit_hidden_ssid();
-                else
-                    submit_password();
+                } else if (key == LV_KEY_BACKSPACE || key == LV_KEY_DEL) {
+                    erase_hidden_text();
+                    render();
+                } else if (key == LV_KEY_LEFT) {
+                    move_hidden_cursor_left();
+                    render();
+                } else if (key == LV_KEY_RIGHT) {
+                    move_hidden_cursor_right();
+                    render();
+                }
+            }
+            lv_event_stop_processing(event);
+            return;
+        }
+
+        if (view_ == View::Password) {
+            if (key == LV_KEY_ESC) {
+                leave_password_prompt();
+            } else if (key == LV_KEY_ENTER) {
+                submit_password();
             } else if (key == LV_KEY_BACKSPACE || key == LV_KEY_DEL) {
                 erase_password_last();
                 render();
@@ -1266,7 +1562,9 @@ private:
     std::string password_;
     std::string password_error_;
     std::string hidden_ssid_;
+    std::size_t hidden_ssid_cursor_byte_ = 0;
     std::size_t password_cursor_byte_ = 0;
+    int hidden_focus_ = 0;
     bool password_visible_ = false;
     bool hidden_network_ = false;
     bool keyboard_mode_saved_ = false;
@@ -1281,6 +1579,10 @@ private:
     lv_obj_t *password_value_ = nullptr;
     lv_obj_t *password_status_ = nullptr;
     lv_obj_t *password_hint_ = nullptr;
+    lv_obj_t *hidden_panel_ = nullptr;
+    lv_obj_t *hidden_ssid_input_ = nullptr;
+    lv_obj_t *hidden_password_input_ = nullptr;
+    lv_obj_t *hidden_hint_ = nullptr;
     lv_obj_t *keyboard_root_ = nullptr;
     lv_event_dsc_t *keyboard_event_dsc_ = nullptr;
 };
