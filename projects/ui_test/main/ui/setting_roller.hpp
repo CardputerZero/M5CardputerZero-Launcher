@@ -20,7 +20,6 @@
 extern "C" {
 extern const lv_image_dsc_t setting_red_up;
 extern const lv_image_dsc_t setting_red_down;
-extern const lv_image_dsc_t setting_right_arrow;
 }
 
 /**
@@ -36,18 +35,18 @@ extern const lv_image_dsc_t setting_right_arrow;
  * 6. 6. Switch keyboard focus and visible controls between the second-level and first-level pages.
  *
  * Each row in the top-level roller consists of an entry container and a Label. The entry container
- * is arranged by ComponensObj's vertical Flex layout, while this class manually controls the Label's horizontal position
- * to match the settings-page alignment used by APPLaunch.
+ * is arranged by ComponensObj's vertical Flex layout, while this class manually controls the Label's horizontal
+ * position to match the settings-page alignment used by APPLaunch.
  */
 class LvSettingRoller : public DComponens::LvglComponensBase {
 public:
     enum class LayoutMetric : int {
-        RowH        = 21,
-        CenterRow   = 3,
-        EdgePadding = RowH * CenterRow,
+        RowH         = 21,
+        CenterRow    = 3,
+        EdgePadding  = RowH * CenterRow,
         LabelCenterX = 60,
-        LabelBoxX   = 4,
-        LabelBoxW   = 90,
+        LabelBoxX    = 4,
+        LabelBoxW    = 90,
     };
 
     static constexpr int metric(LayoutMetric value)
@@ -56,7 +55,7 @@ public:
     }
 
     // Index of the currently selected top-level entry.
-    int32_t selected_index                                  = 0;
+    int32_t selected_index = 0;
 
     // Second-level roller object; created when entering a second-level page and destroyed when returning.
     std::unique_ptr<DComponens::LvglComponensBase> roller2_ = nullptr;
@@ -73,8 +72,7 @@ public:
 
     void LoadNextPage() override
     {
-        if (item_count_ == 0 || selected_index < 0 ||
-            selected_index >= static_cast<int32_t>(item_count_)) {
+        if (item_count_ == 0 || selected_index < 0 || selected_index >= static_cast<int32_t>(item_count_)) {
             return;
         }
 
@@ -88,10 +86,8 @@ public:
             top_in_group_ = false;
         }
 
-        roller2_ = selected_node->page_factory(
-            ui_APP_Container,
-            selected_node,
-            std::bind(&LvSettingRoller::LeaveNextPage, this));
+        roller2_ = selected_node->page_factory(ui_APP_Container, selected_node,
+                                               std::bind(&LvSettingRoller::LeaveNextPage, this));
         AnimateNextIn([this]() {
             if (!input_group_ || !roller2_ || !roller2_->Get()) return;
 
@@ -152,23 +148,21 @@ public:
         lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
         lv_obj_update_layout(label);
 
-        const bool focused = distance == 0;
+        const bool focused      = distance == 0;
         const int natural_width = lv_obj_get_width(label);
         if (left_aligned) {
             // Top-level entries on the left side of a second-level page use a fixed width and left alignment.
             lv_obj_set_width(label, metric(LayoutMetric::LabelBoxW));
-            lv_label_set_long_mode(
-                label, focused ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP);
+            lv_label_set_long_mode(label, focused ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP);
             lv_obj_set_x(label, metric(LayoutMetric::LabelBoxX));
         } else {
-            // Normal entries that do not exceed the width are centered around the midpoint without crossing the minimum left margin.
+            // Normal entries that do not exceed the width are centered around the midpoint without crossing the minimum
+            // left margin.
             lv_obj_set_width(label, LV_SIZE_CONTENT);
             lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
             lv_obj_update_layout(label);
             const int label_x = metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(label) / 2;
-            lv_obj_set_x(label, label_x < metric(LayoutMetric::LabelBoxX)
-                                   ? metric(LayoutMetric::LabelBoxX)
-                                   : label_x);
+            lv_obj_set_x(label, label_x < metric(LayoutMetric::LabelBoxX) ? metric(LayoutMetric::LabelBoxX) : label_x);
         }
 
         // Vertically center the text within the 21-pixel row; if the font is too tall, start at the top.
@@ -177,55 +171,11 @@ public:
     }
 
     /**
-     * Handle keyboard events for the top-level roller.
-     *
-     * ESC/LEFT: Return to the parent page;
-     * UP/DOWN: Cycle through entries and scroll the selected entry to the center;
-     * ENTER: Invoke the current node callback or create the corresponding second-level page.
-     */
-    void handle_key_event(lv_event_t *e)
-    {
-        lv_obj_t *cont = lv_event_get_target(e);
-
-        uint32_t key = lv_event_get_key(e);
-        if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
-            if (LeaveSelfPage) LeaveSelfPage();
-            lv_event_stop_processing(e);
-            return;
-        }
-
-        if (item_count_ == 0) {
-            lv_event_stop_processing(e);
-            return;
-        }
-
-        if (key == LV_KEY_UP) {
-            // After reaching the first entry, continue from the last entry.
-            const bool wrapped = selected_index == 0;
-            selected_index = wrapped
-                ? static_cast<int32_t>(item_count_ - 1)
-                : selected_index - 1;
-            scroll_to_selected(cont, !wrapped);
-        } else if (key == LV_KEY_DOWN) {
-            // After reaching the last entry, continue from the first entry.
-            const bool wrapped = selected_index == static_cast<int32_t>(item_count_ - 1);
-            selected_index = wrapped ? 0 : selected_index + 1;
-            scroll_to_selected(cont, !wrapped);
-        } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
-            // NodeIter and the roller child containers have the same order, so the index can locate the node.
-            auto selected_node = std::next(parent_node_.begin(), selected_index);
-            if (selected_node->page_factory) {
-                LoadNextPage();
-            }
-        }
-        lv_event_stop_processing(e);
-    }
-
-    /**
      * Scroll the entry at the specified index into the centered selection area.
      *
      * Use LVGL animation when animated is true; during initial creation, explicit selection, or cyclic
-     * wraparound, positioning is normally done without animation to avoid unnatural long-distance scrolling between the ends.
+     * wraparound, positioning is normally done without animation to avoid unnatural long-distance scrolling between the
+     * ends.
      */
     void scroll_to_selected(lv_obj_t *cont, bool animated)
     {
@@ -262,7 +212,9 @@ public:
             self->top_in_group_ = true;
             lv_group_focus_obj(self->ComponensObj);
         }
+#if 0
         self->AnimateNextOut(nullptr);
+#endif
     }
 
     /**
@@ -295,9 +247,7 @@ public:
             if (enabled) {
                 lv_obj_set_width(label, metric(LayoutMetric::LabelBoxW));
                 lv_label_set_long_mode(
-                    label, item_index == selected_index
-                        ? LV_LABEL_LONG_SCROLL_CIRCULAR
-                        : LV_LABEL_LONG_CLIP);
+                    label, item_index == selected_index ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP);
                 lv_obj_set_x(label, metric(LayoutMetric::LabelBoxX));
             } else {
                 lv_obj_set_width(label, LV_SIZE_CONTENT);
@@ -314,18 +264,12 @@ public:
             if (arrow_down_) {
                 lv_obj_add_flag(arrow_down_, LV_OBJ_FLAG_HIDDEN);
             }
-            if (right_arrow_) {
-                lv_obj_remove_flag(right_arrow_, LV_OBJ_FLAG_HIDDEN);
-            }
         } else {
             if (arrow_up_) {
                 lv_obj_remove_flag(arrow_up_, LV_OBJ_FLAG_HIDDEN);
             }
             if (arrow_down_) {
                 lv_obj_remove_flag(arrow_down_, LV_OBJ_FLAG_HIDDEN);
-            }
-            if (right_arrow_) {
-                lv_obj_add_flag(right_arrow_, LV_OBJ_FLAG_HIDDEN);
             }
         }
 
@@ -343,13 +287,13 @@ public:
         auto *self = static_cast<LvSettingRoller *>(lv_anim_get_user_data(animation));
         if (!self) return;
 
-        auto animate_over_func = std::move(self->page_animation_over_);
+        auto animate_over_func     = std::move(self->page_animation_over_);
         self->page_animation_over_ = nullptr;
         if (animate_over_func) animate_over_func();
     }
 
     /**
-     * Slide the page's objects (selection bar, roller container, arrows) to or
+     * Slide the page's objects (selection bar and roller container) to or
      * from their resting positions to perform a page transition.
      *
      * @param leaving          When true, slide the whole page one screen-width
@@ -368,32 +312,18 @@ public:
         }
 
         slide_page_object(selection_bg_, leaving,
-                             completion_object == selection_bg_ ? std::move(animate_over_func)
-                                                                : nullptr);
+                          completion_object == selection_bg_ ? std::move(animate_over_func) : nullptr);
         slide_page_object(ComponensObj, leaving,
-                             completion_object == ComponensObj ? std::move(animate_over_func)
-                                                                : nullptr);
-        slide_page_object(arrow_up_, leaving,
-                             completion_object == arrow_up_ ? std::move(animate_over_func)
-                                                             : nullptr);
-        slide_page_object(arrow_down_, leaving,
-                             completion_object == arrow_down_ ? std::move(animate_over_func)
-                                                               : nullptr);
-        slide_page_object(right_arrow_, leaving,
-                             completion_object == right_arrow_ ? std::move(animate_over_func)
-                                                                : nullptr);
+                          completion_object == ComponensObj ? std::move(animate_over_func) : nullptr);
     }
 
-    void slide_page_object(lv_obj_t *object,
-                              bool leaving,
-                              std::function<void()> animate_over_func = nullptr)
+    void slide_page_object(lv_obj_t *object, bool leaving, std::function<void()> animate_over_func = nullptr)
     {
         if (!object) return;
 
         lv_anim_del(object, nullptr);
         const int start_x = lv_obj_get_x(object);
-        const int end_x = page_object_base_x(object) +
-                          (leaving ? -animation_metric(AnimationMetric::PageShift) : 0);
+        const int end_x   = page_object_base_x(object) + (leaving ? -animation_metric(AnimationMetric::PageShift) : 0);
 
         lv_anim_t animation;
         lv_anim_init(&animation);
@@ -417,9 +347,6 @@ public:
     {
         if (object == selection_bg_) return selection_bg_base_x_;
         if (object == ComponensObj) return componens_base_x_;
-        if (object == arrow_up_) return arrow_up_base_x_;
-        if (object == arrow_down_) return arrow_down_base_x_;
-        if (object == right_arrow_) return right_arrow_base_x_;
         return object ? lv_obj_get_x(object) : 0;
     }
 
@@ -448,9 +375,9 @@ public:
      */
     static void scroll_event_cb(lv_event_t *e)
     {
-        lv_obj_t *cont = lv_event_get_target(e);
+        lv_obj_t *cont    = lv_event_get_target(e);
         void *event_param = lv_event_get_param(e);
-        auto *self = static_cast<LvSettingRoller *>(lv_event_get_user_data(e));
+        auto *self        = static_cast<LvSettingRoller *>(lv_event_get_user_data(e));
         if (!self) return;
 
         if (static_cast<void *>(self->ComponensObj) != event_param) {
@@ -463,9 +390,8 @@ public:
         for (uint32_t i = 0; i < child_count; i++) {
             lv_obj_t *child = lv_obj_get_child(cont, i);
             lv_obj_set_style_translate_x(child, 0, 0);
-            lv_obj_t *label = lv_obj_get_child(child, 0);
-            const int distance = std::abs(
-                static_cast<int32_t>(i) - self->selected_index);
+            lv_obj_t *label    = lv_obj_get_child(child, 0);
+            const int distance = std::abs(static_cast<int32_t>(i) - self->selected_index);
             style_label(label, distance, self && self->secondary_active_);
         }
     }
@@ -489,13 +415,12 @@ public:
      * - selection_bg：Background bar for the centered selection area;
      * - ComponensObj：Entry container supporting vertical scrolling and snapping;
      * - arrow_up_/arrow_down_：Up and Down hint arrows;
-     * - right_arrow_：Right arrow shown when entering a second-level page;
      * - item_containers_：Storage for each top-level entry container, allowing styles to be adjusted together later.
      */
     void create_ui(lv_obj_t *parent) override
     {
         // Create the center highlight background. It does not accept input or scroll itself.
-        selection_bg_ = lv_obj_create(parent);
+        selection_bg_          = lv_obj_create(parent);
         lv_obj_t *selection_bg = selection_bg_;
         lv_obj_set_size(selection_bg, 312, 21);
         lv_obj_set_pos(selection_bg, 4, 66);
@@ -507,7 +432,8 @@ public:
         lv_obj_remove_flag(selection_bg, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(selection_bg, LV_OBJ_FLAG_SCROLLABLE);
 
-        // Create the scrolling container. Reserve three row heights above and below so the first and last entries can also snap to the center.
+        // Create the scrolling container. Reserve three row heights above and below so the first and last entries can
+        // also snap to the center.
         ComponensObj = lv_obj_create(parent);
         lv_obj_set_size(ComponensObj, 320, 150);
         lv_obj_set_pos(ComponensObj, 0, 20);
@@ -517,44 +443,26 @@ public:
         lv_obj_set_style_border_width(ComponensObj, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(ComponensObj, 0, LV_PART_MAIN);
         lv_obj_set_flex_flow(ComponensObj, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_top(ComponensObj,
-                                 metric(LayoutMetric::EdgePadding),
-                                 LV_PART_MAIN);
-        lv_obj_set_style_pad_bottom(ComponensObj,
-                                    metric(LayoutMetric::EdgePadding),
-                                    LV_PART_MAIN);
+        lv_obj_set_style_pad_top(ComponensObj, metric(LayoutMetric::EdgePadding), LV_PART_MAIN);
+        lv_obj_set_style_pad_bottom(ComponensObj, metric(LayoutMetric::EdgePadding), LV_PART_MAIN);
         lv_obj_set_style_pad_row(ComponensObj, 0, LV_PART_MAIN);
 
         // Create and position the scrolling hint arrows.
         arrow_up_ = lv_img_create(parent);
 
-            lv_img_set_src(arrow_up_, &setting_red_up);
-            lv_obj_update_layout(arrow_up_);
-            lv_obj_set_pos(arrow_up_,
-                           metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(arrow_up_) / 2,
-                           2);
-            arrow_up_base_x_ = lv_obj_get_x(arrow_up_);
-
+        lv_img_set_src(arrow_up_, &setting_red_up);
+        lv_obj_update_layout(arrow_up_);
+        lv_obj_set_pos(arrow_up_, metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(arrow_up_) / 2, 2);
 
         arrow_down_ = lv_img_create(parent);
 
-            lv_img_set_src(arrow_down_, &setting_red_down);
-            lv_obj_update_layout(arrow_down_);
-            lv_obj_set_pos(arrow_down_,
-                           metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(arrow_down_) / 2,
-                           150 - lv_obj_get_height(arrow_down_) - 4);
-            arrow_down_base_x_ = lv_obj_get_x(arrow_down_);
-   
+        lv_img_set_src(arrow_down_, &setting_red_down);
+        lv_obj_update_layout(arrow_down_);
+        lv_obj_set_pos(arrow_down_, metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(arrow_down_) / 2,
+                       150 - lv_obj_get_height(arrow_down_) - 4);
 
-        // Show the right arrow only after entering a second-level page; hide it initially.
-        right_arrow_ = lv_img_create(parent);
-        lv_img_set_src(right_arrow_, &setting_right_arrow);
-        lv_obj_set_pos(right_arrow_, 100, 65);
-        right_arrow_base_x_ = lv_obj_get_x(right_arrow_);
-        lv_obj_add_flag(right_arrow_, LV_OBJ_FLAG_HIDDEN);
-        
-
-        // Refresh each row's font and color while scrolling; forward key events to the member function through the bound callback.
+        // Refresh each row's font and color while scrolling; forward key events to the member function through the
+        // bound callback.
         lv_obj_add_event_cb(ComponensObj, scroll_event_cb, LV_EVENT_SCROLL, this);
         // lv_obj_add_event_cb(ComponensObj, handle_key_event, LV_EVENT_KEY, NULL);
         DComponens::lvgl_bind_event(ComponensObj, LV_EVENT_KEY, NULL,
@@ -586,9 +494,50 @@ public:
 
         // After initial creation, position the first entry in the center and trigger a style refresh.
         selected_index = 2;
-        
-            scroll_to_selected(ComponensObj, false);
-        
+
+        scroll_to_selected(ComponensObj, false);
+    }
+    /**
+     * Handle keyboard events for the top-level roller.
+     *
+     * ESC/LEFT: Return to the parent page;
+     * UP/DOWN: Cycle through entries and scroll the selected entry to the center;
+     * ENTER: Invoke the current node callback or create the corresponding second-level page.
+     */
+    void handle_key_event(lv_event_t *e)
+    {
+        lv_obj_t *cont = lv_event_get_target(e);
+
+        uint32_t key = lv_event_get_key(e);
+        if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
+            if (LeaveSelfPage) LeaveSelfPage();
+            lv_event_stop_processing(e);
+            return;
+        }
+
+        if (item_count_ == 0) {
+            lv_event_stop_processing(e);
+            return;
+        }
+
+        if (key == LV_KEY_UP) {
+            // After reaching the first entry, continue from the last entry.
+            const bool wrapped = selected_index == 0;
+            selected_index     = wrapped ? static_cast<int32_t>(item_count_ - 1) : selected_index - 1;
+            scroll_to_selected(cont, !wrapped);
+        } else if (key == LV_KEY_DOWN) {
+            // After reaching the last entry, continue from the first entry.
+            const bool wrapped = selected_index == static_cast<int32_t>(item_count_ - 1);
+            selected_index     = wrapped ? 0 : selected_index + 1;
+            scroll_to_selected(cont, !wrapped);
+        } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
+            // NodeIter and the roller child containers have the same order, so the index can locate the node.
+            auto selected_node = std::next(parent_node_.begin(), selected_index);
+            if (selected_node->page_factory) {
+                LoadNextPage();
+            }
+        }
+        lv_event_stop_processing(e);
     }
 
 private:
@@ -614,18 +563,14 @@ private:
     // Collection of all top-level entry containers, used to adjust Labels when entering or leaving a second-level page.
     std::list<lv_obj_t *> item_containers_;
 
-    lv_group_t *input_group_ = nullptr;
-    bool top_in_group_ = true;
-    lv_obj_t *selection_bg_ = nullptr;
-    int selection_bg_base_x_ = 0;
-    int componens_base_x_ = 0;
-    int arrow_up_base_x_ = 0;
-    int arrow_down_base_x_ = 0;
-    int right_arrow_base_x_ = 0;
+    lv_group_t *input_group_                   = nullptr;
+    bool top_in_group_                         = true;
+    lv_obj_t *selection_bg_                    = nullptr;
+    int selection_bg_base_x_                   = 0;
+    int componens_base_x_                      = 0;
     std::function<void()> page_animation_over_ = nullptr;
 
-    // Up arrow, Down arrow, and second-level page entry arrow.
-    lv_obj_t *arrow_up_ = nullptr;
+    // Up and Down scrolling hint arrows.
+    lv_obj_t *arrow_up_   = nullptr;
     lv_obj_t *arrow_down_ = nullptr;
-    lv_obj_t *right_arrow_ = nullptr;
 };
