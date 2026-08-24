@@ -16,6 +16,10 @@ LDFLAGS = []
 LINK_SEARCH_PATH = []
 STATIC_FILES = []
 
+app_launch_static_root = os.path.join(env['PROJECT_PATH'], 'APPLaunch')
+if os.path.isdir(app_launch_static_root):
+    STATIC_FILES.append((app_launch_static_root, 'APPLaunch'))
+
 
 SRCS += append_srcs_dir(ADir('assets'))
 

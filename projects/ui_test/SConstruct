@@ -1,6 +1,7 @@
 from pathlib import Path
 import os, sys
 import platform
+import shutil
 import subprocess
 """
   The default cross-compilation toolchain can be specified in a 
@@ -39,6 +40,15 @@ if previous_config != selected_config:
         generated_path = Path("build") / "config" / generated_name
         if generated_path.exists():
             generated_path.unlink()
+    build_path = Path("build")
+    if build_path.exists():
+        for build_entry in build_path.iterdir():
+            if build_entry.name == "config":
+                continue
+            if build_entry.is_dir():
+                shutil.rmtree(build_entry)
+            else:
+                build_entry.unlink()
     config_selection_path.parent.mkdir(parents=True, exist_ok=True)
     config_selection_path.write_text(selected_config)
 
