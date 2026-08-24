@@ -44,23 +44,19 @@ class LvSettingRoller : public DComponens::LvglComponensBase {
 public:
     using Page3TransitionCallback = LvSettingRollerPage2::Page3TransitionCallback;
 
-    // Fixed height of each row. Scroll distance, selection area, and text vertical centering are calculated from this value.
-    static constexpr int ROW_H = 21;
+    enum class LayoutMetric : int {
+        RowH        = 21,
+        CenterRow   = 3,
+        EdgePadding = RowH * CenterRow,
+        LabelCenterX = 60,
+        LabelBoxX   = 4,
+        LabelBoxW   = 90,
+    };
 
-    // Index of the center row in the visible area; three rows are reserved above and below.
-    static constexpr int CENTER_ROW = 3;
-
-    // Top and bottom padding, allowing the first and last entries to scroll to the center.
-    static constexpr int EDGE_PADDING = ROW_H * CENTER_ROW;
-
-    // Normal top-level entries are centered around this x-coordinate.
-    static constexpr int LABEL_CENTER_X = 60;
-
-    // Fixed starting x-coordinate of the left-side top-level entries after entering a second-level page.
-    static constexpr int LABEL_BOX_X = 4;
-
-    // Fixed display width of the left-side top-level entries after entering a second-level page.
-    static constexpr int LABEL_BOX_W = 90;
+    static constexpr int metric(LayoutMetric value)
+    {
+        return static_cast<int>(value);
+    }
 
     // Index of the currently selected top-level entry.
     int32_t selected_index                                  = 0;
@@ -166,21 +162,23 @@ public:
         const int natural_width = lv_obj_get_width(label);
         if (left_aligned) {
             // Top-level entries on the left side of a second-level page use a fixed width and left alignment.
-            lv_obj_set_width(label, LABEL_BOX_W);
+            lv_obj_set_width(label, metric(LayoutMetric::LabelBoxW));
             lv_label_set_long_mode(
                 label, focused ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP);
-            lv_obj_set_x(label, LABEL_BOX_X);
+            lv_obj_set_x(label, metric(LayoutMetric::LabelBoxX));
         } else {
             // Normal entries that do not exceed the width are centered around the midpoint without crossing the minimum left margin.
             lv_obj_set_width(label, LV_SIZE_CONTENT);
             lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
             lv_obj_update_layout(label);
-            const int label_x = LABEL_CENTER_X - lv_obj_get_width(label) / 2;
-            lv_obj_set_x(label, label_x < LABEL_BOX_X ? LABEL_BOX_X : label_x);
+            const int label_x = metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(label) / 2;
+            lv_obj_set_x(label, label_x < metric(LayoutMetric::LabelBoxX)
+                                   ? metric(LayoutMetric::LabelBoxX)
+                                   : label_x);
         }
 
         // Vertically center the text within the 21-pixel row; if the font is too tall, start at the top.
-        const int label_y = (ROW_H - lv_obj_get_height(label)) / 2;
+        const int label_y = (metric(LayoutMetric::RowH) - lv_obj_get_height(label)) / 2;
         lv_obj_set_y(label, label_y < 0 ? 0 : label_y);
     }
 
@@ -301,12 +299,12 @@ public:
             if (!label) continue;
 
             if (enabled) {
-                lv_obj_set_width(label, LABEL_BOX_W);
+                lv_obj_set_width(label, metric(LayoutMetric::LabelBoxW));
                 lv_label_set_long_mode(
                     label, item_index == selected_index
                         ? LV_LABEL_LONG_SCROLL_CIRCULAR
                         : LV_LABEL_LONG_CLIP);
-                lv_obj_set_x(label, LABEL_BOX_X);
+                lv_obj_set_x(label, metric(LayoutMetric::LabelBoxX));
             } else {
                 lv_obj_set_width(label, LV_SIZE_CONTENT);
                 lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
@@ -410,13 +408,14 @@ public:
 
         lv_anim_del(object, nullptr);
         const int start_x = lv_obj_get_x(object);
-        const int end_x = page3_object_base_x(object) + (entering ? -PAGE3_SHIFT : 0);
+        const int end_x = page3_object_base_x(object) +
+                          (entering ? -animation_metric(AnimationMetric::Page3Shift) : 0);
 
         lv_anim_t animation;
         lv_anim_init(&animation);
         lv_anim_set_var(&animation, object);
         lv_anim_set_values(&animation, start_x, end_x);
-        lv_anim_set_time(&animation, PAGE3_ANIM_MS);
+        lv_anim_set_time(&animation, animation_metric(AnimationMetric::Page3AnimMs));
         lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
         lv_anim_set_exec_cb(&animation, page3_anim_exec_cb);
         if (animate_over_func) {
@@ -534,8 +533,12 @@ public:
         lv_obj_set_style_border_width(ComponensObj, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(ComponensObj, 0, LV_PART_MAIN);
         lv_obj_set_flex_flow(ComponensObj, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_style_pad_top(ComponensObj, EDGE_PADDING, LV_PART_MAIN);
-        lv_obj_set_style_pad_bottom(ComponensObj, EDGE_PADDING, LV_PART_MAIN);
+        lv_obj_set_style_pad_top(ComponensObj,
+                                 metric(LayoutMetric::EdgePadding),
+                                 LV_PART_MAIN);
+        lv_obj_set_style_pad_bottom(ComponensObj,
+                                    metric(LayoutMetric::EdgePadding),
+                                    LV_PART_MAIN);
         lv_obj_set_style_pad_row(ComponensObj, 0, LV_PART_MAIN);
 
         // Create and position the scrolling hint arrows.
@@ -544,7 +547,7 @@ public:
             lv_img_set_src(arrow_up_, &setting_red_up);
             lv_obj_update_layout(arrow_up_);
             lv_obj_set_pos(arrow_up_,
-                           LABEL_CENTER_X - lv_obj_get_width(arrow_up_) / 2,
+                           metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(arrow_up_) / 2,
                            2);
             arrow_up_base_x_ = lv_obj_get_x(arrow_up_);
 
@@ -554,7 +557,7 @@ public:
             lv_img_set_src(arrow_down_, &setting_red_down);
             lv_obj_update_layout(arrow_down_);
             lv_obj_set_pos(arrow_down_,
-                           LABEL_CENTER_X - lv_obj_get_width(arrow_down_) / 2,
+                           metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(arrow_down_) / 2,
                            150 - lv_obj_get_height(arrow_down_) - 4);
             arrow_down_base_x_ = lv_obj_get_x(arrow_down_);
    
@@ -605,8 +608,15 @@ public:
     }
 
 private:
-    static constexpr int PAGE3_ANIM_MS = 200;
-    static constexpr int PAGE3_SHIFT = 320;
+    enum class AnimationMetric : int {
+        Page3AnimMs = 200,
+        Page3Shift  = 320,
+    };
+
+    static constexpr int animation_metric(AnimationMetric value)
+    {
+        return static_cast<int>(value);
+    }
 
     // Tree node iterator for the current top-level page.
     NodeIter parent_node_;

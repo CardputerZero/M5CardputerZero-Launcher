@@ -11,8 +11,19 @@
 #include "ui_app_page.hpp"
 #include "cp0_lvgl_app.h"
 #include "setting_bluetooth_page.hpp"
+#include "setting_bluetooth_connected_page3.hpp"
+#include "setting_bluetooth_scan_page3.hpp"
 #include "setting_roller.hpp"
+#include "setting_wifi_scan_page3.hpp"
 #include "setting_roller_page3.hpp"
+#include "setting_brightness_page3.hpp"
+#include "setting_dark_time_page3.hpp"
+#include "setting_volume_page3.hpp"
+#include "setting_resolution_page3.hpp"
+#include "setting_bq_calibrate_page3.hpp"
+#include "setting_rtc_page3.hpp"
+#include "setting_confirm_page3.hpp"
+#include "setting_adb_guide_page3.hpp"
 #include "setting_soundcard.hpp"
 #include "setting_tree_types.hpp"
 
@@ -22,78 +33,84 @@ static std::unique_ptr<DComponens::LvglComponensBase> roller_page_factory(lv_obj
     return std::make_unique<LvSettingRollerPage2>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> roller_page3_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> roller_page3_factory(lv_obj_t *parent, const NodeIter &page_node,
+                                                                           std::function<void()> on_back)
 {
     return std::make_unique<LvSettingRollerPage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> brightness_page3_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> brightness_page3_factory(lv_obj_t *parent,
+                                                                               const NodeIter &page_node,
+                                                                               std::function<void()> on_back)
 {
     return std::make_unique<LvSettingBrightnessPage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> dark_time_page3_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> dark_time_page3_factory(lv_obj_t *parent,
+                                                                              const NodeIter &page_node,
+                                                                              std::function<void()> on_back)
 {
     return std::make_unique<LvSettingDarkTimePage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> volume_page3_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> volume_page3_factory(lv_obj_t *parent, const NodeIter &page_node,
+                                                                           std::function<void()> on_back)
 {
     return std::make_unique<LvSettingVolumePage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> resolution_page3_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> resolution_page3_factory(lv_obj_t *parent,
+                                                                               const NodeIter &page_node,
+                                                                               std::function<void()> on_back)
 {
     return std::make_unique<LvSettingResolutionPage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> bq_calibrate_page3_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> bq_calibrate_page3_factory(lv_obj_t *parent,
+                                                                                 const NodeIter &page_node,
+                                                                                 std::function<void()> on_back)
 {
     return std::make_unique<LvSettingBQCalibratePage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> rtc_page3_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> rtc_page3_factory(lv_obj_t *parent, const NodeIter &page_node,
+                                                                        std::function<void()> on_back)
 {
     return std::make_unique<LvSettingRtcPage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> confirm_page3_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> confirm_page3_factory(lv_obj_t *parent, const NodeIter &page_node,
+                                                                            std::function<void()> on_back)
 {
     return std::make_unique<LvSettingConfirmPage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> wifi_scan_page3_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> wifi_scan_page3_factory(lv_obj_t *parent,
+                                                                              const NodeIter &page_node,
+                                                                              std::function<void()> on_back)
 {
     return std::make_unique<LvSettingWifiScanPage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> adb_guide_page_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> adb_guide_page_factory(lv_obj_t *parent,
+                                                                             const NodeIter &page_node,
+                                                                             std::function<void()> on_back)
 {
     return std::make_unique<LvSettingAdbGuidePage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> bluetooth_connected_page_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> bluetooth_connected_page_factory(lv_obj_t *parent,
+                                                                                       const NodeIter &page_node,
+                                                                                       std::function<void()> on_back)
 {
-    return std::make_unique<LvSettingBluetoothConnectedPage3>(
-        parent, page_node, std::move(on_back));
+    return std::make_unique<LvSettingBluetoothConnectedPage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> bluetooth_scan_page_factory(
-    lv_obj_t *parent, const NodeIter &page_node, std::function<void()> on_back)
+static std::unique_ptr<DComponens::LvglComponensBase> bluetooth_scan_page_factory(lv_obj_t *parent,
+                                                                                  const NodeIter &page_node,
+                                                                                  std::function<void()> on_back)
 {
-    return std::make_unique<LvSettingBluetoothScanPage3>(
-        parent, page_node, std::move(on_back));
+    return std::make_unique<LvSettingBluetoothScanPage3>(parent, page_node, std::move(on_back));
 }
 
 static void adb_guide_api(int cmd, void *)
@@ -103,8 +120,7 @@ static void adb_guide_api(int cmd, void *)
 
 static void append_numeric_options(Tree &tree, const NodeIter &parent, int first, int last)
 {
-    for (int value = first; value <= last; ++value)
-        tree.append_child(parent, SettingEntry{std::to_string(value)});
+    for (int value = first; value <= last; ++value) tree.append_child(parent, SettingEntry{std::to_string(value)});
 }
 
 bool mork_api_read_flag = false;
@@ -131,23 +147,6 @@ public:
     Tree mode_tree;
 
     std::unique_ptr<LvSettingRoller> roller1_ = nullptr;
-    // std::unique_ptr<DComponens::LvglComponensBase> roller2_ = nullptr;
-    // std::unique_ptr<DComponens::LvglComponensBase> roller3_ = nullptr;
-    
-    static void _back_home(void *data)
-    {
-        auto *page = static_cast<UISettingTreePage *>(data);
-        page->AnimateNextOut();
-        page->roller1_.reset();
-        if (page && page->navigate_home) {
-            page->navigate_home();
-        }
-    }
-
-    void LeaveNextPage()
-    {
-        lv_async_call(_back_home, this);
-    }
 
     void create_page_detail()
     {
@@ -190,7 +189,8 @@ public:
         {
             NodeIter screen = mode_tree.append_child(root, SettingEntry{"Screen", roller_page_factory});
             {
-                NodeIter brightness = mode_tree.append_child(screen, SettingEntry{"Brightness", brightness_page3_factory});
+                NodeIter brightness =
+                    mode_tree.append_child(screen, SettingEntry{"Brightness", brightness_page3_factory});
                 mode_tree.append_child(brightness, SettingEntry{"100%"});
                 mode_tree.append_child(brightness, SettingEntry{"75%"});
                 mode_tree.append_child(brightness, SettingEntry{"50%"});
@@ -231,7 +231,7 @@ public:
         }
 
         {
-            NodeIter camera = mode_tree.append_child(root, SettingEntry{"Camera", roller_page_factory});
+            NodeIter camera     = mode_tree.append_child(root, SettingEntry{"Camera", roller_page_factory});
             NodeIter resolution = mode_tree.append_child(camera, SettingEntry{"Resolution", resolution_page3_factory});
             mode_tree.append_child(resolution, SettingEntry{"1280x720"});
             mode_tree.append_child(resolution, SettingEntry{"640x480"});
@@ -243,7 +243,8 @@ public:
             mode_tree.append_child(info, SettingEntry{"Temp"});
             mode_tree.append_child(info, SettingEntry{"Current"});
             mode_tree.append_child(info, SettingEntry{"Voltage"});
-            NodeIter bq_calibrate = mode_tree.append_child(info, SettingEntry{"BQ Calibrate", bq_calibrate_page3_factory});
+            NodeIter bq_calibrate =
+                mode_tree.append_child(info, SettingEntry{"BQ Calibrate", bq_calibrate_page3_factory});
             mode_tree.append_child(bq_calibrate, SettingEntry{"Enter CAL"});
             mode_tree.append_child(bq_calibrate, SettingEntry{"CC Offset"});
             mode_tree.append_child(bq_calibrate, SettingEntry{"Board Offset"});
@@ -272,8 +273,7 @@ public:
         {
             NodeIter developer = mode_tree.append_child(root, SettingEntry{"Developer", roller_page_factory});
             mode_tree.append_child(developer, SettingEntry{"ADB", mork_api, true});
-            mode_tree.append_child(developer,
-                                   SettingEntry{"ADB guide", adb_guide_page_factory, adb_guide_api});
+            mode_tree.append_child(developer, SettingEntry{"ADB guide", adb_guide_page_factory, adb_guide_api});
             // mode_tree.append_child(developer, SettingEntry{"ADB_PAIR"});
             // mode_tree.append_child(developer, SettingEntry{"ADB_AUTHORIZATIONS"});
         }
@@ -306,8 +306,8 @@ public:
                 append_numeric_options(mode_tree, second, 0, 59);
             }
             {
-                NodeIter write_rtc = mode_tree.append_child(
-                    rtc, SettingEntry{"Write hardware RTC?", confirm_page3_factory});
+                NodeIter write_rtc =
+                    mode_tree.append_child(rtc, SettingEntry{"Write hardware RTC?", confirm_page3_factory});
                 mode_tree.append_child(write_rtc, SettingEntry{"Yes"});
                 mode_tree.append_child(write_rtc, SettingEntry{"No"});
             }
@@ -319,10 +319,8 @@ public:
             mode_tree.append_child(bluetooth, SettingEntry{"Alias: CardputerZero"});
             mode_tree.append_child(bluetooth, SettingEntry{"Discoverable", mork_api, true});
             mode_tree.append_child(bluetooth, SettingEntry{"Named Only", mork_api, true});
-            mode_tree.append_child(bluetooth,
-                                   SettingEntry{"Connected", bluetooth_connected_page_factory});
-            mode_tree.append_child(bluetooth,
-                                   SettingEntry{"Scan", bluetooth_scan_page_factory});
+            mode_tree.append_child(bluetooth, SettingEntry{"Connected", bluetooth_connected_page_factory});
+            mode_tree.append_child(bluetooth, SettingEntry{"Scan", bluetooth_scan_page_factory});
             // mode_tree.append_child(bluetooth, SettingEntry{"Power Warning"});
         }
 
@@ -352,14 +350,36 @@ public:
             mode_tree.append_child(sound_card, SettingEntry{"Open Mixer", soundcard_page4_factory});
         }
     }
-    void AnimateNextIn(){};
-    void AnimateNextOut() {};
+    static void _back_home(void *data)
+    {
+        auto *page = static_cast<UISettingTreePage *>(data);
+        page->AnimateNextOut(nullptr);
+        page->roller1_.reset();
+        if (page && page->navigate_home) {
+            page->navigate_home();
+        }
+    }
+
+    void LeaveNextPage()
+    {
+        lv_async_call(_back_home, this);
+    }
+    void AnimateNextIn(std::function<void()> AnimateOverFunc)
+    {
+        if (AnimateOverFunc) AnimateOverFunc();
+    };
+    void AnimateNextOut(std::function<void()> AnimateOverFunc)
+    {
+        if (AnimateOverFunc) AnimateOverFunc();
+    };
     void LoadNextPage()
     {
-        roller1_ = std::make_unique<LvSettingRoller>(ui_APP_Container, mode_tree.begin(),
-                                                     std::bind(&UISettingTreePage::LeaveNextPage, this));
-        lv_group_add_obj(input_group(), roller1_->Get());
-        lv_group_focus_obj(roller1_->Get());
+        // not back to home, so create the first-level roller.
+        roller1_ = std::make_unique<LvSettingRoller>(ui_APP_Container, mode_tree.begin(), nullptr);
+        AnimateNextIn([&]() {
+            lv_group_add_obj(input_group(), roller1_->Get());
+            lv_group_focus_obj(roller1_->Get());
+        });
     }
 
     UISettingTreePage() : AppPage()
@@ -367,7 +387,6 @@ public:
         lv_obj_set_style_bg_color(screen(), lv_color_black(), LV_PART_MAIN);
         create_page_detail();
         LoadNextPage();
-        AnimateNextIn();
     }
     ~UISettingTreePage() override
     {

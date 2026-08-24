@@ -30,12 +30,19 @@ enum class LvSettingBluetoothListMode { Connected, Scan };
 
 class LvSettingBluetoothPage3 : public DComponens::LvglComponensBase {
 public:
-    static constexpr int SCREEN_W     = 320;
-    static constexpr int SCREEN_H     = 150;
-    static constexpr int ROW_H        = 20;
-    static constexpr int ROW_Y        = 22;
-    static constexpr int VISIBLE_ROWS = 5;
-    static constexpr int HINT_Y       = SCREEN_H - 14;
+    enum class LayoutMetric : int {
+        ScreenW     = 320,
+        ScreenH     = 150,
+        RowH        = 20,
+        RowY        = 22,
+        VisibleRows = 5,
+        HintY       = ScreenH - 14,
+    };
+
+    static constexpr int metric(LayoutMetric value)
+    {
+        return static_cast<int>(value);
+    }
 
     LvSettingBluetoothPage3() = default;
 
@@ -96,7 +103,9 @@ public:
 
         ComponensObj = lv_obj_create(parent);
         if (!ComponensObj) return;
-        lv_obj_set_size(ComponensObj, SCREEN_W, SCREEN_H);
+        lv_obj_set_size(ComponensObj,
+                        metric(LayoutMetric::ScreenW),
+                        metric(LayoutMetric::ScreenH));
         lv_obj_set_pos(ComponensObj, 0, 0);
         lv_obj_set_style_bg_opa(ComponensObj, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_set_style_border_width(ComponensObj, 0, LV_PART_MAIN);
@@ -600,7 +609,7 @@ private:
             title.c_str(),
             8,
             2,
-            SCREEN_W - 16,
+            metric(LayoutMetric::ScreenW) - 16,
             0x58A6FF,
             cp0_fonts().get("Montserrat-Bold.ttf", 12, LV_FREETYPE_FONT_STYLE_BOLD));
 
@@ -612,7 +621,7 @@ private:
                          action_message_.c_str(),
                          8,
                          58,
-                         SCREEN_W - 16,
+                         metric(LayoutMetric::ScreenW) - 16,
                          0x58A6FF,
                          &lv_font_montserrat_14);
             hint = "ESC:back";
@@ -634,28 +643,31 @@ private:
                              message.c_str(),
                              8,
                              52,
-                             SCREEN_W - 16,
+                             metric(LayoutMetric::ScreenW) - 16,
                              error_message_.empty() ? 0x666666 : 0xFFAA00,
                              &lv_font_montserrat_12);
             }
 
             const int count = static_cast<int>(devices_.size());
-            const int offset = count <= VISIBLE_ROWS
+            const int offset = count <= metric(LayoutMetric::VisibleRows)
                 ? 0
-                : std::clamp(selected_index_ - VISIBLE_ROWS / 2,
+                : std::clamp(selected_index_ - metric(LayoutMetric::VisibleRows) / 2,
                              0,
-                             count - VISIBLE_ROWS);
+                             count - metric(LayoutMetric::VisibleRows));
             for (int visible = 0;
-                 visible < VISIBLE_ROWS && offset + visible < count;
+                 visible < metric(LayoutMetric::VisibleRows) && offset + visible < count;
                  ++visible) {
                 const int index = offset + visible;
                 const auto &device = devices_[static_cast<size_t>(index)];
-                const int y = ROW_Y + visible * ROW_H;
+                const int y = metric(LayoutMetric::RowY) +
+                              visible * metric(LayoutMetric::RowH);
                 const bool selected = index == selected_index_;
                 if (selected) {
                     lv_obj_t *background = lv_obj_create(ComponensObj);
                     if (background) {
-                        lv_obj_set_size(background, SCREEN_W - 8, ROW_H - 1);
+                        lv_obj_set_size(background,
+                                        metric(LayoutMetric::ScreenW) - 8,
+                                        metric(LayoutMetric::RowH) - 1);
                         lv_obj_set_pos(background, 4, y);
                         lv_obj_set_style_radius(background, 2, LV_PART_MAIN);
                         lv_obj_set_style_bg_color(background, lv_color_hex(0x1F3A5F), LV_PART_MAIN);
@@ -709,8 +721,8 @@ private:
         create_label(ComponensObj,
                      hint,
                      8,
-                     HINT_Y,
-                     SCREEN_W - 16,
+                     metric(LayoutMetric::HintY),
+                     metric(LayoutMetric::ScreenW) - 16,
                      0x555555,
                      &lv_font_montserrat_10);
     }
@@ -782,34 +794,4 @@ private:
     std::shared_ptr<ApiDispatchState> api_dispatch_ = std::make_shared<ApiDispatchState>();
     std::shared_ptr<bool> page_lifetime_ = std::make_shared<bool>(true);
     uint64_t generation_ = 1;
-};
-
-class LvSettingBluetoothConnectedPage3 : public LvSettingBluetoothPage3 {
-public:
-    LvSettingBluetoothConnectedPage3() = default;
-
-    LvSettingBluetoothConnectedPage3(lv_obj_t *parent,
-                                     const NodeIter &parent_node,
-                                     std::function<void()> back_callback)
-        : LvSettingBluetoothPage3(parent,
-                                   parent_node,
-                                   std::move(back_callback),
-                                   LvSettingBluetoothListMode::Connected)
-    {
-    }
-};
-
-class LvSettingBluetoothScanPage3 : public LvSettingBluetoothPage3 {
-public:
-    LvSettingBluetoothScanPage3() = default;
-
-    LvSettingBluetoothScanPage3(lv_obj_t *parent,
-                                const NodeIter &parent_node,
-                                std::function<void()> back_callback)
-        : LvSettingBluetoothPage3(parent,
-                                   parent_node,
-                                   std::move(back_callback),
-                                   LvSettingBluetoothListMode::Scan)
-    {
-    }
 };
