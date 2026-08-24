@@ -1,0 +1,9 @@
+config COMPILE_FOR_WEB
+    bool 'commpile web msg!'
+    default n
+config COMPILE_FOR_WIN32
+    bool 'commpile win32 msg!'
+    default n
+config COMPILE_FOR_LINUX
+    bool 'commpile linux msg!'
+    default n

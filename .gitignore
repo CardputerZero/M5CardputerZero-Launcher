@@ -32,3 +32,5 @@ docs/CP0-测试体验问题分析与改进建议.md
 docs/CP0-代码Bug定位报告.md
 dsh-prompt-inject
 bug
+.cache
+compile_commands.json

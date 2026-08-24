@@ -1,0 +1,97 @@
+from pathlib import Path
+import os, sys
+import platform
+import subprocess
+"""
+  The default cross-compilation toolchain can be specified in a 
+  custom `config_defaults.mk` file and passed via the `CONFIG_DEFAULT_FILE` 
+  environment variable.
+
+export CONFIG_DEFAULT_FILE=linux_x86_cross_cp0_config_defaults.mk
+scons -j8
+"""
+
+
+cross_package_enabled = False
+
+local_path = Path(os.getcwd())
+sdk_path = local_path.parent.parent / "SDK"
+version_file = local_path.parent.parent / "ext_components" / "cp0_lvgl" / "sdk_version.txt"
+
+version = version_file.read_text(encoding="utf-8")
+static_lib_path = sdk_path / "github_source" / f"static_lib_{version}"
+
+if os.environ.get("CardputerZero", '') == 'y':
+    os.environ["CONFIG_DEFAULT_FILE"] = "linux_x86_cross_cp0_config_defaults.mk"
+
+if os.environ.get("CONFIG_DEFAULT_FILE") == None:
+    if platform.machine() == 'x86_64':
+        os.environ["CONFIG_DEFAULT_FILE"] = "linux_x86_sdl2_config_defaults.mk"
+
+# The SDK only generates Kconfig output when global_config.mk is absent. Invalidate
+# generated configuration when callers switch between SDL and cross defaults.
+selected_config_path = Path(os.environ["CONFIG_DEFAULT_FILE"]).resolve()
+selected_config = str(selected_config_path) + "\n" + selected_config_path.read_text()
+config_selection_path = Path("build") / "config" / "selected-defaults.txt"
+previous_config = config_selection_path.read_text() if config_selection_path.exists() else ""
+if previous_config != selected_config:
+    for generated_name in ("global_config.mk", "global_config.h", "lvgl_config.h"):
+        generated_path = Path("build") / "config" / generated_name
+        if generated_path.exists():
+            generated_path.unlink()
+    config_selection_path.parent.mkdir(parents=True, exist_ok=True)
+    config_selection_path.write_text(selected_config)
+
+if "cross" in os.environ.get("CONFIG_DEFAULT_FILE", ''):
+    cross_package_enabled = True
+    config_tmp_path = Path("build") / "config" / "config_tmp.mk"
+    sysroot_path_str = static_lib_path.as_posix().replace('"', r'\"')
+    config_tmp_content = (
+        f'CONFIG_TOOLCHAIN_SYSROOT="{sysroot_path_str}"\n'
+    )
+    if not config_tmp_path.exists() or config_tmp_path.read_text() != config_tmp_content:
+        config_tmp_path.parent.mkdir(parents=True, exist_ok=True)
+        config_tmp_path.write_text(config_tmp_content)
+else:
+    config_tmp_path = Path("build") / "config" / "config_tmp.mk"
+    if config_tmp_path.exists():
+        config_tmp_path.unlink()
+
+os.environ["SDK_PATH"] = str(sdk_path)
+os.environ["EXT_COMPONENTS_PATH"] = str(sdk_path.parent / "ext_components")
+
+env = SConscript(
+    str(sdk_path / "tools" / "scons" / "project.py"),
+    variant_dir=os.getcwd(),
+    duplicate=0,
+)
+
+# static_lib is only needed for cross-compilation, skip in SDL mode.
+if cross_package_enabled:
+    update = False
+    if not static_lib_path.exists():
+        update = True
+    else:
+        try:
+            with open(str(static_lib_path / "version"), "r") as f:
+                if version != f.read().strip():
+                    update = True
+        except Exception:
+            update = True
+
+    if update:
+        with open(env["PROJECT_TOOL_S"]) as f:
+            exec(f.read())
+        try:
+            import tarfile
+
+            tarfile.TarFile.extraction_filter = staticmethod(
+                tarfile.fully_trusted_filter
+            )
+        except AttributeError:
+            pass
+        down_url = (
+            "https://github.com/CardputerZero/M5CardputerZero-UserDemo/"
+            "releases/download/{}/sdk_bsp.tar.gz"
+        ).format(version)
+        check_wget_down(down_url, "static_lib_{}.tar.gz".format(version))
