@@ -35,33 +35,50 @@ class LvSettingRollerPage2 : public DComponens::LvglComponensBase {
 public:
     using Page3TransitionCallback = std::function<void(bool entering, bool completed)>;
 
-    static constexpr int PANEL_X        = 120;
-    static constexpr int PANEL_W        = 200;
-    static constexpr int PANEL_H        = 150;
-    static constexpr int ROW_H          = 21;
-    static constexpr int CENTER_ROW     = 3;
-    static constexpr int EDGE_PADDING   = ROW_H * CENTER_ROW;
-    static constexpr int BAR_H          = 21;
-    static constexpr int BAR_Y          = 66;
-    static constexpr int LABEL_CENTER_X = 40;
-    static constexpr int LABEL_BOX_X    = 0;
-    static constexpr int LABEL_BOX_W    = 80;
-    static constexpr int STATUS_ICON_X  = 100;
-    static constexpr int PAGE_WIDTH     = 320;
-    static constexpr int PAGE3_ANIM_MS  = 200;
+    enum class LayoutMetric : int {
+        PanelX       = 120,
+        PanelW       = 200,
+        PanelH       = 150,
+        RowH         = 21,
+        CenterRow    = 3,
+        EdgePadding  = RowH * CenterRow,
+        BarH         = 21,
+        BarY         = 66,
+        LabelCenterX = 40,
+        LabelBoxX    = 0,
+        LabelBoxW    = 80,
+        StatusIconX  = 100,
+        PageWidth    = 320,
+        Page3AnimMs  = 200,
+    };
+
+    static constexpr int metric(LayoutMetric value)
+    {
+        return static_cast<int>(value);
+    }
 
     int32_t selected_index                    = 0;
     std::function<void(int)> on_selected_page = nullptr;
     Page3TransitionCallback on_page3_transition = nullptr;
 
-    void AnimateNextIn() override
+    void AnimateNextIn(std::function<void()> animate_over_func) override
     {
-        if (roller3_ && !page3_transitioning_) start_page3_transition(false);
+        if (roller3_ && !page3_transitioning_) {
+            page3_animation_over_ = std::move(animate_over_func);
+            start_page3_transition(false);
+        } else if (animate_over_func) {
+            animate_over_func();
+        }
     }
 
-    void AnimateNextOut() override
+    void AnimateNextOut(std::function<void()> animate_over_func) override
     {
-        if (roller3_ && !page3_transitioning_) start_page3_transition(true);
+        if (roller3_ && !page3_transitioning_) {
+            page3_animation_over_ = std::move(animate_over_func);
+            start_page3_transition(true);
+        } else if (animate_over_func) {
+            animate_over_func();
+        }
     }
 
     void LoadNextPage() override
@@ -159,22 +176,24 @@ public:
         const bool focused      = distance == 0;
         const int natural_width = lv_obj_get_width(label);
         if (compact) {
-            lv_obj_set_width(label, LABEL_BOX_W);
+            lv_obj_set_width(label, metric(LayoutMetric::LabelBoxW));
             lv_label_set_long_mode(label, focused ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP);
-            lv_obj_set_x(label, LABEL_BOX_X);
-        } else if (natural_width > LABEL_BOX_W) {
-            lv_obj_set_width(label, LABEL_BOX_W);
+            lv_obj_set_x(label, metric(LayoutMetric::LabelBoxX));
+        } else if (natural_width > metric(LayoutMetric::LabelBoxW)) {
+            lv_obj_set_width(label, metric(LayoutMetric::LabelBoxW));
             lv_label_set_long_mode(label, focused ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP);
-            lv_obj_set_x(label, LABEL_BOX_X);
+            lv_obj_set_x(label, metric(LayoutMetric::LabelBoxX));
         } else {
             lv_obj_set_width(label, LV_SIZE_CONTENT);
             lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
             lv_obj_update_layout(label);
-            const int label_x = LABEL_CENTER_X - lv_obj_get_width(label) / 2;
-            lv_obj_set_x(label, label_x < LABEL_BOX_X ? LABEL_BOX_X : label_x);
+            const int label_x = metric(LayoutMetric::LabelCenterX) - lv_obj_get_width(label) / 2;
+            lv_obj_set_x(label, label_x < metric(LayoutMetric::LabelBoxX)
+                                   ? metric(LayoutMetric::LabelBoxX)
+                                   : label_x);
         }
 
-        const int label_y = (ROW_H - lv_obj_get_height(label)) / 2;
+        const int label_y = (metric(LayoutMetric::RowH) - lv_obj_get_height(label)) / 2;
         lv_obj_set_y(label, label_y < 0 ? 0 : label_y);
     }
 
@@ -203,8 +222,8 @@ public:
             if (!label) continue;
 
             if (enabled) {
-                lv_obj_set_width(label, LABEL_BOX_W);
-                lv_obj_set_x(label, LABEL_BOX_X);
+                lv_obj_set_width(label, metric(LayoutMetric::LabelBoxW));
+                lv_obj_set_x(label, metric(LayoutMetric::LabelBoxX));
                 lv_label_set_long_mode(
                     label, index == static_cast<uint32_t>(selected_index)
                         ? LV_LABEL_LONG_SCROLL_CIRCULAR
@@ -247,8 +266,8 @@ public:
         lv_img_set_src(icon_obj, enabled ? &setting_ok : &setting_cross);
         lv_obj_update_layout(icon_obj);
         lv_obj_set_pos(icon_obj,
-                       STATUS_ICON_X + (enabled ? 0 : 1),
-                       (ROW_H - lv_obj_get_height(icon_obj)) / 2);
+                       metric(LayoutMetric::StatusIconX) + (enabled ? 0 : 1),
+                       (metric(LayoutMetric::RowH) - lv_obj_get_height(icon_obj)) / 2);
     }
 
     static void set_status_error(lv_obj_t *icon_obj, lv_obj_t *status_label)
@@ -384,14 +403,14 @@ public:
             return;
         }
 
-        lv_obj_set_style_translate_x(roller3_->Get(), PAGE_WIDTH, LV_PART_MAIN);
-        AnimateNextOut();
+        lv_obj_set_style_translate_x(roller3_->Get(), metric(LayoutMetric::PageWidth), LV_PART_MAIN);
+        AnimateNextOut(nullptr);
     }
 
     void back_from_third_page()
     {
         if (!roller3_ || page3_transitioning_) return;
-        AnimateNextIn();
+        AnimateNextIn(nullptr);
     }
 
     void stop_page3_animations()
@@ -409,7 +428,7 @@ public:
 
     int page_object_base_x(lv_obj_t *object) const
     {
-        if (object == selection_bg_ || object == ComponensObj) return PANEL_X;
+        if (object == selection_bg_ || object == ComponensObj) return metric(LayoutMetric::PanelX);
         if (object == arrow_up_) return arrow_up_base_x_;
         if (object == arrow_down_) return arrow_down_base_x_;
         if (object == hint_) return hint_base_x_;
@@ -422,13 +441,14 @@ public:
 
         lv_anim_del(object, nullptr);
         const int start_x = lv_obj_get_x(object);
-        const int end_x   = page_object_base_x(object) + (entering ? -PAGE_WIDTH : 0);
+        const int end_x = page_object_base_x(object) +
+                          (entering ? -metric(LayoutMetric::PageWidth) : 0);
         lv_anim_t animation;
         lv_anim_init(&animation);
         lv_anim_set_var(&animation, object);
         lv_anim_set_exec_cb(&animation, reinterpret_cast<lv_anim_exec_xcb_t>(lv_obj_set_x));
         lv_anim_set_values(&animation, start_x, end_x);
-        lv_anim_set_time(&animation, PAGE3_ANIM_MS);
+        lv_anim_set_time(&animation, metric(LayoutMetric::Page3AnimMs));
         lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
         if (!lv_anim_start(&animation)) lv_obj_set_x(object, end_x);
     }
@@ -440,7 +460,7 @@ public:
         lv_obj_t *root = roller3_->Get();
         lv_anim_del(root, nullptr);
         const int start_x = lv_obj_get_style_translate_x(root, LV_PART_MAIN);
-        const int end_x   = entering ? 0 : PAGE_WIDTH;
+        const int end_x = entering ? 0 : metric(LayoutMetric::PageWidth);
         lv_anim_t animation;
         lv_anim_init(&animation);
         lv_anim_set_var(&animation, root);
@@ -452,7 +472,7 @@ public:
                 }
             });
         lv_anim_set_values(&animation, start_x, end_x);
-        lv_anim_set_time(&animation, PAGE3_ANIM_MS);
+        lv_anim_set_time(&animation, metric(LayoutMetric::Page3AnimMs));
         lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
         lv_anim_set_user_data(&animation, this);
         lv_anim_set_completed_cb(&animation,
@@ -509,6 +529,7 @@ public:
             if (on_page3_transition) on_page3_transition(true, true);
             page3_transitioning_ = false;
             page3_entering_      = false;
+            invoke_page3_animation_callback();
             return;
         }
 
@@ -525,6 +546,14 @@ public:
         if (on_page3_transition) on_page3_transition(false, true);
         page3_transitioning_ = false;
         page3_entering_      = false;
+        invoke_page3_animation_callback();
+    }
+
+    void invoke_page3_animation_callback()
+    {
+        auto animate_over_func = std::move(page3_animation_over_);
+        page3_animation_over_ = nullptr;
+        if (animate_over_func) animate_over_func();
     }
 
     void scroll_to_selected(lv_obj_t *cont, bool animated)
@@ -580,8 +609,8 @@ public:
 
         selection_bg_ = lv_obj_create(parent);
         if (!selection_bg_) return;
-        lv_obj_set_size(selection_bg_, PANEL_W, BAR_H);
-        lv_obj_set_pos(selection_bg_, PANEL_X, BAR_Y);
+            lv_obj_set_size(selection_bg_, metric(LayoutMetric::PanelW), metric(LayoutMetric::BarH));
+            lv_obj_set_pos(selection_bg_, metric(LayoutMetric::PanelX), metric(LayoutMetric::BarY));
         lv_obj_set_style_bg_color(selection_bg_, lv_color_hex(0x2A2A2A), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(selection_bg_, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_border_width(selection_bg_, 0, LV_PART_MAIN);
@@ -591,13 +620,15 @@ public:
 
         ComponensObj = lv_obj_create(parent);
         if (!ComponensObj) return;
-        lv_obj_set_size(ComponensObj, PANEL_W, PANEL_H);
-        lv_obj_set_pos(ComponensObj, PANEL_X, 0);
+        lv_obj_set_size(ComponensObj,
+                        metric(LayoutMetric::PanelW),
+                        metric(LayoutMetric::PanelH));
+        lv_obj_set_pos(ComponensObj, metric(LayoutMetric::PanelX), 0);
         lv_obj_set_style_bg_opa(ComponensObj, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_set_style_border_width(ComponensObj, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(ComponensObj, 0, LV_PART_MAIN);
-        lv_obj_set_style_pad_top(ComponensObj, EDGE_PADDING, LV_PART_MAIN);
-        lv_obj_set_style_pad_bottom(ComponensObj, EDGE_PADDING, LV_PART_MAIN);
+        lv_obj_set_style_pad_top(ComponensObj, metric(LayoutMetric::EdgePadding), LV_PART_MAIN);
+        lv_obj_set_style_pad_bottom(ComponensObj, metric(LayoutMetric::EdgePadding), LV_PART_MAIN);
         lv_obj_set_style_pad_row(ComponensObj, 0, LV_PART_MAIN);
         lv_obj_set_style_radius(ComponensObj, 0, LV_PART_MAIN);
         lv_obj_set_style_clip_corner(ComponensObj, true, LV_PART_MAIN);
@@ -613,7 +644,7 @@ public:
         for (auto it = parent_node_.begin(); it != parent_node_.end(); ++it) {
             lv_obj_t *row = lv_obj_create(ComponensObj);
             if (!row) continue;
-            lv_obj_set_size(row, PANEL_W, ROW_H);
+            lv_obj_set_size(row, metric(LayoutMetric::PanelW), metric(LayoutMetric::RowH));
             lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, LV_PART_MAIN);
             lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
             lv_obj_set_style_radius(row, 0, LV_PART_MAIN);
@@ -635,7 +666,10 @@ public:
         if (arrow_up_) {
             lv_img_set_src(arrow_up_, &setting_red_up);
             lv_obj_update_layout(arrow_up_);
-            lv_obj_set_pos(arrow_up_, PANEL_X + LABEL_CENTER_X - lv_obj_get_width(arrow_up_) / 2, 2);
+            lv_obj_set_pos(arrow_up_,
+                           metric(LayoutMetric::PanelX) + metric(LayoutMetric::LabelCenterX) -
+                               lv_obj_get_width(arrow_up_) / 2,
+                           2);
             arrow_up_base_x_ = lv_obj_get_x(arrow_up_);
         }
 
@@ -643,8 +677,10 @@ public:
         if (arrow_down_) {
             lv_img_set_src(arrow_down_, &setting_red_down);
             lv_obj_update_layout(arrow_down_);
-            lv_obj_set_pos(arrow_down_, PANEL_X + LABEL_CENTER_X - lv_obj_get_width(arrow_down_) / 2,
-                           PANEL_H - lv_obj_get_height(arrow_down_) - 4);
+            lv_obj_set_pos(arrow_down_,
+                           metric(LayoutMetric::PanelX) + metric(LayoutMetric::LabelCenterX) -
+                               lv_obj_get_width(arrow_down_) / 2,
+                           metric(LayoutMetric::PanelH) - lv_obj_get_height(arrow_down_) - 4);
             arrow_down_base_x_ = lv_obj_get_x(arrow_down_);
         }
 
@@ -655,8 +691,11 @@ public:
             lv_obj_set_style_text_font(hint_, cp0_fonts().get("Montserrat-Bold.ttf", 16, LV_FREETYPE_FONT_STYLE_BOLD),
                                        LV_PART_MAIN);
             lv_obj_update_layout(hint_);
-            lv_obj_set_pos(hint_, PANEL_X + PANEL_W - 6 - lv_obj_get_width(hint_),
-                           BAR_Y + (BAR_H - lv_obj_get_height(hint_)) / 2);
+            lv_obj_set_pos(hint_,
+                           metric(LayoutMetric::PanelX) + metric(LayoutMetric::PanelW) -
+                               6 - lv_obj_get_width(hint_),
+                           metric(LayoutMetric::BarY) +
+                               (metric(LayoutMetric::BarH) - lv_obj_get_height(hint_)) / 2);
             hint_base_x_ = lv_obj_get_x(hint_);
         }
 
@@ -673,6 +712,7 @@ private:
     std::unique_ptr<DComponens::LvglComponensBase> roller3_;
     bool page3_transitioning_ = false;
     bool page3_entering_      = false;
+    std::function<void()> page3_animation_over_ = nullptr;
     lv_group_t *input_group_ = nullptr;
     bool compact_mode_ = false;
     int arrow_up_base_x_ = 0;

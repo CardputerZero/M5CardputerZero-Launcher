@@ -50,8 +50,14 @@ public:
         create_ui(parent);
     }
 
-    void AnimateNextIn() override {}
-    void AnimateNextOut() override {}
+    void AnimateNextIn(std::function<void()> animate_over_func) override
+    {
+        if (animate_over_func) animate_over_func();
+    }
+    void AnimateNextOut(std::function<void()> animate_over_func) override
+    {
+        if (animate_over_func) animate_over_func();
+    }
     void LoadNextPage() override {}
     void LeaveNextPage() override
     {

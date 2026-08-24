@@ -68,22 +68,14 @@ public:
     // Second-level roller object; created when entering a second-level page and destroyed when returning.
     std::unique_ptr<DComponens::LvglComponensBase> roller2_ = nullptr;
 
-    void AnimateNextIn() override
+    void AnimateNextIn(std::function<void()> animate_over_func) override
     {
-        animate_page3_object(selection_bg_, false);
-        animate_page3_object(ComponensObj, false);
-        animate_page3_object(arrow_up_, false);
-        animate_page3_object(arrow_down_, false);
-        animate_page3_object(right_arrow_, false);
+        animate_page3_objects(false, std::move(animate_over_func));
     }
 
-    void AnimateNextOut() override
+    void AnimateNextOut(std::function<void()> animate_over_func) override
     {
-        animate_page3_object(selection_bg_, true);
-        animate_page3_object(ComponensObj, true);
-        animate_page3_object(arrow_up_, true);
-        animate_page3_object(arrow_down_, true);
-        animate_page3_object(right_arrow_, true);
+        animate_page3_objects(true, std::move(animate_over_func));
     }
 
     void LoadNextPage() override
@@ -116,6 +108,7 @@ public:
             lv_group_add_obj(input_group_, roller2_->Get());
             lv_group_focus_obj(roller2_->Get());
         }
+        AnimateNextIn(nullptr);
     }
 
     void LeaveNextPage() override
@@ -229,9 +222,7 @@ public:
         } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
             // NodeIter and the roller child containers have the same order, so the index can locate the node.
             auto selected_node = std::next(parent_node_.begin(), selected_index);
-            if (selected_node->Componens_api) {
-                selected_node->Componens_api(SettingApiActivate, this);
-            } else if (selected_node->page_factory) {
+            if (selected_node->page_factory) {
                 LoadNextPage();
             }
         }
@@ -279,6 +270,7 @@ public:
             self->top_in_group_ = true;
             lv_group_focus_obj(self->ComponensObj);
         }
+        self->AnimateNextOut(nullptr);
     }
 
     /**
@@ -362,9 +354,9 @@ public:
 
         page3_transitioning_ = true;
         if (entering) {
-            AnimateNextOut();
+            AnimateNextOut(nullptr);
         } else {
-            AnimateNextIn();
+            AnimateNextIn(nullptr);
         }
     }
 
@@ -373,7 +365,46 @@ public:
         if (object) lv_obj_set_x(static_cast<lv_obj_t *>(object), value);
     }
 
-    void animate_page3_object(lv_obj_t *object, bool entering)
+    static void page3_animation_completed_cb(lv_anim_t *animation)
+    {
+        auto *self = static_cast<LvSettingRoller *>(lv_anim_get_user_data(animation));
+        if (!self) return;
+
+        auto animate_over_func = std::move(self->page3_animation_over_);
+        self->page3_animation_over_ = nullptr;
+        if (animate_over_func) animate_over_func();
+    }
+
+    void animate_page3_objects(bool entering, std::function<void()> animate_over_func)
+    {
+        page3_animation_over_ = nullptr;
+
+        lv_obj_t *completion_object = ComponensObj ? ComponensObj : selection_bg_;
+        if (!completion_object) {
+            if (animate_over_func) animate_over_func();
+            return;
+        }
+
+        animate_page3_object(selection_bg_, entering,
+                             completion_object == selection_bg_ ? std::move(animate_over_func)
+                                                                : nullptr);
+        animate_page3_object(ComponensObj, entering,
+                             completion_object == ComponensObj ? std::move(animate_over_func)
+                                                                : nullptr);
+        animate_page3_object(arrow_up_, entering,
+                             completion_object == arrow_up_ ? std::move(animate_over_func)
+                                                             : nullptr);
+        animate_page3_object(arrow_down_, entering,
+                             completion_object == arrow_down_ ? std::move(animate_over_func)
+                                                               : nullptr);
+        animate_page3_object(right_arrow_, entering,
+                             completion_object == right_arrow_ ? std::move(animate_over_func)
+                                                                : nullptr);
+    }
+
+    void animate_page3_object(lv_obj_t *object,
+                              bool entering,
+                              std::function<void()> animate_over_func = nullptr)
     {
         if (!object) return;
 
@@ -388,7 +419,15 @@ public:
         lv_anim_set_time(&animation, PAGE3_ANIM_MS);
         lv_anim_set_path_cb(&animation, lv_anim_path_ease_out);
         lv_anim_set_exec_cb(&animation, page3_anim_exec_cb);
-        if (!lv_anim_start(&animation)) lv_obj_set_x(object, end_x);
+        if (animate_over_func) {
+            page3_animation_over_ = std::move(animate_over_func);
+            lv_anim_set_user_data(&animation, this);
+            lv_anim_set_completed_cb(&animation, page3_animation_completed_cb);
+        }
+        if (!lv_anim_start(&animation)) {
+            lv_obj_set_x(object, end_x);
+            page3_animation_completed_cb(&animation);
+        }
     }
 
     int page3_object_base_x(lv_obj_t *object) const
@@ -590,6 +629,7 @@ private:
     int arrow_up_base_x_ = 0;
     int arrow_down_base_x_ = 0;
     int right_arrow_base_x_ = 0;
+    std::function<void()> page3_animation_over_ = nullptr;
 
     // Up arrow, Down arrow, and second-level page entry arrow.
     lv_obj_t *arrow_up_ = nullptr;

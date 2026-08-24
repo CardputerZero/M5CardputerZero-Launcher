@@ -101,8 +101,8 @@ public:
     void SetWidth(int32_t w) const { lv_obj_set_width(ComponensObj, w); }
     void SetHeight(int32_t h) const { lv_obj_set_height(ComponensObj, h); }
 
-    virtual void AnimateNextIn() = 0;
-    virtual void AnimateNextOut() = 0;
+    virtual void AnimateNextIn(std::function<void()> AnimateOverFunc) = 0;
+    virtual void AnimateNextOut(std::function<void()> AnimateOverFunc) = 0;
     virtual void LoadNextPage() = 0;
     virtual void LeaveNextPage() = 0;
     std::function<void()> LeaveSelfPage = nullptr;
