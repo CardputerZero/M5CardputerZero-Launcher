@@ -203,6 +203,11 @@ public:
         if (!ssid || !ssid[0])
             return -1;
 
+        update_status_cache();
+        const cp0_wifi_status_t current_status = get_status();
+        if (current_status.connected && std::string(current_status.ssid) == ssid)
+            return 0;
+
         constexpr const char *kActivationTimeoutSeconds = "20";
         const bool with_password = password && password[0];
         std::string output;
@@ -231,7 +236,7 @@ public:
 
         update_status_cache();
         const cp0_wifi_status_t status = get_status();
-        if (command_result == 0 && status.connected && std::string(status.ssid) == ssid) {
+        if (status.connected && std::string(status.ssid) == ssid) {
             return 0;
         }
 
