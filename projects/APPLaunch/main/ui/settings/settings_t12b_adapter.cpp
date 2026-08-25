@@ -559,13 +559,21 @@ struct LauncherToggleState
 
 SettingApiCallBackFunc make_launcher_toggle_api(const AppDescriptor &descriptor)
 {
+    const std::string config_key = descriptor.config_key ? descriptor.config_key : "";
+    const bool configurable = descriptor.configurable;
+    const bool always_on = descriptor.always_on;
     auto state = std::make_shared<LauncherToggleState>();
-    return [state, descriptor](int command, void *data) {
+    return [state, config_key, configurable, always_on](int command, void *data) {
+        const AppDescriptor current_descriptor{nullptr,
+                                               nullptr,
+                                               config_key.c_str(),
+                                               configurable,
+                                               always_on};
         if (command == SettingApiReadFlag && data) {
             bool registry_value = false;
             bool registry_read = false;
             try {
-                registry_value = launcher_app_registry_is_enabled(descriptor);
+                registry_value = launcher_app_registry_is_enabled(current_descriptor);
                 registry_read = true;
             } catch (...) {
             }
@@ -592,7 +600,7 @@ SettingApiCallBackFunc make_launcher_toggle_api(const AppDescriptor &descriptor)
             bool registry_value = false;
             bool registry_read = false;
             try {
-                registry_value = launcher_app_registry_is_enabled(descriptor);
+                registry_value = launcher_app_registry_is_enabled(current_descriptor);
                 registry_read = true;
             } catch (...) {
             }
@@ -618,7 +626,7 @@ SettingApiCallBackFunc make_launcher_toggle_api(const AppDescriptor &descriptor)
         bool previous = false;
         bool registry_read = false;
         try {
-            previous = launcher_app_registry_is_enabled(descriptor);
+            previous = launcher_app_registry_is_enabled(current_descriptor);
             registry_read = true;
         } catch (...) {
         }
@@ -633,7 +641,7 @@ SettingApiCallBackFunc make_launcher_toggle_api(const AppDescriptor &descriptor)
 
         bool succeeded = false;
         try {
-            succeeded = launcher_app_registry_set_enabled(descriptor, !previous);
+            succeeded = launcher_app_registry_set_enabled(current_descriptor, !previous);
         } catch (...) {
             succeeded = false;
         }

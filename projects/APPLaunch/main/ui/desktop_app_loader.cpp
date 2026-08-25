@@ -1,12 +1,16 @@
 #include "desktop_app_loader.hpp"
 
 #include "builtin_app_registry.hpp"
+#include "app_registry.h"
 #include "cp0_lvgl_app.h"
 #include "desktop_entry.h"
 #include "launch.h"
 #include "launcher_platform.hpp"
 
 #include <cstdio>
+#include <cctype>
+#include <cstdint>
+#include <iomanip>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -22,11 +26,31 @@ bool contains_exec(const std::list<app> &apps, const std::string &exec)
     return false;
 }
 
+std::string desktop_config_key(const std::string &filename)
+{
+    std::string key = "app_desktop_";
+    for (const unsigned char character : filename) {
+        if (std::isalnum(character)) key.push_back(static_cast<char>(character));
+        else key.push_back('_');
+    }
+
+    uint32_t hash = 2166136261u;
+    for (const unsigned char character : filename) {
+        hash ^= character;
+        hash *= 16777619u;
+    }
+    std::ostringstream suffix;
+    suffix << '_' << std::hex << std::setw(8) << std::setfill('0') << hash;
+    key += suffix.str();
+    return key;
+}
+
 } // namespace
 
 void launcher_append_desktop_apps(std::list<app> &apps)
 {
     const std::size_t initial_size = apps.size();
+    launcher_app_registry_begin_dynamic_refresh();
     try {
     const std::string app_dir = launcher_platform::path("applications");
     if (app_dir.empty()) return;
@@ -93,6 +117,18 @@ void launcher_append_desktop_apps(std::list<app> &apps)
             std::fprintf(stderr, "applications_load: skip %s (invalid Icon)\n", path.c_str());
             continue;
         }
+
+        const AppDescriptor *descriptor = launcher_app_registry_register_dynamic(
+            entry->name, icon_path, desktop_config_key(name));
+        if (!descriptor) continue;
+        bool enabled = true;
+        try {
+            enabled = launcher_app_registry_is_enabled(*descriptor);
+        } catch (...) {
+            enabled = true;
+        }
+        if (!enabled) continue;
+
         apps.emplace_back(entry->name, icon_path, entry->exec,
                           entry->terminal, entry->sysplause);
         ++appended;

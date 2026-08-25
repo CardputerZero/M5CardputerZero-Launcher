@@ -108,6 +108,7 @@ public:
     LvSettingRollerPage2() = default;
     ~LvSettingRollerPage2()
     {
+        stop_direct_status_poll();
         cancel_async_tasks();
         if (power_warning_) {
             if (lv_group_t *group = ComponensObj ? lv_obj_get_group(ComponensObj) : nullptr)
@@ -417,25 +418,49 @@ public:
         set_status_icon(icon_obj, false);
     }
 
+    static void direct_status_timer_cb(lv_timer_t *timer)
+    {
+        auto *self = timer ? static_cast<LvSettingRollerPage2 *>(lv_timer_get_user_data(timer)) : nullptr;
+        if (!self || !self->direct_status_poll_ || !self->direct_status_poll_())
+            if (self) self->stop_direct_status_poll();
+    }
+
+    void stop_direct_status_poll()
+    {
+        if (direct_status_timer_) {
+            lv_timer_delete(direct_status_timer_);
+            direct_status_timer_ = nullptr;
+        }
+        direct_status_poll_ = nullptr;
+    }
+
     void request_status_refresh(lv_obj_t *icon_obj, const NodeIter &selected_node)
     {
         if (!icon_obj || !selected_node->Componens_api) return;
 
         if (selected_node->status_read_policy == SettingStatusReadPolicy::Direct) {
-            SettingApiReadFlagTimeStartData result = std::make_tuple(false, nullptr);
-            try {
-                selected_node->Componens_api(SettingApiReadFlagTimeStart, &result);
-            } catch (...) {
-                set_status_error(icon_obj);
-                set_status_hint("Err", 0xEB5F5F);
-                return;
-            }
+            stop_direct_status_poll();
+            direct_status_poll_ = [this, icon_obj, selected_node] {
+                std::atomic_bool operation_started{false};
+                SettingApiReadFlagTimeStartData result = std::make_tuple(false, &operation_started);
+                try {
+                    selected_node->Componens_api(SettingApiReadFlagTimeStart, &result);
+                } catch (...) {
+                    set_status_error(icon_obj);
+                    set_status_hint("Err", 0xEB5F5F);
+                    return false;
+                }
 
-            const bool pending = std::get<1>(result) &&
-                                 std::get<1>(result)->load(std::memory_order_acquire);
-            set_status_icon(icon_obj, std::get<0>(result));
-            set_status_hint(pending ? "Wait" : "ok:enter",
-                            pending ? 0xF0C850 : 0x00CC66);
+                const bool pending = operation_started.load(std::memory_order_acquire);
+                set_status_icon(icon_obj, std::get<0>(result));
+                set_status_hint(pending ? "Wait" : "ok:enter",
+                                pending ? 0xF0C850 : 0x00CC66);
+                return pending;
+            };
+
+            if (direct_status_poll_() &&
+                !(direct_status_timer_ = lv_timer_create(direct_status_timer_cb, 100, this)))
+                stop_direct_status_poll();
             return;
         }
 
@@ -929,6 +954,8 @@ public:
 private:
     lv_obj_t *parent_          = nullptr;
     lv_obj_t *ui_APP_Container = nullptr;
+    lv_timer_t *direct_status_timer_ = nullptr;
+    std::function<bool()> direct_status_poll_;
     NodeIter parent_node_;
     uint32_t item_count_ = 0;
     std::unique_ptr<DComponens::LvglComponensBase> roller3_;

@@ -52,7 +52,7 @@ bool start_adb_status_refresh()
         std::lock_guard<std::mutex> lock(adb_api_mutex);
         adb_pending = false;
     }
-    return started;
+    return true;
 }
 
 } // namespace
