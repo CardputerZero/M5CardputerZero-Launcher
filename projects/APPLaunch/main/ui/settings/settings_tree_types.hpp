@@ -56,6 +56,11 @@ enum class SettingActivationPolicy : uint8_t {
     WaitForResult,
 };
 
+enum class SettingStatusReadPolicy : uint8_t {
+    Async,
+    Direct,
+};
+
 using SettingApiAsyncCallBackFunc = std::function<SettingApiResult(int, void *)>;
 
 class SettingRequestState {
@@ -158,6 +163,7 @@ struct SettingEntry {
     SettingApiCallBack Componens_api;
     SettingApiAsyncCallBackFunc Async_api;
     SettingActivationPolicy activation_policy = SettingActivationPolicy::LeaveImmediately;
+    SettingStatusReadPolicy status_read_policy = SettingStatusReadPolicy::Async;
     std::shared_ptr<SettingRequestState> request_state = std::make_shared<SettingRequestState>();
     PageType page_type = PageType::NextPageNeeded;
 

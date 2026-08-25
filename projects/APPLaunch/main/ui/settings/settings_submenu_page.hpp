@@ -421,6 +421,24 @@ public:
     {
         if (!icon_obj || !selected_node->Componens_api) return;
 
+        if (selected_node->status_read_policy == SettingStatusReadPolicy::Direct) {
+            SettingApiReadFlagTimeStartData result = std::make_tuple(false, nullptr);
+            try {
+                selected_node->Componens_api(SettingApiReadFlagTimeStart, &result);
+            } catch (...) {
+                set_status_error(icon_obj);
+                set_status_hint("Err", 0xEB5F5F);
+                return;
+            }
+
+            const bool pending = std::get<1>(result) &&
+                                 std::get<1>(result)->load(std::memory_order_acquire);
+            set_status_icon(icon_obj, std::get<0>(result));
+            set_status_hint(pending ? "Wait" : "ok:enter",
+                            pending ? 0xF0C850 : 0x00CC66);
+            return;
+        }
+
         auto dot_count         = std::make_shared<uint8_t>(0);
         auto last_label_update = std::make_shared<AsyncTaskContext::Clock::time_point>(AsyncTaskContext::Clock::now());
         auto operation_started = std::make_shared<std::atomic_bool>(false);

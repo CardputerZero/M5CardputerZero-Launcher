@@ -479,7 +479,9 @@ void UISettingTreePage::create_page_detail()
 
     {
         NodeIter developer = mode_tree.append_child(root, SettingEntry{"Developer", roller_page_factory});
-        mode_tree.append_child(developer, SettingEntry{"ADB", adb_toggle_api, true});
+        SettingEntry adb_entry{"ADB", adb_toggle_api, true};
+        adb_entry.status_read_policy = SettingStatusReadPolicy::Direct;
+        mode_tree.append_child(developer, std::move(adb_entry));
         mode_tree.append_child(
             developer, SettingEntry{"ADB guide", adb_guide_page_factory, PageType::FullCustom});
     }
