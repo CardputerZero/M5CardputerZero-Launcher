@@ -192,7 +192,7 @@ jobs:
           OUTPUT_DIR="$GITHUB_WORKSPACE/projects/APPLaunch/tools" \
           APPLAUNCH_CHANNEL=prerelease \
           scripts/build_cardputerzero_release_local.sh \
-            "${{ steps.version.outputs.version }}" 1
+            "${{ steps.version.outputs.version }}" m5stack1
 
     - name: Collect artifacts
       run: |

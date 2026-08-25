@@ -441,14 +441,6 @@ void UISettingTreePage::create_page_detail()
         mode_tree.append_child(volume, SettingEntry{"10%"});
         mode_tree.append_child(volume, SettingEntry{"0%"});
     }
-#if 0
-    {
-        NodeIter camera = mode_tree.append_child(root, SettingEntry{"Camera", roller_page_factory});
-        NodeIter resolution = mode_tree.append_child(camera, SettingEntry{"Resolution", resolution_page3_factory});
-        mode_tree.append_child(resolution, SettingEntry{"1280x720"});
-        mode_tree.append_child(resolution, SettingEntry{"640x480"});
-    }
-#endif
     {
         NodeIter info = mode_tree.append_child(root, SettingEntry{"Battery", roller_page_factory});
         mode_tree.append_child(
@@ -485,41 +477,6 @@ void UISettingTreePage::create_page_detail()
         mode_tree.append_child(
             developer, SettingEntry{"ADB guide", adb_guide_page_factory, PageType::FullCustom});
     }
-#if 0
-    {
-        NodeIter rtc = mode_tree.append_child(root, SettingEntry{"RTC", roller_page_factory});
-        mode_tree.append_child(rtc, SettingEntry{"NTP", settings_rtc::settings_rtc_ntp_api, true});
-        {
-            NodeIter year = mode_tree.append_child(rtc, SettingEntry{"Year", rtc_page3_factory});
-            append_numeric_options(mode_tree, year, 2000, 2099);
-        }
-        {
-            NodeIter month = mode_tree.append_child(rtc, SettingEntry{"Month", rtc_page3_factory});
-            append_numeric_options(mode_tree, month, 1, 12);
-        }
-        {
-            NodeIter day = mode_tree.append_child(rtc, SettingEntry{"Day", rtc_page3_factory});
-            append_numeric_options(mode_tree, day, 1, 31);
-        }
-        {
-            NodeIter hour = mode_tree.append_child(rtc, SettingEntry{"Hour", rtc_page3_factory});
-            append_numeric_options(mode_tree, hour, 0, 23);
-        }
-        {
-            NodeIter minute = mode_tree.append_child(rtc, SettingEntry{"Minute", rtc_page3_factory});
-            append_numeric_options(mode_tree, minute, 0, 59);
-        }
-        {
-            NodeIter second = mode_tree.append_child(rtc, SettingEntry{"Second", rtc_page3_factory});
-            append_numeric_options(mode_tree, second, 0, 59);
-        }
-        {
-            NodeIter write_rtc = mode_tree.append_child(rtc, SettingEntry{"Write hardware RTC?", confirm_page3_factory});
-            mode_tree.append_child(write_rtc, SettingEntry{"Yes"});
-            mode_tree.append_child(write_rtc, SettingEntry{"No"});
-        }
-    }
-#endif
     {
         NodeIter bluetooth = mode_tree.append_child(root, SettingEntry{"Bluetooth", roller_page_factory});
         mode_tree.append_child(bluetooth, SettingEntry{"Power", bluetooth_power_api, true});
