@@ -485,7 +485,7 @@ void UISettingTreePage::create_page_detail()
         mode_tree.append_child(
             developer, SettingEntry{"ADB guide", adb_guide_page_factory, PageType::FullCustom});
     }
-
+#if 0
     {
         NodeIter rtc = mode_tree.append_child(root, SettingEntry{"RTC", roller_page_factory});
         mode_tree.append_child(rtc, SettingEntry{"NTP", settings_rtc::settings_rtc_ntp_api, true});
@@ -519,7 +519,7 @@ void UISettingTreePage::create_page_detail()
             mode_tree.append_child(write_rtc, SettingEntry{"No"});
         }
     }
-
+#endif
     {
         NodeIter bluetooth = mode_tree.append_child(root, SettingEntry{"Bluetooth", roller_page_factory});
         mode_tree.append_child(bluetooth, SettingEntry{"Power", bluetooth_power_api, true});
