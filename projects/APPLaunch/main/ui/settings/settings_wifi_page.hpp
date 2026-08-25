@@ -946,6 +946,7 @@ private:
             lv_obj_set_style_text_font(title, &lv_font_montserrat_14, LV_PART_MAIN);
         }
         if (content) {
+            lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_OFF);
             lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, LV_PART_MAIN);
             lv_obj_set_style_border_width(content, 0, LV_PART_MAIN);
             lv_obj_set_style_pad_left(content, 12, LV_PART_MAIN);
@@ -969,6 +970,10 @@ private:
             lv_obj_set_width(ok_button, 28);
             lv_obj_set_height(ok_button, 22);
             lv_obj_set_style_bg_opa(ok_button, LV_OPA_TRANSP, LV_PART_MAIN);
+            lv_obj_set_style_bg_opa(ok_button, LV_OPA_TRANSP,
+                                     LV_PART_MAIN | LV_STATE_FOCUSED);
+            lv_obj_set_style_bg_opa(ok_button, LV_OPA_TRANSP,
+                                     LV_PART_MAIN | LV_STATE_PRESSED);
             lv_obj_set_style_border_width(ok_button, 0, LV_PART_MAIN);
             lv_obj_set_style_pad_all(ok_button, 0, LV_PART_MAIN);
         }

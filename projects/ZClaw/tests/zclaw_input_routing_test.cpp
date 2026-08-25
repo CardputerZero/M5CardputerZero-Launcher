@@ -14,8 +14,10 @@ int main()
     using zclaw::InputMode;
     using zclaw::InputSubmissionAction;
     assert(!zclaw::input_is_single_line(InputMode::Chat));
-    assert(zclaw::input_is_single_line(InputMode::SetupEdit));
-    assert(zclaw::input_is_single_line(InputMode::ProviderEdit));
+    assert(!zclaw::input_is_single_line(InputMode::SetupEdit));
+    assert(!zclaw::input_is_single_line(InputMode::SetupUriEdit));
+    assert(!zclaw::input_is_single_line(InputMode::ProviderEdit));
+    assert(!zclaw::input_is_single_line(InputMode::ProviderUriEdit));
     assert(zclaw::input_is_single_line(InputMode::PairingCode));
     zclaw::InputSubmission submission =
         zclaw::input_submission(InputMode::Chat, "hello");
@@ -29,7 +31,11 @@ int main()
            InputSubmissionAction::None);
     assert(zclaw::input_submission(InputMode::SetupEdit, "").action ==
            InputSubmissionAction::ApplySetupEdit);
+    assert(zclaw::input_submission(InputMode::SetupUriEdit, "").action ==
+           InputSubmissionAction::ApplySetupEdit);
     assert(zclaw::input_submission(InputMode::ProviderEdit, "").action ==
+           InputSubmissionAction::ApplyProviderEdit);
+    assert(zclaw::input_submission(InputMode::ProviderUriEdit, "").action ==
            InputSubmissionAction::ApplyProviderEdit);
 
     using zclaw::Key;
@@ -99,7 +105,21 @@ int main()
     assert(routed(context, KeyPhase::Released, Key::Enter).type ==
            KeyActionType::InputSubmit);
     assert(routed(context, KeyPhase::Released, Key::Tab).type ==
+           KeyActionType::InputInsertNewline);
+    context.input_mode = InputMode::SetupEdit;
+    assert(routed(context, KeyPhase::Released, Key::Tab).type ==
+           KeyActionType::InputInsertNewline);
+    context.input_mode = InputMode::ProviderEdit;
+    assert(routed(context, KeyPhase::Released, Key::Tab).type ==
+           KeyActionType::InputInsertNewline);
+    context.input_mode = InputMode::PairingCode;
+    assert(routed(context, KeyPhase::Released, Key::Tab).type ==
            KeyActionType::InputToggleSecretVisibility);
+    context.input_mode = InputMode::ProviderUriEdit;
+    assert(routed(context, KeyPhase::Released, Key::Tab).type ==
+           KeyActionType::InputInsertNewline);
+    assert(routed(context, KeyPhase::Released, Key::Escape).type ==
+           KeyActionType::InputClose);
     assert(routed(context, KeyPhase::Released, Key::Enter, true).type ==
            KeyActionType::None);
     assert(routed(context, KeyPhase::Released, Key::Down).type ==

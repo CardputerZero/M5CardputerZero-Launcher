@@ -7,7 +7,9 @@ namespace zclaw {
 enum class InputMode {
     Chat,
     SetupEdit,
+    SetupUriEdit,
     ProviderEdit,
+    ProviderUriEdit,
     PairingCode,
 };
 

@@ -1108,22 +1108,25 @@ void handle_enter()
             go(Screen::Ssh);
         }
         break;
-    case Screen::WifiList:
+    case Screen::WifiList: {
         if (g.wifi_list.empty())
             break;
         cancel_wifi_scan();
         g.wifi_ssid = g.wifi_list[g.wifi_sel].ssid;
+        const bool already_connected =
+            g.wifi_status_connected && g.wifi_status_ssid == g.wifi_ssid;
         g.wifi_security = g.wifi_list[g.wifi_sel].security;
         g.wifi_manual = false;
         g.wifi_hidden = false;
         g.wifi_focus = 1;
         g.wifi_password.clear();
         g.wifi_password_visible = false;
-        g.wifi_ip.clear();
+        g.wifi_ip = already_connected ? g.wifi_status_ip : std::string();
         g.wifi_connect_error.clear();
-        g.wifi_connected = false;
+        g.wifi_connected = already_connected;
         go(Screen::WifiPassword);
         break;
+    }
     case Screen::WifiPassword:
         if (g.wifi_connected) {
             go(Screen::Ssh);

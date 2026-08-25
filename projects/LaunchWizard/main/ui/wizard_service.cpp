@@ -808,6 +808,17 @@ std::string WizardService::connect_wifi(const std::string &ssid, const std::stri
     if (connected_ip)
         *connected_ip = "192.168.1.100";
 #else
+    // Raspberry Pi Imager can provision and activate this profile before the
+    // first-boot wizard starts. Treat selecting that same SSID as success;
+    // asking NetworkManager to activate it again can return a transient error
+    // even though the device is already online.
+    cp0_wifi_status_t current{};
+    if (cp0_wifi_status_read(&current) == 0 && current.connected &&
+        std::string(current.ssid) == ssid) {
+        if (connected_ip)
+            *connected_ip = current.ip;
+        return "";
+    }
     if (cp0_wifi_radio_set_enabled(1) != 0)
         return "Wi-Fi radio could not be enabled";
     if (hidden) {

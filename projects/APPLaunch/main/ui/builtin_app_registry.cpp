@@ -30,6 +30,11 @@ struct DynamicAppRegistration {
     std::string config_key;
     std::size_t generation = 0;
 
+    void bind_descriptor()
+    {
+        desc = {label.c_str(), icon.c_str(), config_key.c_str(), true, false};
+    }
+
     DynamicAppRegistration(std::string app_label,
                            std::string app_icon,
                            std::string app_config_key,
@@ -39,7 +44,47 @@ struct DynamicAppRegistration {
           config_key(std::move(app_config_key)),
           generation(app_generation)
     {
-        desc = {label.c_str(), icon.c_str(), config_key.c_str(), true, false};
+        bind_descriptor();
+    }
+
+    DynamicAppRegistration(const DynamicAppRegistration &other)
+        : label(other.label),
+          icon(other.icon),
+          config_key(other.config_key),
+          generation(other.generation)
+    {
+        bind_descriptor();
+    }
+
+    DynamicAppRegistration(DynamicAppRegistration &&other) noexcept
+        : label(std::move(other.label)),
+          icon(std::move(other.icon)),
+          config_key(std::move(other.config_key)),
+          generation(other.generation)
+    {
+        bind_descriptor();
+    }
+
+    DynamicAppRegistration &operator=(const DynamicAppRegistration &other)
+    {
+        if (this == &other) return *this;
+        label = other.label;
+        icon = other.icon;
+        config_key = other.config_key;
+        generation = other.generation;
+        bind_descriptor();
+        return *this;
+    }
+
+    DynamicAppRegistration &operator=(DynamicAppRegistration &&other) noexcept
+    {
+        if (this == &other) return *this;
+        label = std::move(other.label);
+        icon = std::move(other.icon);
+        config_key = std::move(other.config_key);
+        generation = other.generation;
+        bind_descriptor();
+        return *this;
     }
 };
 
