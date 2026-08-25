@@ -60,6 +60,20 @@ void test_request_contract()
     assert(std::string(cp0::network::invalid_api_request_message()) == "invalid wifi api request");
 }
 
+void test_connection_profile_parser()
+{
+    const auto profiles = cp0::network::parse_connection_profiles(
+        "wifi-uuid:802-11-wireless:office\n"
+        "eth-uuid:802-3-ethernet:office\n"
+        "wifi-uuid-2:802-11-wireless:guest:lab\r\n");
+    assert(profiles.size() == 3);
+    assert(profiles[0].uuid == "wifi-uuid");
+    assert(profiles[0].type == "802-11-wireless");
+    assert(profiles[0].name == "office");
+    assert(profiles[1].type == "802-3-ethernet" && profiles[1].name == "office");
+    assert(profiles[2].type == "802-11-wireless" && profiles[2].name == "guest:lab");
+}
+
 void test_status_payload_round_trip_and_validation()
 {
     cp0_wifi_status_t source{};
@@ -124,6 +138,7 @@ void test_scan_payload_round_trip_and_validation()
 int main()
 {
     test_request_contract();
+    test_connection_profile_parser();
     test_status_payload_round_trip_and_validation();
     test_scan_payload_round_trip_and_validation();
 }
