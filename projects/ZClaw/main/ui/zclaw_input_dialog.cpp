@@ -8,6 +8,7 @@ namespace zclaw {
 namespace {
 
 constexpr lv_coord_t kDialogHeight = 96;
+// Keep the original 113 px dialog top at y=57 while shortening the bottom.
 constexpr lv_coord_t kDialogTop = 57;
 
 }  // namespace
