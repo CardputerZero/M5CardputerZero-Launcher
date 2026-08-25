@@ -4,6 +4,7 @@
 
 #include <list>
 #include <string>
+#include <vector>
 
 namespace cp0::network {
 
@@ -29,8 +30,16 @@ struct ApiRequest
     bool radio_enabled = false;
 };
 
+struct ConnectionProfile
+{
+    std::string uuid;
+    std::string type;
+    std::string name;
+};
+
 bool parse_api_request(const std::list<std::string> &args, ApiRequest &request);
 const char *invalid_api_request_message();
+std::vector<ConnectionProfile> parse_connection_profiles(const std::string &payload);
 
 std::string encode_status_payload(const cp0_wifi_status_t &status);
 bool decode_status_payload(const std::string &payload, cp0_wifi_status_t &status);

@@ -1,0 +1,14 @@
+
+menuconfig NMTUI_COMPONENT_ENABLED
+    bool "Enable nmtui libnm Wi-Fi signal adapter"
+    default n
+    depends on CP0_LVGL_COMPONENT_ENABLED
+    select CP0_LVGL_INIT_WIFI
+
+if NMTUI_COMPONENT_ENABLED
+
+config NMTUI_DYNAMIC
+    bool "compile nmtui component as dynamic(shared) lib"
+    default n
+
+endif

@@ -34,3 +34,4 @@ dsh-prompt-inject
 bug
 .cache
 compile_commands.json
+.vscode

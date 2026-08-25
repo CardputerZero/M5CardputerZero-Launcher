@@ -5,7 +5,7 @@
 #include "ui.h"
 #include "generated/page_app.h"
 #include "launcher_platform.hpp"
-
+#include "settings/settings_page.hpp"
 #include <array>
 #include <cstring>
 #include <vector>
@@ -21,6 +21,26 @@ struct BuiltinAppRegistration {
     bool sysplause;
     bool run_as_root;
     BuiltinAppAppender append;
+};
+
+struct DynamicAppRegistration {
+    AppDescriptor desc{};
+    std::string label;
+    std::string icon;
+    std::string config_key;
+    std::size_t generation = 0;
+
+    DynamicAppRegistration(std::string app_label,
+                           std::string app_icon,
+                           std::string app_config_key,
+                           std::size_t app_generation)
+        : label(std::move(app_label)),
+          icon(std::move(app_icon)),
+          config_key(std::move(app_config_key)),
+          generation(app_generation)
+    {
+        desc = {label.c_str(), icon.c_str(), config_key.c_str(), true, false};
+    }
 };
 
 template <class PageT>
@@ -59,7 +79,7 @@ constexpr BuiltinAppRegistration BUILTIN_APPS[] = {
     {{"Snake", "game_100.png", "app_Game", false, true},
      nullptr, false, true, false, append_page_app<UIGamePage>},
     {{"Settings", "setting_100.png", "app_Setting", false, true},
-     nullptr, false, true, false, append_page_app<UISetupPage>},
+     nullptr, false, true, false, append_page_app<UISettingTreePage>},
     {{"Calculator", "math_100.png", "app_Math", true, false},
      "@calculator_exec", false, true, false, nullptr},
     {{"LoRa", "lora_100.png", "app_LoRa", true, false},
@@ -73,6 +93,18 @@ constexpr BuiltinAppRegistration BUILTIN_APPS[] = {
      nullptr, false, true, false, append_page_app<UITankBattlePage>},
 #endif
 };
+
+std::vector<DynamicAppRegistration> &dynamic_apps()
+{
+    static std::vector<DynamicAppRegistration> registrations;
+    return registrations;
+}
+
+std::size_t &dynamic_generation()
+{
+    static std::size_t generation = 0;
+    return generation;
+}
 
 bool is_first_registration(std::size_t index)
 {
@@ -90,15 +122,34 @@ bool is_first_registration(std::size_t index)
 const AppDescriptor *launcher_app_registry_entries(std::size_t *count)
 {
     constexpr std::size_t descriptor_count = sizeof(BUILTIN_APPS) / sizeof(BUILTIN_APPS[0]);
-    static const auto descriptors = [] {
-        std::vector<AppDescriptor> result;
-        result.reserve(descriptor_count);
-        for (std::size_t i = 0; i < descriptor_count; ++i)
-            if (is_first_registration(i)) result.push_back(BUILTIN_APPS[i].desc);
-        return result;
-    }();
+    static std::vector<AppDescriptor> descriptors;
+    descriptors.clear();
+    descriptors.reserve(descriptor_count + dynamic_apps().size());
+    for (std::size_t i = 0; i < descriptor_count; ++i)
+        if (is_first_registration(i)) descriptors.push_back(BUILTIN_APPS[i].desc);
+    for (const auto &registration : dynamic_apps()) {
+        if (registration.generation == dynamic_generation())
+            descriptors.push_back(registration.desc);
+    }
     if (count) *count = descriptors.size();
     return descriptors.data();
+}
+
+void launcher_app_registry_begin_dynamic_refresh()
+{
+    std::size_t &generation = dynamic_generation();
+    ++generation;
+    if (generation == 0) ++generation;
+    dynamic_apps().clear();
+}
+
+const AppDescriptor *launcher_app_registry_register_dynamic(const std::string &label,
+                                                            const std::string &icon,
+                                                            const std::string &config_key)
+{
+    if (label.empty() || config_key.empty()) return nullptr;
+    dynamic_apps().emplace_back(label, icon, config_key, dynamic_generation());
+    return &dynamic_apps().back().desc;
 }
 
 void launcher_append_enabled_builtin_apps(std::list<app> &apps)

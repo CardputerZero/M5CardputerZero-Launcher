@@ -7,6 +7,7 @@
 #include "../cp0_signal_registration.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <arpa/inet.h>
 #include <cstring>
 #include <ifaddrs.h>
@@ -20,6 +21,8 @@
 #include <vector>
 
 namespace {
+
+static std::atomic_bool simulated_wifi_radio_enabled{false};
 
 static void copy_cstr(char *dst, size_t dst_size, const char *src)
 {
@@ -73,9 +76,10 @@ public:
             break;
         }
         case cp0::network::ApiCommand::RadioEnabled:
-            result.complete(1, "");
+            result.complete(simulated_wifi_radio_enabled.load(std::memory_order_acquire) ? 1 : 0, "");
             break;
         case cp0::network::ApiCommand::RadioSetEnabled:
+            simulated_wifi_radio_enabled.store(request.radio_enabled, std::memory_order_release);
             result.complete(0, "");
             break;
         }

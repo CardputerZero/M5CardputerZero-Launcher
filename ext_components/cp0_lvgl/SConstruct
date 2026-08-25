@@ -9,6 +9,24 @@ with open(env["PROJECT_TOOL_S"]) as f:
 def toolchain_path(*parts):
     return Path(os.environ.get("CONFIG_TOOLCHAIN_SYSROOT", "")).joinpath(*parts)
 
+def configure_target_gio(requirements, definitions, linker_flags):
+    sysroot = os.environ.get("CONFIG_TOOLCHAIN_SYSROOT")
+    machine = env.get("GCC_DUMPMACHINE", "")
+    if sysroot and machine:
+        definitions += [
+            f"-I{toolchain_path('usr', 'include', 'glib-2.0')}",
+            f"-I{toolchain_path('usr', 'lib', machine, 'glib-2.0', 'include')}",
+        ]
+        linker_flags += [
+            f"-L{toolchain_path('usr', 'lib', machine)}",
+            "-pthread",
+        ]
+        requirements += ['gio-2.0', 'gobject-2.0', 'glib-2.0']
+        return
+
+    definitions += pkg_config_cflags('gio-2.0')
+    requirements += pkg_config_ldflags('gio-2.0')
+
 
 if "CONFIG_CP0_LVGL_COMPONENT_ENABLED" in os.environ or "CONFIG_SIGSLOT_COMPONENT_ENABLED" in os.environ:
     SRCS = []
@@ -69,8 +87,7 @@ if "CONFIG_CP0_LVGL_COMPONENT_ENABLED" in os.environ or "CONFIG_SIGSLOT_COMPONEN
         platform_srcs = Glob('src/cp0/*.c*')
         REQUIREMENTS += ['input', 'xkbcommon', 'udev', 'pthread']
         REQUIREMENTS += [':libdbus-1.so.3']
-        REQUIREMENTS += pkg_config_ldflags('gio-2.0')
-        DEFINITIONS += pkg_config_cflags('gio-2.0')
+        configure_target_gio(REQUIREMENTS, DEFINITIONS, LDFLAGS)
         if service_enabled('CAMERA'):
             REQUIREMENTS += ['camera', 'camera-base', 'jpeg']
         PRIVATE_INCLUDE += [toolchain_path('usr', 'include', 'dbus-1.0'),
