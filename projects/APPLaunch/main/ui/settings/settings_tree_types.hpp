@@ -166,6 +166,9 @@ struct SettingEntry {
     SettingStatusReadPolicy status_read_policy = SettingStatusReadPolicy::Async;
     std::shared_ptr<SettingRequestState> request_state = std::make_shared<SettingRequestState>();
     PageType page_type = PageType::NextPageNeeded;
+    // UI-thread generation for legacy icon reads. A newer refresh invalidates
+    // an older async result before it can repaint the toggle state.
+    uint64_t status_generation = 0;
 
     SettingEntry() = default;
     SettingEntry(const std::string &name) : label(name)

@@ -467,6 +467,7 @@ public:
         auto dot_count         = std::make_shared<uint8_t>(0);
         auto last_label_update = std::make_shared<AsyncTaskContext::Clock::time_point>(AsyncTaskContext::Clock::now());
         auto operation_started = std::make_shared<std::atomic_bool>(false);
+        const uint64_t refresh_generation = ++selected_node->status_generation;
 
         StatusTaskCallbacks callbacks;
         callbacks.execute = [selected_node, operation_started]() -> StatusQueryResult {
@@ -489,7 +490,9 @@ public:
             *dot_count         = static_cast<uint8_t>((*dot_count + 1) % 2);
             set_status_hint(*dot_count ? "Wait" : "Chk.", 0xF0C850);
         };
-        callbacks.on_complete = [this, icon_obj](AsyncTaskContext &, const StatusQueryResult &result) {
+        callbacks.on_complete = [this, icon_obj, selected_node, refresh_generation](
+                                    AsyncTaskContext &, const StatusQueryResult &result) {
+            if (selected_node->status_generation != refresh_generation) return;
             if (!result.success) {
                 std::printf("[LvSettingRollerPage2] status query failed\n");
                 set_status_error(icon_obj);
@@ -500,17 +503,21 @@ public:
             set_status_icon(icon_obj, result.enabled);
             set_status_hint("ok:enter", 0x00CC66);
         };
-        callbacks.on_exception = [this, icon_obj](AsyncTaskContext &, std::exception_ptr) {
+        callbacks.on_exception = [this, icon_obj, selected_node, refresh_generation](
+                                     AsyncTaskContext &, std::exception_ptr) {
+            if (selected_node->status_generation != refresh_generation) return;
             std::printf("[LvSettingRollerPage2] status query raised an exception\n");
             set_status_error(icon_obj);
             set_status_hint("Err", 0xEB5F5F);
         };
-        callbacks.on_timeout = [this, icon_obj](AsyncTaskContext &) {
+        callbacks.on_timeout = [this, icon_obj, selected_node, refresh_generation](AsyncTaskContext &) {
+            if (selected_node->status_generation != refresh_generation) return;
             std::printf("[LvSettingRollerPage2] status query timed out\n");
             set_status_error(icon_obj);
             set_status_hint("Err", 0xEB5F5F);
         };
-        callbacks.on_schedule_failed = [this, icon_obj](AsyncTaskContext &) {
+        callbacks.on_schedule_failed = [this, icon_obj, selected_node, refresh_generation](AsyncTaskContext &) {
+            if (selected_node->status_generation != refresh_generation) return;
             std::printf("[LvSettingRollerPage2] status query could not be scheduled\n");
             set_status_error(icon_obj);
             set_status_hint("Err", 0xEB5F5F);
@@ -661,13 +668,6 @@ public:
         if (!roller3_ || !roller3_->Get()) return;
 
         page3_transitioning_ = true;
-        if (utility_obj_) {
-            if (entering) {
-                lv_obj_add_flag(utility_obj_, LV_OBJ_FLAG_HIDDEN);
-            } else {
-                lv_obj_clear_flag(utility_obj_, LV_OBJ_FLAG_HIDDEN);
-            }
-        }
         if (!entering && input_group_) {
             lv_group_remove_obj(roller3_->Get());
         }

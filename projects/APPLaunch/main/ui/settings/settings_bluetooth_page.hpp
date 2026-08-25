@@ -1109,7 +1109,8 @@ public:
         if (!ComponensObj) return;
         lv_obj_set_size(ComponensObj, SCREEN_W, SCREEN_H);
         lv_obj_set_pos(ComponensObj, 0, 0);
-        lv_obj_set_style_bg_opa(ComponensObj, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(ComponensObj, lv_color_black(), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(ComponensObj, LV_OPA_COVER, LV_PART_MAIN);
         lv_obj_set_style_border_width(ComponensObj, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(ComponensObj, 0, LV_PART_MAIN);
         lv_obj_set_style_radius(ComponensObj, 0, LV_PART_MAIN);

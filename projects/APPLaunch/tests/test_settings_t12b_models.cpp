@@ -1,7 +1,7 @@
-#include "../../ui_test/main/ui/settings_t12b_about_help_model.hpp"
-#include "../../ui_test/main/ui/settings_t12b_boot_action_policy.hpp"
-#include "../../ui_test/main/ui/settings_t12b_extport_model.hpp"
-#include "../../ui_test/main/ui/settings_t12b_launcher_model.hpp"
+#include "../main/ui/settings/settings_t12b_about_help_model.hpp"
+#include "../main/ui/settings/settings_t12b_boot_action_policy.hpp"
+#include "../main/ui/settings/settings_t12b_extport_model.hpp"
+#include "../main/ui/settings/settings_t12b_launcher_model.hpp"
 
 #include <cassert>
 #include <string>
