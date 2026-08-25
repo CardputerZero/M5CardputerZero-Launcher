@@ -478,7 +478,7 @@
 #define LV_USE_OPENGLES   0
 #define LV_USE_GLFW   0
 #define LV_USE_QNX              0
-#define LV_USE_EXT_DATA   0
+#define LV_USE_EXT_DATA   1
 
 /*=====================
  * BUILD OPTIONS

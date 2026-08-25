@@ -33,6 +33,7 @@ namespace DComponens {
 struct LvglBindContext {
     std::function<void(lv_event_t *)> fun;
     void *user_data;
+    lv_event_code_t event_code;
 };
 
 static void lvgl_bind_context_free(void *data)
@@ -43,7 +44,21 @@ static void lvgl_bind_context_free(void *data)
 static void LvglBindCallback(lv_event_t *event)
 {
     LvglBindContext *context = static_cast<LvglBindContext *>(lv_event_get_user_data(event));
-    if (!context || !context->fun) return;
+    if (!context) return;
+
+#if !LV_USE_EXT_DATA
+    const lv_event_code_t event_code = lv_event_get_code(event);
+    if (event_code == LV_EVENT_DELETE) {
+        if (context->event_code == LV_EVENT_DELETE || context->event_code == LV_EVENT_ALL) {
+            if (context->fun) context->fun(event);
+        }
+        delete context;
+        return;
+    }
+    if (context->event_code != LV_EVENT_ALL && context->event_code != event_code) return;
+#endif
+
+    if (!context->fun) return;
     context->fun(event);
 }
 
@@ -52,14 +67,20 @@ bool lvgl_bind_event(lv_obj_t *obj, lv_event_code_t event_code, void *user_data,
 {
     if (!obj) return false;
 
-    LvglBindContext *context =
-        new LvglBindContext{std::function<void(lv_event_t *)>(std::forward<Fun>(fun)), user_data};
+    LvglBindContext *context = new LvglBindContext{
+        std::function<void(lv_event_t *)>(std::forward<Fun>(fun)), user_data, event_code};
+#if LV_USE_EXT_DATA
     lv_event_dsc_t *dsc = lv_obj_add_event_cb(obj, LvglBindCallback, event_code, context);
+#else
+    lv_event_dsc_t *dsc = lv_obj_add_event_cb(obj, LvglBindCallback, LV_EVENT_ALL, context);
+#endif
     if (!dsc) {
         delete context;
         return false;
     }
+#if LV_USE_EXT_DATA
     lv_event_desc_set_external_data(dsc, context, lvgl_bind_context_free);
+#endif
     return true;
 }
 // #endif
@@ -231,7 +252,13 @@ public:
     }
 
     template <typename Result>
-    bool run_async_task(AsyncTaskCallbacks<Result> callbacks, AsyncTaskOptions options = {})
+    bool run_async_task(AsyncTaskCallbacks<Result> callbacks)
+    {
+        return run_async_task(std::move(callbacks), AsyncTaskOptions{});
+    }
+
+    template <typename Result>
+    bool run_async_task(AsyncTaskCallbacks<Result> callbacks, AsyncTaskOptions options)
     {
         AsyncTaskContext failed_context;
         if (!callbacks.execute || !ensure_async_dispatch()) {
