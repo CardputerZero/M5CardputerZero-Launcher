@@ -26,6 +26,7 @@ public:
     static constexpr std::size_t kLabelCount = 6;
 
     bool update(int result_code, const std::string &response);
+    void set_status(const std::string &status);
     void invalidate(const std::string &reason = "Battery unavailable");
 
     const SettingsBatterySnapshot &snapshot() const { return snapshot_; }

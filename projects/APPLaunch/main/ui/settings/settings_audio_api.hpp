@@ -10,6 +10,7 @@ namespace settings_audio {
 
 constexpr int kMinVolume = 0;
 constexpr int kMaxVolume = 100;
+constexpr int kSystemSoundSwitchIndex = 1;
 constexpr int kSystemSoundPreviewIndex = 2;
 
 constexpr int kErrorInvalid = -1;

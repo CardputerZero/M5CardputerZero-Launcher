@@ -163,14 +163,15 @@ private:
     {
         if (!ComponensObj || !async_token_.valid() || requests_.pending()) return;
 
-        model_.invalidate("Reading battery...");
+        if (model_.valid()) model_.set_status("Reading battery...");
+        else model_.invalidate("Reading battery...");
         status_message_ = "Reading battery...";
         render();
 
         if (!requests_.read([this](const SettingsBatteryOperationResult &result) {
                 handle_read_result(result);
             })) {
-            model_.invalidate("Battery read unavailable");
+            model_.set_status("Battery read unavailable");
             status_message_ = "Battery read unavailable";
             render();
             return;
@@ -184,18 +185,19 @@ private:
             result.generation != active_generation_)
             return;
 
-        if (result.outcome == SettingsBatteryOutcome::Success &&
-            model_.update(result.code, result.payload)) {
-            status_message_ = "Battery updated";
+        if (result.outcome == SettingsBatteryOutcome::Success) {
+            if (model_.update(result.code, result.payload))
+                status_message_ = "Battery updated";
+            else
+                status_message_ = model_.status_text();
         } else if (result.outcome == SettingsBatteryOutcome::TimedOut) {
-            model_.invalidate("Battery read timed out");
+            model_.set_status("Battery read timed out");
             status_message_ = "Battery read timed out";
         } else if (result.outcome == SettingsBatteryOutcome::Cancelled) {
-            model_.invalidate("Battery read cancelled");
+            model_.set_status("Battery read cancelled");
             status_message_ = "Battery read cancelled";
         } else {
-            model_.invalidate(result.code == 0 ? "Invalid battery data"
-                                               : "Battery read failed");
+            model_.update(result.code, result.payload);
             status_message_ = model_.status_text();
         }
         render();

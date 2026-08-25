@@ -103,6 +103,12 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$settings_ui_root/settings_t12b_launcher_model.cpp" \
     -o "$build_dir/test_settings_t12b_models"
 "$build_dir/test_settings_t12b_models"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$settings_ui_root" \
+    "$test_root/test_settings_battery_info_model.cpp" \
+    "$settings_ui_root/settings_page_battery_info_model.cpp" \
+    -o "$build_dir/test_settings_battery_info_model"
+"$build_dir/test_settings_battery_info_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -pthread \
     -I"$settings_ui_root" \
     -I"$test_root/../../../ext_components/cp0_lvgl/include" \

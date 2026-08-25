@@ -72,11 +72,16 @@ bool SettingsBatteryInfoModel::parse_payload(const std::string &response,
 
 bool SettingsBatteryInfoModel::update(int result_code, const std::string &response)
 {
-    invalidate(result_code == 0 ? "Invalid battery data" : "Battery read failed");
-    if (result_code != 0) return false;
+    if (result_code != 0) {
+        set_status("Battery read failed");
+        return false;
+    }
 
     SettingsBatterySnapshot parsed;
-    if (!parse_payload(response, parsed)) return false;
+    if (!parse_payload(response, parsed)) {
+        set_status("Invalid battery data");
+        return false;
+    }
 
     snapshot_ = parsed;
     state_ = SettingsBatteryReadState::Valid;
@@ -85,11 +90,16 @@ bool SettingsBatteryInfoModel::update(int result_code, const std::string &respon
     return true;
 }
 
+void SettingsBatteryInfoModel::set_status(const std::string &status)
+{
+    status_text_ = status.empty() ? "Battery unavailable" : status;
+}
+
 void SettingsBatteryInfoModel::invalidate(const std::string &reason)
 {
     snapshot_ = {};
     state_ = SettingsBatteryReadState::Invalid;
-    status_text_ = reason.empty() ? "Battery unavailable" : reason;
+    set_status(reason);
     rebuild_labels();
 }
 

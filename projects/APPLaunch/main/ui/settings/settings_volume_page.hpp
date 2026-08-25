@@ -307,7 +307,9 @@ private:
         const ActiveRequest request{++next_request_id_, generation_, kind, 0};
         active_request_ = request;
         const bool scheduled = run_async_task<settings_audio::Response>(
-            {[] { return settings_audio::play_system_sound(); },
+            {[] {
+                 return settings_audio::play_system_sound(settings_audio::kSystemSoundSwitchIndex);
+             },
              {},
              {},
              {},
