@@ -1,4 +1,4 @@
-#include "../../ui_test/main/ui/settings_t12b_adapter.hpp"
+#include "../main/ui/settings/settings_t12b_adapter.hpp"
 
 #include <eventpp/callbacklist.h>
 
