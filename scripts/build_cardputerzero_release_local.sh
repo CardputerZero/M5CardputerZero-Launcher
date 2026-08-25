@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [ "$#" -gt 2 ]; then
     echo "usage: $0 [debian-version] [revision]" >&2
-    echo "example: $0 0.6.31+local.test1 1" >&2
+    echo "example: $0 0.6.31+local.test1 m5stack1" >&2
     exit 2
 fi
 
@@ -38,7 +38,7 @@ derive_version() {
 }
 
 VERSION=${1:-$(derive_version)}
-REVISION=${2:-1}
+REVISION=${2:-m5stack1}
 JOBS=${JOBS:-$(nproc)}
 OUTPUT_DIR=${OUTPUT_DIR:-"$ROOT/../build-artifacts/launcher-release"}
 SCONS=${SCONS:-scons}
