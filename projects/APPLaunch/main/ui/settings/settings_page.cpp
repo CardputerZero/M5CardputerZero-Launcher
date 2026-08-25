@@ -555,14 +555,16 @@ void UISettingTreePage::create_page_detail()
 void UISettingTreePage::_back_home(void *data)
 {
     auto *page = static_cast<UISettingTreePage *>(data);
+    if (!page) return;
+
     page->AnimateNextOut(nullptr);
     page->roller1_.reset();
-    if (page && page->navigate_home) page->navigate_home();
+    if (page->navigate_home) page->navigate_home();
 }
 
 void UISettingTreePage::LeaveNextPage()
 {
-    lv_async_call(_back_home, this);
+    if (lv_async_call(_back_home, this) != LV_RESULT_OK) _back_home(this);
 }
 
 void UISettingTreePage::AnimateNextIn(std::function<void()> animate_over_func)
@@ -577,7 +579,8 @@ void UISettingTreePage::AnimateNextOut(std::function<void()> animate_over_func)
 
 void UISettingTreePage::LoadNextPage()
 {
-    roller1_ = std::make_unique<LvSettingRoller>(ui_APP_Container, mode_tree.begin(), nullptr);
+    roller1_ = std::make_unique<LvSettingRoller>(
+        ui_APP_Container, mode_tree.begin(), std::bind(&UISettingTreePage::LeaveNextPage, this));
     AnimateNextIn([&]() {
         lv_group_add_obj(input_group(), roller1_->Get());
         lv_group_focus_obj(roller1_->Get());
@@ -593,6 +596,7 @@ UISettingTreePage::UISettingTreePage() : AppPage()
 
 UISettingTreePage::~UISettingTreePage()
 {
+    lv_async_call_cancel(_back_home, this);
     roller1_.reset();
     if (settings_tree_factory_context() == &mode_tree) settings_tree_factory_context() = nullptr;
 }
