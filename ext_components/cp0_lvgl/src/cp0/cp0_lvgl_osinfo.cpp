@@ -56,9 +56,15 @@ public:
         const std::string command = arg.empty() ? std::string() : arg.front();
         if (command == "AptUpdateStart" || command == "UpdateLauncherStart") {
             const bool launcher = command == "UpdateLauncherStart";
-            const std::string id = jobs_.start([launcher](const std::atomic<bool> &cancel) {
-                return launcher ? update_launcher(cancel) : apt_update(cancel);
-            });
+            std::string id;
+            if (launcher) {
+                id = jobs_.start(
+                    [](const std::atomic<bool> &cancel) { return update_launcher(cancel); },
+                    [] { return launcher_progress(); });
+            } else {
+                id = jobs_.start(
+                    [](const std::atomic<bool> &cancel) { return apt_update(cancel); });
+            }
             cp0::callback::invoke(callback, 0, id);
             return;
         }
@@ -99,6 +105,21 @@ public:
 private:
     cp0::osinfo::Operations operations_;
     cp0::update::Jobs jobs_;
+
+    static std::string launcher_progress()
+    {
+        const char *configured_root = std::getenv("APPLAUNCH_UPDATE_STATE_DIR");
+        const std::string root = configured_root && configured_root[0]
+            ? configured_root : "/var/lib/applaunch-updater";
+        std::ifstream input(root + "/status");
+        std::string state;
+        if (!std::getline(input, state)) return {};
+        if (state == "downloading" || state == "repairing" ||
+            state == "installing" || state == "restarting" ||
+            state.rfind("recovering:", 0) == 0)
+            return state;
+        return {};
+    }
 
     static cp0::update::Result apt_update(const std::atomic<bool> &cancel)
     {

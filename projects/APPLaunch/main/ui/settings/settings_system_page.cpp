@@ -590,9 +590,19 @@ namespace {
 
 bool is_update_job_state(const std::string &state)
 {
-    return state == "running" || state == "cancelled" || state == "canceled" ||
+    return state == "running" || state == "downloading" || state == "repairing" ||
+           state == "installing" || state == "restarting" ||
+           state.rfind("recovering:", 0) == 0 ||
+           state == "cancelled" || state == "canceled" ||
            state == "timeout" || state == "timed-out" ||
            state.rfind("succeeded:", 0) == 0 || state.rfind("failed:", 0) == 0;
+}
+
+bool is_update_progress_state(const std::string &state)
+{
+    return state == "running" || state == "downloading" || state == "repairing" ||
+           state == "installing" || state == "restarting" ||
+           state.rfind("recovering:", 0) == 0;
 }
 
 std::string update_failure_status(settings_system::UpdateAction action,
@@ -698,10 +708,10 @@ void poll_update(LvSettingUpdatePage3 *page)
                 if (!state || request_generation != state->generation || !page->Get()) return;
                 state->poll_pending = false;
                 if (!state->update_pending) return;
-                if (code == 0 && payload == "running") {
+                if (code == 0 && is_update_progress_state(payload)) {
                     state->phase = settings_system::UpdatePhase::Running;
-                    state->status = settings_system::update_phase_label(
-                        state->action, state->phase, code, payload);
+                    state->status = settings_system::update_job_label(
+                        state->action, code, payload);
                     render_update_page(page);
                     return;
                 }
