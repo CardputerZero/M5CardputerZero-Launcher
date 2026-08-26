@@ -564,6 +564,7 @@ void UISettingTreePage::LoadNextPage()
 
 UISettingTreePage::UISettingTreePage() : AppPage()
 {
+    set_page_title("Settings");
     lv_obj_set_style_bg_color(screen(), lv_color_black(), LV_PART_MAIN);
     create_page_detail();
     LoadNextPage();
