@@ -290,6 +290,72 @@ bool query_bluetooth_status(bool &powered, bool &discoverable)
     return success;
 }
 
+int bluetooth_rfkill_blocked()
+{
+    const char *argv[] = {
+        "/usr/sbin/rfkill", "--noheadings", "--output", "TYPE,SOFT", nullptr
+    };
+    char output[512] = {};
+    if (cp0_process_capture_argv(argv, output, sizeof(output)) != 0) return -1;
+
+    std::istringstream lines(output);
+    std::string line;
+    while (std::getline(lines, line)) {
+        std::istringstream fields(line);
+        std::string type;
+        std::string soft;
+        fields >> type >> soft;
+        if (type == "bluetooth") return soft == "blocked" ? 1 : 0;
+    }
+    return -1;
+}
+
+void finish_bluetooth_power(bool next, int code, const std::string &message = {})
+{
+    if (code != 0) {
+        // BlueZ can report Busy while rfkill unblock is still propagating.
+        // The adapter's reported state is authoritative for the UI result.
+        bool powered = false;
+        bool discoverable = false;
+        if (query_bluetooth_status(powered, discoverable) && powered == next)
+            code = 0;
+    }
+    std::lock_guard<std::recursive_mutex> state_lock(bluetooth_state_mutex);
+    bluetooth_power_pending = false;
+    if (code != 0 && message.find("org.bluez.Error.Busy") == std::string::npos)
+        bluetooth_power_state = !next;
+}
+
+void request_bluetooth_power(bool next)
+{
+    cp0_signal_bt_api({"BtPower", next ? "1" : "0"},
+                      [next](int code, std::string message) {
+                          finish_bluetooth_power(next, code, message);
+                      });
+}
+
+void unblock_bluetooth_then_power()
+{
+    cp0_signal_sudo_argv_async(
+        {"/usr/sbin/rfkill", "unblock", "bluetooth"},
+        60000,
+        30000,
+        [](int result, int exit_code) {
+            if (result != CP0_SUDO_RESULT_SUCCESS || exit_code != 0) {
+                finish_bluetooth_power(true, -1);
+                return;
+            }
+            try {
+                request_bluetooth_power(true);
+            } catch (...) {
+                finish_bluetooth_power(true, -1);
+            }
+        },
+        [](int result, uint64_t) {
+            if (result != 0) finish_bluetooth_power(true, result);
+        });
+}
+
 void bluetooth_toggle_api(int cmd, void *data, bool &state, const char *command)
 {
     std::lock_guard<std::recursive_mutex> state_lock(bluetooth_state_mutex);
@@ -336,18 +402,25 @@ void bluetooth_toggle_api(int cmd, void *data, bool &state, const char *command)
                     bluetooth_discoverable_pending = true;
 
                 state = next;
-                cp0_signal_bt_api({command, next ? "1" : "0"},
-                                  [command, next](int code, std::string) {
-                                      std::lock_guard<std::recursive_mutex> state_lock(
-                                          bluetooth_state_mutex);
-                                      if (std::strcmp(command, "BtPower") == 0) {
-                                          bluetooth_power_pending = false;
-                                          if (code != 0) bluetooth_power_state = !next;
-                                      } else if (std::strcmp(command, "BtDiscoverable") == 0) {
-                                          bluetooth_discoverable_pending = false;
-                                          if (code != 0) bluetooth_discoverable_state = !next;
-                                      }
-                                  });
+                if (std::strcmp(command, "BtPower") == 0 && next &&
+                    bluetooth_rfkill_blocked() == 1) {
+                    bluetooth_power_pending = true;
+                    unblock_bluetooth_then_power();
+                } else {
+                    cp0_signal_bt_api({command, next ? "1" : "0"},
+                                      [command, next](int code, std::string message) {
+                                          if (std::strcmp(command, "BtPower") == 0) {
+                                              finish_bluetooth_power(next, code, message);
+                                          } else {
+                                              std::lock_guard<std::recursive_mutex> state_lock(
+                                                  bluetooth_state_mutex);
+                                              if (std::strcmp(command, "BtDiscoverable") == 0) {
+                                                  bluetooth_discoverable_pending = false;
+                                                  if (code != 0) bluetooth_discoverable_state = !next;
+                                              }
+                                          }
+                                      });
+                }
             } catch (...) {
                 if (std::strcmp(command, "BtPower") == 0) {
                     bluetooth_power_pending = false;
