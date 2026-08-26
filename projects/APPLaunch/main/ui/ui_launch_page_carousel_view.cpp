@@ -55,6 +55,7 @@ lv_obj_t *create_carousel_card(lv_obj_t *parent, const Slot &slot,
     if (slot.hidden)
         lv_obj_add_flag(card, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_radius(card, radius, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_clip_corner(card, true, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(card, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(card, LV_OPA_TRANSP, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(card, lv_color_hex(border_color), LV_PART_MAIN | LV_STATE_DEFAULT);
