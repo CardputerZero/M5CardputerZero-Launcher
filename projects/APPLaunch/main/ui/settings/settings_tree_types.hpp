@@ -169,8 +169,6 @@ struct SettingEntry {
     // UI-thread generation for legacy icon reads. A newer refresh invalidates
     // an older async result before it can repaint the toggle state.
     uint64_t status_generation = 0;
-    // Last explicitly committed value-page selection; -1 means use the page default.
-    int32_t selected_index = -1;
 
     SettingEntry() = default;
     SettingEntry(const std::string &name) : label(name)
