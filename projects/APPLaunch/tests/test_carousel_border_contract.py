@@ -14,6 +14,7 @@ def test_every_carousel_card_keeps_the_theme_border():
     assert "lv_obj_set_style_border_width(card," not in factory
     assert "lv_obj_set_style_border_width(elements[kCardCenter]" not in SOURCE
     assert "lv_obj_set_style_border_post(card, true," in factory
+    assert "lv_obj_set_style_clip_corner(card, true," in factory
 
 
 if __name__ == "__main__":
