@@ -121,6 +121,14 @@ std::string update_job_label(UpdateAction action,
             ? "Refreshing package lists..."
             : "Refreshing packages...\nChecking launcher update...\nLauncher may restart";
     }
+    if (action == UpdateAction::UpdateLauncher) {
+        if (state == "downloading") return "Downloading launcher update...";
+        if (state == "repairing") return "Repairing package state...";
+        if (state == "installing") return "Installing launcher update...";
+        if (state == "restarting") return "Restarting Launcher...";
+        if (state.rfind("recovering:", 0) == 0)
+            return "Update failed; restoring previous version...";
+    }
     if (state == "cancelled" || state == "canceled") return "Update cancelled";
     if (state == "timeout" || state == "timed-out" || result_code == -ETIMEDOUT)
         return "Update timed out";
@@ -153,6 +161,10 @@ std::string launcher_state_label(const std::string &state)
     if (state.rfind("succeeded:", 0) == 0) return "Launcher is up to date";
     if (state.rfind("failed:", 0) == 0)
         return update_job_label(UpdateAction::UpdateLauncher, -1, state);
+    if (state == "running" || state == "downloading" || state == "repairing" ||
+        state == "installing" || state == "restarting" ||
+        state.rfind("recovering:", 0) == 0)
+        return update_job_label(UpdateAction::UpdateLauncher, 0, state);
     if (state == "cancelled" || state == "canceled") return "Update cancelled";
     if (state == "timeout" || state == "timed-out") return "Update timed out";
     return "Updating: " + state;
@@ -166,7 +178,8 @@ std::string update_phase_label(UpdateAction action,
     switch (phase) {
     case UpdatePhase::Idle: return "Ready to update";
     case UpdatePhase::Starting: return "Starting update...";
-    case UpdatePhase::Running: return update_job_label(action, 0, "running");
+    case UpdatePhase::Running:
+        return update_job_label(action, result_code, state.empty() ? "running" : state);
     case UpdatePhase::Succeeded: return update_job_label(action, result_code, state);
     case UpdatePhase::Failed: return update_failure_label(action, result_code, state);
     case UpdatePhase::TimedOut: return "Update timed out";

@@ -8271,6 +8271,9 @@ protected:
             selected_index >= static_cast<int32_t>(item_count_))
             return SettingApiResult::NotHandled;
 
+        // The page node outlives this short-lived page3 object.  Store only
+        // after an explicit OK/ENTER so ESC/LEFT keeps the previous value.
+        parent_node_->selected_index = selected_index;
         auto selected_node = std::next(parent_node_.begin(), selected_index);
         if (!selected_node->has_api()) return SettingApiResult::NotHandled;
 
@@ -8478,7 +8481,8 @@ protected:
 
         if (item_count_ > 0) {
             lv_obj_update_layout(value_list_);
-            select(initial_selection());
+            const int saved_selection = parent_node_->selected_index;
+            select(saved_selection >= 0 ? saved_selection : initial_selection());
         } else
             update_arrow_visibility();
     }
