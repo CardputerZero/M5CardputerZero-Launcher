@@ -114,6 +114,22 @@ Tree *&settings_tree_factory_context()
     return tree;
 }
 
+static std::unique_ptr<DComponens::LvglComponensBase> bluetooth_roller_page_factory(lv_obj_t *parent,
+                                                                          const NodeIter &page_node,
+                                                                          std::function<void()> on_back)
+{
+#ifdef LAUNCHER_BUILD
+    if (page_node->label == "Launcher") {
+        Tree *tree = settings_tree_factory_context();
+        if (tree) {
+            settings_t12b::populate_launcher_children(*tree, page_node);
+        }
+    }
+#endif
+    system("/usr/sbin/rfkill unblock bluetooth");
+    return std::make_unique<LvSettingRollerPage2>(parent, page_node, std::move(on_back));
+}
+
 static std::unique_ptr<DComponens::LvglComponensBase> roller_page_factory(lv_obj_t *parent,
                                                                           const NodeIter &page_node,
                                                                           std::function<void()> on_back)
@@ -478,7 +494,7 @@ void UISettingTreePage::create_page_detail()
             developer, SettingEntry{"ADB guide", adb_guide_page_factory, PageType::FullCustom});
     }
     {
-        NodeIter bluetooth = mode_tree.append_child(root, SettingEntry{"Bluetooth", roller_page_factory});
+        NodeIter bluetooth = mode_tree.append_child(root, SettingEntry{"Bluetooth", bluetooth_roller_page_factory});
         mode_tree.append_child(bluetooth, SettingEntry{"Power", bluetooth_power_api, true});
         mode_tree.append_child(
             bluetooth,
