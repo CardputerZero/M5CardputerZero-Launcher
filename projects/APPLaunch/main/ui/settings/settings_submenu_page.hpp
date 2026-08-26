@@ -467,7 +467,7 @@ public:
         auto dot_count         = std::make_shared<uint8_t>(0);
         auto last_label_update = std::make_shared<AsyncTaskContext::Clock::time_point>(AsyncTaskContext::Clock::now());
         auto operation_started = std::make_shared<std::atomic_bool>(false);
-        const std::uint64_t refresh_generation = selected_node->status_generation;
+        const uint64_t refresh_generation = ++selected_node->status_generation;
 
         StatusTaskCallbacks callbacks;
         callbacks.execute = [selected_node, operation_started]() -> StatusQueryResult {
@@ -937,7 +937,6 @@ public:
             if (selected_node->page_factory) {
                 LoadNextPage();
             } else if (selected_node->Componens_api) {
-                if (selected_node->icon_enabled) ++selected_node->status_generation;
                 selected_node->Componens_api(SettingApiActivate, this);
 
                 if (selected_node->icon_enabled) {
