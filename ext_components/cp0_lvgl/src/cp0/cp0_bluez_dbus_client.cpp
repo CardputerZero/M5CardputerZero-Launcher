@@ -582,6 +582,14 @@ private:
             reply = g_dbus_proxy_call_finish(G_DBUS_PROXY(source), result, &error);
         const int code = error || !reply ? -1 : 0;
         const std::string message = error ? error->message : "ok";
+
+        if (code == 0 && request->kind == "discoverable") {
+            if (auto *self = instance()) {
+                std::lock_guard<std::mutex> lock(self->snapshot_mutex_);
+                self->snapshot_.status.discoverable = request->value == "1";
+            }
+        }
+
         cp0_zmq_logf("bt", "command complete kind=%s code=%d message=%s",
                      request->kind.c_str(), code, message.c_str());
         if (reply) g_variant_unref(reply);
