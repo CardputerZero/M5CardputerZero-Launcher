@@ -1080,6 +1080,42 @@ void launch_wizard::WizardService::run_keyboard_guide()
     // The guide is a separate on-device binary; nothing to preview in SDL.
     return;
 #else
+    // The guide's key sounds use miniaudio's PulseAudio backend, which needs
+    // the UID 1000 user's pipewire-pulse socket. Spawned as root (the wizard's
+    // own identity) it has no XDG_RUNTIME_DIR, initialises no backend and runs
+    // silently (bug #262). Drop to the first user with runuser and point it at
+    // the user's session runtime dir; the user is in the video/input groups,
+    // exactly like APPLaunch, so rendering and input keep working.
+    std::vector<std::string> args;
+    struct passwd *pw = getpwuid(kDefaultUserUid);
+    if (pw && pw->pw_name) {
+        const std::string runtime_dir =
+            "/run/user/" + std::to_string(kDefaultUserUid);
+        const std::string pulse_socket = runtime_dir + "/pulse/native";
+        // A factory image ships without linger (pi-gen strips it; the wizard
+        // only enables it after the OOBE) and lightdm is disabled, so on true
+        // first boot no user session exists and pipewire-pulse would never
+        // come up. Start the session explicitly; when linger already started
+        // it this is a no-op join.
+        run_command({"systemctl", "start",
+                     "user@" + std::to_string(kDefaultUserUid) + ".service"});
+        // Give the socket-activated pipewire-pulse a moment to come up. On
+        // timeout the guide still runs, merely without sound.
+        for (int attempt = 0;
+             attempt < 50 && access(pulse_socket.c_str(), F_OK) != 0; ++attempt)
+            usleep(200 * 1000);
+        if (access(pulse_socket.c_str(), F_OK) != 0)
+            fprintf(stderr,
+                    "LaunchWizard: %s not ready; keyboard guide may be silent\n",
+                    pulse_socket.c_str());
+        args = {"/usr/sbin/runuser", "-u", pw->pw_name, "--", "/usr/bin/env",
+                "XDG_RUNTIME_DIR=" + runtime_dir, kKeyboardGuideBinary};
+    } else {
+        fprintf(stderr,
+                "LaunchWizard: UID 1000 user missing; running guide as root\n");
+        args = {kKeyboardGuideBinary};
+    }
+
     printf("LaunchWizard: starting keyboard guide\n");
     fflush(stdout);
 
@@ -1088,7 +1124,11 @@ void launch_wizard::WizardService::run_keyboard_guide()
     // (hiding the guide's logs from journald), busy-polls at 20ms, and is
     // built around a timeout. posix_spawn + blocking waitpid inherits our
     // stdio, costs nothing while waiting, and reports exec errors directly.
-    char *argv[] = {const_cast<char *>(kKeyboardGuideBinary), nullptr};
+    std::vector<char *> argv;
+    argv.reserve(args.size() + 1);
+    for (std::string &arg : args)
+        argv.push_back(arg.data());
+    argv.push_back(nullptr);
     posix_spawnattr_t attr;
     posix_spawnattr_init(&attr);
     // Give the guide default signal dispositions regardless of what the
@@ -1100,7 +1140,7 @@ void launch_wizard::WizardService::run_keyboard_guide()
 
     pid_t pid = -1;
     const int spawn_error =
-        posix_spawn(&pid, kKeyboardGuideBinary, nullptr, &attr, argv, environ);
+        posix_spawn(&pid, argv[0], nullptr, &attr, argv.data(), environ);
     posix_spawnattr_destroy(&attr);
     if (spawn_error != 0) {
         fprintf(stderr, "LaunchWizard: failed to start keyboard guide: %s\n",
