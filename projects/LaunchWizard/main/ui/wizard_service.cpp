@@ -67,7 +67,9 @@ constexpr const char *kAccountJournalPath =
 constexpr const char *kRearmOobeMarker = "/var/lib/applaunch/run-oobe";
 // Baked into every factory image by pi-gen; removed once first boot finishes.
 constexpr const char *kFactoryOobeMarker = "/var/lib/LaunchWizard/run-oobe";
-// Keyboard tutorial shown before the OOBE on every non-test launch.
+// One-shot keyboard tutorial marker baked into the image by pi-gen.
+constexpr const char *kKeyboardGuideMarker =
+    "/var/lib/LaunchWizard/run-keyboard-guide";
 constexpr const char *kKeyboardGuideBinary =
     "/usr/share/APPLaunch/bin/M5CardputerZero-Keyboard-Guide";
 
@@ -1080,6 +1082,24 @@ void launch_wizard::WizardService::run_keyboard_guide()
     // The guide is a separate on-device binary; nothing to preview in SDL.
     return;
 #else
+    const bool marker_present = access(kKeyboardGuideMarker, F_OK) == 0;
+    const bool binary_present = access(kKeyboardGuideBinary, X_OK) == 0;
+    if (!should_run_keyboard_guide(marker_present, binary_present)) {
+        if (marker_present)
+            fprintf(stderr,
+                    "LaunchWizard: keyboard guide binary missing; keeping marker\n");
+        return;
+    }
+
+    // Consume before starting the interactive process. A power cycle or crash
+    // must not trap the device in the guide on every subsequent boot.
+    if (remove(kKeyboardGuideMarker) != 0) {
+        fprintf(stderr, "LaunchWizard: failed to consume keyboard guide marker: %s\n",
+                strerror(errno));
+        return;
+    }
+    sync();
+
     // The guide's key sounds use miniaudio's PulseAudio backend, which needs
     // the UID 1000 user's pipewire-pulse socket. Spawned as root (the wizard's
     // own identity) it has no XDG_RUNTIME_DIR, initialises no backend and runs
@@ -1089,6 +1109,7 @@ void launch_wizard::WizardService::run_keyboard_guide()
     std::vector<std::string> args;
     struct passwd *pw = getpwuid(kDefaultUserUid);
     if (pw && pw->pw_name) {
+        const std::string username = pw->pw_name;
         const std::string runtime_dir =
             "/run/user/" + std::to_string(kDefaultUserUid);
         const std::string pulse_socket = runtime_dir + "/pulse/native";
@@ -1097,8 +1118,14 @@ void launch_wizard::WizardService::run_keyboard_guide()
         // first boot no user session exists and pipewire-pulse would never
         // come up. Start the session explicitly; when linger already started
         // it this is a no-op join.
-        run_command({"systemctl", "start",
-                     "user@" + std::to_string(kDefaultUserUid) + ".service"});
+        const CommandResult session_start =
+            run_command({"systemctl", "start", "--no-block",
+                         "user@" + std::to_string(kDefaultUserUid) + ".service"});
+        if (session_start.code != 0)
+            fprintf(stderr,
+                    "LaunchWizard: failed to request user session startup: %s\n",
+                    session_start.output.empty() ? "unknown error"
+                                                 : session_start.output.c_str());
         // Give the socket-activated pipewire-pulse a moment to come up. On
         // timeout the guide still runs, merely without sound.
         for (int attempt = 0;
@@ -1108,7 +1135,8 @@ void launch_wizard::WizardService::run_keyboard_guide()
             fprintf(stderr,
                     "LaunchWizard: %s not ready; keyboard guide may be silent\n",
                     pulse_socket.c_str());
-        args = {"/usr/sbin/runuser", "-u", pw->pw_name, "--", "/usr/bin/env",
+        args = {"/usr/sbin/runuser", "-u", username, "--", "/usr/bin/env",
+                "-u", "PULSE_SERVER", "-u", "PULSE_RUNTIME_PATH",
                 "XDG_RUNTIME_DIR=" + runtime_dir, kKeyboardGuideBinary};
     } else {
         fprintf(stderr,
@@ -1149,7 +1177,14 @@ void launch_wizard::WizardService::run_keyboard_guide()
     }
 
     int status = 0;
-    while (waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+    pid_t wait_result;
+    do {
+        wait_result = waitpid(pid, &status, 0);
+    } while (wait_result < 0 && errno == EINTR);
+    if (wait_result < 0) {
+        fprintf(stderr, "LaunchWizard: wait for keyboard guide failed: %s\n",
+                strerror(errno));
+        return;
     }
     if (WIFSIGNALED(status))
         fprintf(stderr, "LaunchWizard: keyboard guide killed by signal %d\n",

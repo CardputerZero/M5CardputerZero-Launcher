@@ -61,6 +61,13 @@ bool test_first_boot_policy()
     state.user_has_password = true;
     passed &= expect_wizard(true, state, "legacy piwiz ignores password");
 
+    // Keyboard guide: both marker and binary are required. In particular, a
+    // missing package must not consume the marker.
+    passed &= launch_wizard::should_run_keyboard_guide(true, true);
+    passed &= !launch_wizard::should_run_keyboard_guide(true, false);
+    passed &= !launch_wizard::should_run_keyboard_guide(false, true);
+    passed &= !launch_wizard::should_run_keyboard_guide(false, false);
+
     if (!passed)
         std::cerr << "first boot policy tests failed\n";
     return passed;

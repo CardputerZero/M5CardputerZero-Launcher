@@ -33,8 +33,8 @@ int main(int argc, char *argv[])
     if (force)
         printf("LaunchWizard: test mode, bypassing first-boot detection\n");
 
-    // The keyboard tutorial always runs first on a normal (non-test) launch,
-    // whether the OOBE that follows is shown or skipped.
+    // Consume and show the keyboard tutorial first when pi-gen's one-shot
+    // marker is present, whether the OOBE itself is shown or skipped.
     if (!force)
         launch_wizard_run_keyboard_guide();
 
