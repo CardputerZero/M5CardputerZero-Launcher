@@ -17,6 +17,7 @@
 #include <list>
 #include <memory>
 #include <string>
+#include <vector>
 
 class Launch;
 class UILaunchPage;
@@ -67,6 +68,7 @@ private:
     void launch_Exec(const std::string &exec, bool keep_root = false);
     void applications_load();
     void refresh_home_carousel();
+    void reload_home_icons();
     void applications_reload();
     void rebuild_builtin_apps();
     int normalized_app_index(int index) const;

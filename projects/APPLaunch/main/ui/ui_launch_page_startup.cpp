@@ -11,6 +11,7 @@
 #include "sample_log.h"
 
 #include <cstdio>
+#include <memory>
 #include <new>
 #include <string>
 
@@ -104,33 +105,65 @@ void UILaunchPage::stop_startup_presentation()
 
 void UILaunchPage::play_startup_sound_with_retry()
 {
-    int play_result = -1;
-    try {
-        cp0_signal_audio_api({"SystemSoundPlay", "0"}, [&](int code, std::string) {
-            play_result = code;
-        });
-    } catch (...) {
-        play_result = -1;
+    const std::shared_ptr<StartupSoundAsyncState> state = startup_sound_state_;
+    if (state->pending.exchange(true)) return;
+
+    if (!startup_sound_timer_) {
+        startup_sound_retry_count_ = 0;
+        auto *context = new (std::nothrow) StartupTimerContext{
+            this, startup_sound_generation_.begin()};
+        if (context)
+            startup_sound_timer_ =
+                lv_timer_create(startup_sound_timer_cb, kStartupSoundRetryMs, context);
+        if (startup_sound_timer_)
+            startup_sound_context_ = context;
+        else if (context) {
+            startup_sound_generation_.stop(context->generation);
+            delete context;
+        }
     }
 
-    if (play_result == 0) {
+    std::weak_ptr<StartupSoundAsyncState> weak_state = state;
+    try {
+        cp0_signal_audio_api({"SystemSoundPlay", "0"}, [page = this, weak_state](int code, std::string) {
+            auto state = weak_state.lock();
+            if (!state || !state->alive.load()) return;
+            auto *context = new (std::nothrow) StartupSoundResultContext{
+                page, weak_state, code};
+            if (!context) {
+                state->pending.store(false);
+                return;
+            }
+            if (lv_async_call(startup_sound_result_async, context) != LV_RESULT_OK) {
+                state->pending.store(false);
+                delete context;
+            }
+        });
+    } catch (...) {
+        handle_startup_sound_result(-1);
+    }
+}
+
+void UILaunchPage::handle_startup_sound_result(int code)
+{
+    startup_sound_state_->pending.store(false);
+    if (code == 0) {
         stop_startup_sound_timer();
         startup_sound_retry_count_ = 0;
         return;
     }
-    if (startup_sound_timer_)
-        return;
+}
 
-    startup_sound_retry_count_ = 0;
-    auto *context = new (std::nothrow) StartupTimerContext{
-        this, startup_sound_generation_.begin()};
+void UILaunchPage::startup_sound_result_async(void *user_data) noexcept
+{
+    std::unique_ptr<StartupSoundResultContext> context(
+        static_cast<StartupSoundResultContext *>(user_data));
     if (!context) return;
-    startup_sound_timer_ = lv_timer_create(startup_sound_timer_cb, kStartupSoundRetryMs, context);
-    if (startup_sound_timer_)
-        startup_sound_context_ = context;
-    else {
-        startup_sound_generation_.stop(context->generation);
-        delete context;
+    try {
+        auto state = context->state.lock();
+        if (state && state->alive.load() && context->page)
+            context->page->handle_startup_sound_result(context->code);
+    } catch (...) {
     }
 }
 
@@ -211,6 +244,8 @@ void UILaunchPage::startup_sound_timer_cb(lv_timer_t *timer) noexcept
             !self->startup_sound_generation_.current(context->generation) ||
             !launcher_startup_timer_is_current(timer, self->startup_sound_timer_))
             return;
+
+        if (self->startup_sound_state_->pending.load()) return;
 
         ++self->startup_sound_retry_count_;
         if (self->startup_sound_retry_count_ > kStartupSoundRetryMax) {

@@ -288,8 +288,16 @@ public:
             report(callback, 0, "system sound disabled\n");
             return;
         }
-        bool played = system_sounds_.play_index(static_cast<size_t>(index));
-        report(callback, played ? 0 : -2, played ? "system sound play\n" : "system sound play failed\n");
+        callback_t response = callback ? std::move(callback) : status_callback();
+        bool queued = system_sounds_.play_index(
+            static_cast<size_t>(index),
+            [response](bool played) {
+                cp0::audio::invoke_callback(
+                    response, played ? 0 : -2,
+                    played ? "system sound play\n" : "system sound play failed\n");
+            });
+        if (!queued)
+            cp0::audio::invoke_callback(response, -2, "system sound queue failed\n");
     }
 
     void SystemSoundEnable(bool enabled, callback_t callback)

@@ -42,7 +42,7 @@ void Launch::bind_ui()
     launcher_app_registry_set_changed_callback(app_registry_changed_cb, this);
     rebuild_builtin_apps();
     applications_load();
-    refresh_home_carousel();
+    reload_home_icons();
 
     app_directory_watcher_.start([this] { applications_reload(); });
     esc_ui_watchdog_.start();
@@ -60,6 +60,7 @@ void Launch::lv_go_back_home(void *arg) noexcept
     auto *self = static_cast<Launch *>(arg);
     if (!self || !self->page_lifecycle_.complete_home()) return;
     try {
+        esc_hold_hint_controller().set_return_home_enabled(false);
         SLOGI("[HOME] lv_go_back_home executing (page=%p)", self->app_Page.get());
         lv_timer_enable(true);
         if (auto page = self->launch_page_.lock()) page->show_home_screen();
@@ -76,14 +77,18 @@ void Launch::lv_go_back_home(void *arg) noexcept
 void Launch::go_back_home()
 {
     if (!page_lifecycle_.request_home()) return;
+    esc_hold_hint_controller().set_return_home_enabled(false);
     SLOGI("[HOME] go_back_home() requested, scheduling async call (page=%p)", app_Page.get());
-    if (lv_async_call(lv_go_back_home, this) != LV_RESULT_OK)
+    if (lv_async_call(lv_go_back_home, this) != LV_RESULT_OK) {
         page_lifecycle_.cancel_home_request();
+        esc_hold_hint_controller().set_return_home_enabled(true);
+    }
 }
 
 bool Launch::begin_page_launch()
 {
     if (!page_lifecycle_.begin_app()) return false;
+    esc_hold_hint_controller().set_return_home_enabled(true);
     esc_ui_watchdog_.arm();
     return true;
 }
@@ -169,11 +174,23 @@ void Launch::refresh_home_carousel()
     if (auto page = launch_page_.lock()) page->refresh_carousel();
 }
 
+void Launch::reload_home_icons()
+{
+    const int normalized = normalized_app_index(current_app);
+    if (normalized >= 0) current_app = normalized;
+
+    std::vector<std::string> icon_paths;
+    icon_paths.reserve(app_list.size());
+    for (const app &item : app_list)
+        icon_paths.push_back(item.Icon);
+    if (auto page = launch_page_.lock()) page->reload_home_icons(icon_paths);
+}
+
 void Launch::applications_reload()
 {
     rebuild_builtin_apps();
     applications_load();
-    refresh_home_carousel();
+    reload_home_icons();
 }
 
 int Launch::normalized_app_index(int index) const
@@ -211,6 +228,7 @@ Launch::~Launch()
 {
     launcher_app_registry_clear_changed_callback(app_registry_changed_cb, this);
     esc_hold_hint_controller().set_force_home_callback(nullptr, nullptr);
+    esc_hold_hint_controller().set_return_home_enabled(false);
     esc_ui_watchdog_.shutdown();
     app_directory_watcher_.stop();
     page_lifecycle_.stop();
