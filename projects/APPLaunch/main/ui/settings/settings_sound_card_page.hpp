@@ -104,7 +104,7 @@ private:
         RowY        = 34,
         RowH        = 20,
         RowGap      = 2,
-        VisibleRows = 5,
+        VisibleRows = 4,
     };
 
     static constexpr int metric(LayoutMetric value)
