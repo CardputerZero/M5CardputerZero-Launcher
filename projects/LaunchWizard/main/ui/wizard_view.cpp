@@ -825,6 +825,8 @@ void enter_wifi_list()
                 g.wifi_scan_result_error = scan.error;
                 g.wifi_scan_status = connection;
                 g.wifi_scan_final_empty = final_empty;
+                g.wifi_scan_retrying = decision == launch_wizard::WifiScanDecision::Retry;
+                g.wifi_scanning = g.wifi_scan_retrying;
                 g.wifi_scan_ready = true;
             }
             cp0_lvgl_wake();
@@ -844,6 +846,7 @@ void enter_wifi_list()
         }
     })) {
         g.wifi_scanning = false;
+        g.wifi_scan_retrying = false;
         g.wifi_scan_error = "Unable to start Wi-Fi scan. Press R.";
         render();
     }
@@ -856,6 +859,7 @@ void cancel_wifi_scan()
     g.wifi_scan_ready = false;
     g.wifi_scan_result.clear();
     g.wifi_scanning = false;
+    g.wifi_scan_retrying = false;
 }
 
 void enter_hidden_wifi()
@@ -1381,14 +1385,18 @@ void poll_worker_cb(lv_timer_t *timer)
                 g.wifi_status_ssid = g.wifi_scan_status.ssid;
                 g.wifi_status_ip = g.wifi_scan_status.ip;
             }
-            g.wifi_scan_retrying = scan_error == 0 && g.wifi_list.empty() &&
-                                   !g.wifi_scan_final_empty;
-            g.wifi_scanning = g.wifi_scan_retrying;
-            switch (scan_error) {
-            case 0: g.wifi_scan_error.clear(); break;
-            case CP0_WIFI_ERROR_RADIO_OFF: g.wifi_scan_error = "Could not enable Wi-Fi radio. Press R."; break;
-            case CP0_WIFI_ERROR_TIMEOUT: g.wifi_scan_error = "Wi-Fi scan timed out. Press R."; break;
-            default: g.wifi_scan_error = "Network service unavailable. Press R."; break;
+            if (g.wifi_scan_retrying) {
+                // A transient service/radio error is reported by the worker
+                // while it retries; keep the retry state visible instead of
+                // turning the intermediate result into a terminal error.
+                g.wifi_scan_error.clear();
+            } else {
+                switch (scan_error) {
+                case 0: g.wifi_scan_error.clear(); break;
+                case CP0_WIFI_ERROR_RADIO_OFF: g.wifi_scan_error = "Could not enable Wi-Fi radio. Press R."; break;
+                case CP0_WIFI_ERROR_TIMEOUT: g.wifi_scan_error = "Wi-Fi scan timed out. Press R."; break;
+                default: g.wifi_scan_error = "Network service unavailable. Press R."; break;
+                }
             }
             wifi_updated = true;
         }
