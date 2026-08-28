@@ -59,6 +59,16 @@ extern "C" void init_lora(void)
         });
 }
 
+extern "C" void cp0_lora_request_stop(void)
+{
+    cp0_lora_backend::request_stop();
+}
+
+extern "C" void cp0_lora_clear_stop(void)
+{
+    cp0_lora_backend::clear_stop();
+}
+
 extern "C" void deinit_lora(void) noexcept
 {
     try {

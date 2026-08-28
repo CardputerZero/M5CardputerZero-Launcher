@@ -98,6 +98,10 @@ typedef struct {
     float snr;
 } cp0_lora_info_t;
 
+/* Request cancellation of an in-flight LoRa initialization. */
+void cp0_lora_request_stop(void);
+void cp0_lora_clear_stop(void);
+
 typedef void *cp0_watcher_t;
 typedef int cp0_pid_t;
 typedef enum {
