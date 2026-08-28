@@ -677,6 +677,7 @@ void key_event_impl(lv_event_t *event)
     if (!key || key->key_state != KBD_KEY_RELEASED) return;
     lv_event_stop_processing(event);
     if (!g_prompt_request) return;
+    if (key->key_code == KEY_ENTER && g_password.empty()) return;
     if (g_coordinator.state(g_prompt_request->id) == cp0_sudo::State::RUNNING) {
         if (key->key_code == KEY_ESC) {
             std::vector<Action> actions;
