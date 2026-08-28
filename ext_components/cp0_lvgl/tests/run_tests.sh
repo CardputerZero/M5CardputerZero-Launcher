@@ -406,6 +406,10 @@ trap 'rm -f "$binary" "$esc_state_object"' EXIT HUP INT TERM
     "$root/tests/test_sudo_coordinator.cpp" -o "$binary"
 "$binary"
 
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
+    -I"$root/src" "$root/tests/test_sudo_prompt_key_policy.cpp" -o "$binary"
+"$binary"
+
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
     -I"$root/include" -I"$root/src" \
     "$root/src/cp0_sudo_request_factory.cpp" \
