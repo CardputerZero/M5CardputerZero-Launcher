@@ -1190,6 +1190,14 @@ private:
         return label;
     }
 
+    static const lv_font_t *input_font(uint16_t size)
+    {
+        return cp0_fonts().get("AlibabaPuHuiTi-3-55-Regular.ttf",
+                               size,
+                               LV_FREETYPE_FONT_STYLE_NORMAL,
+                               LV_FREETYPE_FONT_RENDER_MODE_BITMAP);
+    }
+
     static std::size_t previous_utf8_start(const std::string &value, std::size_t cursor)
     {
         if (cursor == 0 || cursor > value.size()) return 0;
@@ -1232,7 +1240,7 @@ private:
                          36,
                          SCREEN_W - ALIAS_TEXT_X - ALIAS_TEXT_RIGHT_INSET,
                          0xFFFFFF,
-                         &lv_font_montserrat_14);
+                         input_font(14));
         } else {
             const std::string prefix = alias_.substr(0, cursor_);
             const std::string suffix = alias_.substr(cursor_);
@@ -1246,7 +1254,7 @@ private:
                                                   36,
                                                   0,
                                                   0xFFFFFF,
-                                                  &lv_font_montserrat_14);
+                                                  input_font(14));
             if (prefix_label) lv_obj_update_layout(prefix_label);
             const int measured_prefix_width =
                 prefix_label ? lv_obj_get_width(prefix_label) : 0;
@@ -1273,7 +1281,7 @@ private:
                          36,
                          std::max(1, field_right - suffix_x),
                          0xFFFFFF,
-                         &lv_font_montserrat_14);
+                         input_font(14));
         }
 
         const char *hint = saving_ ? "Setting alias..." : "OK:set  BS:del  ESC:cancel";

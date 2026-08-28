@@ -60,6 +60,8 @@ public:
     static constexpr int CURSOR_GAP = 2;
     static constexpr int CURSOR_WIDTH = 2;
     static constexpr int CURSOR_HEIGHT = 20;
+    static constexpr int HIDDEN_INPUT_LETTER_SPACE = 1;
+    static constexpr int HIDDEN_INPUT_CURSOR_WIDTH = 1;
 
     LvSettingWifiScanPage3() = default;
 
@@ -474,6 +476,14 @@ private:
         return label;
     }
 
+    static const lv_font_t *input_font(uint16_t size)
+    {
+        return cp0_fonts().get("AlibabaPuHuiTi-3-55-Regular.ttf",
+                               size,
+                               LV_FREETYPE_FONT_STYLE_NORMAL,
+                               LV_FREETYPE_FONT_RENDER_MODE_BITMAP);
+    }
+
     static const char *scan_error_message(int result)
     {
         switch (result) {
@@ -595,11 +605,11 @@ private:
         password_network_ = create_label(
             password_panel_, "", 8, 28, 0xCCCCCC, &lv_font_montserrat_10);
         password_value_ = create_label(
-            password_panel_, "", PASSWORD_TEXT_X, 50, 0xFFFFFF, &lv_font_montserrat_16);
+            password_panel_, "", PASSWORD_TEXT_X, 50, 0xFFFFFF, input_font(16));
         password_prefix_ = create_label(
-            password_panel_, "", PASSWORD_TEXT_X, 50, 0xFFFFFF, &lv_font_montserrat_16);
+            password_panel_, "", PASSWORD_TEXT_X, 50, 0xFFFFFF, input_font(16));
         password_suffix_ = create_label(
-            password_panel_, "", PASSWORD_TEXT_X, 50, 0xFFFFFF, &lv_font_montserrat_16);
+            password_panel_, "", PASSWORD_TEXT_X, 50, 0xFFFFFF, input_font(16));
         password_cursor_bar_ = lv_obj_create(password_panel_);
         if (password_cursor_bar_) {
             lv_obj_set_size(password_cursor_bar_, CURSOR_WIDTH, CURSOR_HEIGHT);
@@ -703,7 +713,8 @@ private:
         lv_textarea_set_one_line(input, true);
         lv_textarea_set_max_length(input, max_length);
         lv_textarea_set_text(input, "");
-        lv_obj_set_style_text_font(input, &lv_font_montserrat_14, LV_PART_MAIN);
+        lv_obj_set_style_text_font(input, input_font(14), LV_PART_MAIN);
+        lv_obj_set_style_text_letter_space(input, HIDDEN_INPUT_LETTER_SPACE, LV_PART_MAIN);
         lv_obj_set_style_text_color(input, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
         lv_obj_set_style_bg_color(input, lv_color_hex(0x181818), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(input, LV_OPA_COVER, LV_PART_MAIN);
@@ -715,8 +726,9 @@ private:
         lv_obj_set_style_pad_top(input, 3, LV_PART_MAIN);
         lv_obj_set_style_bg_opa(input, LV_OPA_TRANSP, LV_PART_CURSOR);
         lv_obj_set_style_border_color(input, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
-        lv_obj_set_style_border_width(input, 2, LV_PART_CURSOR);
+        lv_obj_set_style_border_width(input, HIDDEN_INPUT_CURSOR_WIDTH, LV_PART_CURSOR);
         lv_obj_set_style_border_side(input, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
+        lv_obj_set_style_pad_left(input, -1, LV_PART_CURSOR);
         lv_obj_set_style_anim_duration(input, 400, LV_PART_CURSOR);
         return input;
     }
@@ -845,7 +857,7 @@ private:
         lv_obj_set_style_border_color(unfocused, lv_color_hex(0x444444), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(focused, LV_OPA_TRANSP, LV_PART_CURSOR);
         lv_obj_set_style_border_color(focused, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
-        lv_obj_set_style_border_width(focused, 2, LV_PART_CURSOR);
+        lv_obj_set_style_border_width(focused, HIDDEN_INPUT_CURSOR_WIDTH, LV_PART_CURSOR);
         lv_obj_set_style_border_side(focused, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
         lv_obj_set_style_bg_opa(unfocused, LV_OPA_TRANSP, LV_PART_CURSOR);
         lv_obj_set_style_border_width(unfocused, 0, LV_PART_CURSOR);
