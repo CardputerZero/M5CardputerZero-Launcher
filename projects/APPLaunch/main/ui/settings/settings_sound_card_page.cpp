@@ -1,4 +1,5 @@
 #include "settings_sound_card_page.hpp"
+#include "settings_fonts.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -370,7 +371,7 @@ lv_obj_t *LvSettingSoundCardPage4::label(const char *text,
     lv_obj_set_style_text_color(result, lv_color_hex(color), LV_PART_MAIN);
     lv_obj_set_style_text_font(
         result,
-        cp0_fonts().get("Montserrat-Bold.ttf", font_size, LV_FREETYPE_FONT_STYLE_BOLD),
+        settings_fonts::cjk_sans(font_size),
         LV_PART_MAIN);
     lv_obj_set_style_text_align(result, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
     lv_label_set_long_mode(result, scroll ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP);
@@ -464,7 +465,7 @@ void LvSettingSoundCardPage4::render()
             lv_obj_set_style_text_color(name_label, lv_color_hex(focused ? 0xFFFFFF : 0xCCCCCC), LV_PART_MAIN);
             lv_obj_set_style_text_font(
                 name_label,
-                cp0_fonts().get("Montserrat-Bold.ttf", 12, LV_FREETYPE_FONT_STYLE_BOLD),
+                settings_fonts::cjk_sans(12),
                 LV_PART_MAIN);
             lv_label_set_long_mode(name_label,
                                    focused ? LV_LABEL_LONG_SCROLL_CIRCULAR : LV_LABEL_LONG_CLIP);
@@ -480,7 +481,7 @@ void LvSettingSoundCardPage4::render()
                                             LV_PART_MAIN);
                 lv_obj_set_style_text_font(
                     value_label,
-                    cp0_fonts().get("Montserrat-Bold.ttf", 10, LV_FREETYPE_FONT_STYLE_BOLD),
+                    settings_fonts::sans(10),
                     LV_PART_MAIN);
                 lv_label_set_long_mode(value_label, LV_LABEL_LONG_CLIP);
             }

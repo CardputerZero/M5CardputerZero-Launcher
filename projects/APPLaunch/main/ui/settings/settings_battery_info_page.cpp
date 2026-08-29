@@ -1,6 +1,6 @@
 #include "settings_battery_info_page.hpp"
 
-#include "cp0_font_service.hpp"
+#include "settings_fonts.hpp"
 #include "settings_async_dispatch.hpp"
 #include "settings_battery_info_model.hpp"
 #include "hal_lvgl_bsp.h"
@@ -314,10 +314,7 @@ lv_obj_t *LvSettingBatteryInfoPage3::create_label(int x,
     lv_obj_set_pos(label, x, y);
     lv_obj_set_size(label, width, height);
     lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
-    const lv_font_t *font = cp0_fonts().get(
-        "Montserrat-Bold.ttf",
-        font_size,
-        LV_FREETYPE_FONT_STYLE_BOLD);
+    const lv_font_t *font = settings_fonts::sans(font_size, LV_FREETYPE_FONT_STYLE_BOLD);
     if (font) lv_obj_set_style_text_font(label, font, LV_PART_MAIN);
     lv_label_set_long_mode(label, LV_LABEL_LONG_CLIP);
     return label;

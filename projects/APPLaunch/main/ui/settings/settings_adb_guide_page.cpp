@@ -1,4 +1,5 @@
 #include "settings_adb_guide_page.hpp"
+#include "settings_fonts.hpp"
 
 #include "settings_adb_state.hpp"
 
@@ -826,10 +827,10 @@ void LvSettingAdbGuidePage3::create_ui(lv_obj_t *parent)
         std::bind(&LvSettingAdbGuidePage3::handle_key_event, this, std::placeholders::_1));
 
     const lv_font_t *title_font =
-        cp0_fonts().get("Montserrat-Bold.ttf", 13, LV_FREETYPE_FONT_STYLE_BOLD);
-    const lv_font_t *text_font = &lv_font_montserrat_10;
+        settings_fonts::sans(13, LV_FREETYPE_FONT_STYLE_BOLD);
+    const lv_font_t *text_font = settings_fonts::sans(10);
     title_label_ = add_label(8, 2, "Enable ADB - switch USB to device", 0xECECEC,
-                             title_font ? title_font : &lv_font_montserrat_12);
+                             title_font ? title_font : settings_fonts::sans(12));
     add_chip(86, 24, 146, 50, 0x282A30, 0x5A5C64, 6, 2);
     add_label(120, 28, "CardputerZero", 0x9A9AA0, text_font);
     add_chip(218, 30, 12, 12, 0x101012, 0x5A5C64, 3, 2);

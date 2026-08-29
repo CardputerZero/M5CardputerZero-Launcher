@@ -1,4 +1,5 @@
 #include "settings_battery_calibration_page.hpp"
+#include "settings_fonts.hpp"
 
 #include "hal_lvgl_bsp.h"
 #include "settings_async_dispatch.hpp"
@@ -108,10 +109,7 @@ void LvSettingBQCalibratePage3::create_ui(lv_obj_t *parent)
     lv_obj_set_pos(result_label_, 8, 120);
     lv_obj_set_size(result_label_, 304, 15);
     lv_obj_set_style_text_color(result_label_, lv_color_hex(0xF0C850), LV_PART_MAIN);
-    const lv_font_t *font = cp0_fonts().get(
-        "Montserrat-Bold.ttf",
-        11,
-        LV_FREETYPE_FONT_STYLE_BOLD);
+    const lv_font_t *font = settings_fonts::sans(11, LV_FREETYPE_FONT_STYLE_BOLD);
     if (font) lv_obj_set_style_text_font(result_label_, font, LV_PART_MAIN);
     lv_label_set_long_mode(result_label_, LV_LABEL_LONG_CLIP);
 }

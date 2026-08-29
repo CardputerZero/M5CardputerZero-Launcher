@@ -1,6 +1,7 @@
 #pragma once
 
 #include "settings_system_model.hpp"
+#include "settings_fonts.hpp"
 #include "settings_tree_types.hpp"
 
 #include <functional>

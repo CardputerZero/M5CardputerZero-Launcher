@@ -12,7 +12,7 @@
 #include <list>
 #include <memory>
 
-#include "cp0_font_service.hpp"
+#include "settings_fonts.hpp"
 #include "cp0_lvgl_app_page_assets.h"
 #define LVGL_COMPONENTS_ROLLER1_ONLY
 #include "lvgl_components.hpp"
@@ -153,7 +153,7 @@ public:
 
         // Set the current row font, color, and opacity first, then recalculate the text width using the final font.
         lv_obj_set_style_text_font(
-            label, cp0_fonts().get("Montserrat-Bold.ttf", font_size, LV_FREETYPE_FONT_STYLE_BOLD), LV_PART_MAIN);
+            label, settings_fonts::sans(font_size, LV_FREETYPE_FONT_STYLE_BOLD), LV_PART_MAIN);
         lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
         lv_obj_set_style_opa(label, opa, LV_PART_MAIN);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);

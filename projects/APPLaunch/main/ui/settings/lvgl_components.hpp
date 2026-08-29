@@ -20,6 +20,7 @@
 #include <utility>
 
 #include "cp0_font_service.hpp"
+#include "settings_fonts.hpp"
 #include "cp0_lvgl_app_page_assets.h"
 #include "settings_tree_types.hpp"
 
@@ -8052,7 +8053,7 @@ public:
         }
 
         lv_obj_set_style_text_font(
-            label, cp0_fonts().get("Montserrat-Bold.ttf", font_size, LV_FREETYPE_FONT_STYLE_BOLD), LV_PART_MAIN);
+            label, settings_fonts::cjk_sans(font_size), LV_PART_MAIN);
         lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
         lv_obj_set_style_opa(label, opa, LV_PART_MAIN);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
@@ -8430,7 +8431,7 @@ protected:
             lv_label_set_text(title_label_, title.c_str());
             lv_obj_set_style_text_font(
                 title_label_,
-                cp0_fonts().get("Montserrat-Bold.ttf", 16, LV_FREETYPE_FONT_STYLE_BOLD),
+                settings_fonts::cjk_sans(16),
                 LV_PART_MAIN);
             lv_obj_set_style_text_color(title_label_, lv_color_white(), LV_PART_MAIN);
             lv_obj_set_style_text_align(title_label_, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
@@ -8472,7 +8473,7 @@ protected:
         if (hint_) {
             lv_label_set_text(hint_, "ok:set");
             lv_obj_set_style_text_color(hint_, lv_color_hex(0x00CC66), LV_PART_MAIN);
-            lv_obj_set_style_text_font(hint_, cp0_fonts().get("Montserrat-Bold.ttf", 16, LV_FREETYPE_FONT_STYLE_BOLD),
+            lv_obj_set_style_text_font(hint_, settings_fonts::sans(16, LV_FREETYPE_FONT_STYLE_BOLD),
                                        LV_PART_MAIN);
             lv_obj_update_layout(hint_);
             lv_obj_set_pos(hint_, metric(LayoutMetric::ScreenW) - 6 - lv_obj_get_width(hint_),

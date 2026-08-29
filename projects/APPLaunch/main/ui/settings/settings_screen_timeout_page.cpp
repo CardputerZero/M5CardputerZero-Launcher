@@ -1,4 +1,5 @@
 #include "settings_screen_timeout_page.hpp"
+#include "settings_fonts.hpp"
 
 #if __has_include("model/setup_value_policy.hpp")
 #include "model/setup_value_policy.hpp"
@@ -252,7 +253,7 @@ void LvSettingDarkTimePage3::create_status_label()
     lv_obj_set_width(status_label_, 104);
     lv_label_set_long_mode(status_label_, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_font(
-        status_label_, cp0_fonts().get("Montserrat-Bold.ttf", 10, LV_FREETYPE_FONT_STYLE_BOLD), LV_PART_MAIN);
+        status_label_, settings_fonts::sans(10, LV_FREETYPE_FONT_STYLE_BOLD), LV_PART_MAIN);
     lv_obj_set_style_text_color(status_label_, lv_color_hex(0xFFCC66), LV_PART_MAIN);
     lv_obj_set_pos(status_label_, 4, 4);
     lv_label_set_text(status_label_, "");

@@ -1,4 +1,5 @@
 #include "settings_static_info_page.hpp"
+#include "settings_fonts.hpp"
 
 #include "cp0_font_service.hpp"
 
@@ -111,7 +112,7 @@ void LvSettingStaticInfoPage3::create_ui(lv_obj_t *parent)
               metric(LayoutMetric::ContentX),
               metric(LayoutMetric::TitleY),
               0x58A6FF,
-              &lv_font_montserrat_16,
+              settings_fonts::sans(16, LV_FREETYPE_FONT_STYLE_BOLD),
               false);
 
     int y = metric(LayoutMetric::LinesY);
@@ -121,20 +122,19 @@ void LvSettingStaticInfoPage3::create_ui(lv_obj_t *parent)
                                     metric(LayoutMetric::ContentX),
                                     y,
                                     0xE0E0E0,
-                                    &lv_font_montserrat_12,
+                                    settings_fonts::cjk_sans(12),
                                     true);
         if (!label) break;
         lv_obj_update_layout(label);
         y += lv_obj_get_height(label) + metric(LayoutMetric::LineGap);
     }
 
-    const lv_font_t *hint_font = cp0_fonts().get(
-        "Montserrat-Bold.ttf", 12, LV_FREETYPE_FONT_STYLE_BOLD);
+    const lv_font_t *hint_font = settings_fonts::sans(12, LV_FREETYPE_FONT_STYLE_BOLD);
     add_label("ESC: back",
               metric(LayoutMetric::ContentX),
               metric(LayoutMetric::FooterY),
               0x46DC87,
-              hint_font ? hint_font : &lv_font_montserrat_12,
+              hint_font ? hint_font : settings_fonts::sans(12),
               false);
     DComponens::lvgl_bind_event(
         ComponensObj, LV_EVENT_KEY, nullptr,

@@ -1,4 +1,5 @@
 #include "settings_sound_card_detail_page.hpp"
+#include "settings_fonts.hpp"
 
 #include <algorithm>
 #include <utility>
@@ -234,7 +235,7 @@ lv_obj_t *LvSettingSoundCardDetailPage::create_label(lv_obj_t *parent,
     lv_obj_set_style_text_color(result, lv_color_hex(color), LV_PART_MAIN);
     lv_obj_set_style_text_font(
         result,
-        cp0_fonts().get("Montserrat-Bold.ttf", font_size, LV_FREETYPE_FONT_STYLE_BOLD),
+        settings_fonts::cjk_sans(font_size),
         LV_PART_MAIN);
     lv_obj_set_style_text_align(result, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
     lv_label_set_long_mode(result, LV_LABEL_LONG_CLIP);

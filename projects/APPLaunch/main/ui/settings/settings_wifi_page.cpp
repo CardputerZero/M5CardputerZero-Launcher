@@ -299,15 +299,15 @@ void LvSettingWifiScanPage3::create_ui(lv_obj_t *parent){
         }
 
         title_ = create_label(ComponensObj, "", 8, 2, 0x58A6FF,
-                              cp0_fonts().get("Montserrat-Bold.ttf", 12, LV_FREETYPE_FONT_STYLE_BOLD));
+                              settings_fonts::cjk_sans(12, LV_FREETYPE_FONT_STYLE_BOLD));
         if (title_) {
             lv_obj_set_width(title_, metric(LayoutMetric::TitleW));
             lv_label_set_long_mode(title_, LV_LABEL_LONG_SCROLL_CIRCULAR);
         }
 
-        create_label(ComponensObj, "SSID", 8, 18, 0x888888, &lv_font_montserrat_10);
-        create_label(ComponensObj, "Security", 180, 18, 0x888888, &lv_font_montserrat_10);
-        create_label(ComponensObj, "Signal", 270, 18, 0x888888, &lv_font_montserrat_10);
+        create_label(ComponensObj, "SSID", 8, 18, 0x888888, settings_fonts::sans(10));
+        create_label(ComponensObj, "Security", 180, 18, 0x888888, settings_fonts::sans(10));
+        create_label(ComponensObj, "Signal", 270, 18, 0x888888, settings_fonts::sans(10));
 
         for (int index = 0; index < metric(LayoutMetric::VisibleRows); ++index) {
             auto &row   = rows_[index];
@@ -326,9 +326,9 @@ void LvSettingWifiScanPage3::create_ui(lv_obj_t *parent){
                 lv_obj_add_flag(row.background, LV_OBJ_FLAG_HIDDEN);
             }
 
-            row.ssid     = create_label(ComponensObj, "", 8, y + 2, 0xCCCCCC, &lv_font_montserrat_12);
-            row.security = create_label(ComponensObj, "", 180, y + 2, 0xCCCCCC, &lv_font_montserrat_10);
-            row.signal   = create_label(ComponensObj, "", 275, y + 2, 0xCCCCCC, &lv_font_montserrat_10);
+            row.ssid     = create_label(ComponensObj, "", 8, y + 2, 0xCCCCCC, settings_fonts::cjk_sans(12));
+            row.security = create_label(ComponensObj, "", 180, y + 2, 0xCCCCCC, settings_fonts::sans(10));
+            row.signal   = create_label(ComponensObj, "", 275, y + 2, 0xCCCCCC, settings_fonts::mono(10));
             if (row.ssid) {
                 lv_obj_set_width(row.ssid, 165);
                 lv_label_set_long_mode(row.ssid, LV_LABEL_LONG_CLIP);
@@ -338,8 +338,8 @@ void LvSettingWifiScanPage3::create_ui(lv_obj_t *parent){
             if (row.signal) lv_obj_add_flag(row.signal, LV_OBJ_FLAG_HIDDEN);
         }
 
-        empty_ = create_label(ComponensObj, "", 8, 50, 0x666666, &lv_font_montserrat_12);
-        hint_ = create_label(ComponensObj, "", 8, metric(LayoutMetric::ScreenH) - 14, 0x555555, &lv_font_montserrat_10);
+        empty_ = create_label(ComponensObj, "", 8, 50, 0x666666, settings_fonts::sans(12));
+        hint_ = create_label(ComponensObj, "", 8, metric(LayoutMetric::ScreenH) - 14, 0x555555, settings_fonts::sans(10));
         create_password_panel();
         create_hidden_network_panel();
         password_cursor_timer_ = lv_timer_create(password_cursor_timer_cb, 500, this);
@@ -482,8 +482,7 @@ lv_obj_t *LvSettingWifiScanPage3::create_label(lv_obj_t *parent, const char *tex
     }
 
 const lv_font_t *LvSettingWifiScanPage3::input_font(uint16_t size){
-        return cp0_fonts().get("AlibabaPuHuiTi-3-55-Regular.ttf", size, LV_FREETYPE_FONT_STYLE_NORMAL,
-                               LV_FREETYPE_FONT_RENDER_MODE_BITMAP);
+        return settings_fonts::cjk_sans(size);
     }
 
 const char *LvSettingWifiScanPage3::scan_error_message(int result){
@@ -590,8 +589,8 @@ void LvSettingWifiScanPage3::create_password_panel(){
         lv_obj_remove_flag(password_panel_, LV_OBJ_FLAG_SCROLLABLE);
 
         password_title_      = create_label(password_panel_, "WiFi password", 8, 8, 0x58A6FF,
-                                            cp0_fonts().get("Montserrat-Bold.ttf", 13, LV_FREETYPE_FONT_STYLE_BOLD));
-        password_network_    = create_label(password_panel_, "", 8, 28, 0xCCCCCC, &lv_font_montserrat_10);
+                                            settings_fonts::sans(13, LV_FREETYPE_FONT_STYLE_BOLD));
+        password_network_    = create_label(password_panel_, "", 8, 28, 0xCCCCCC, settings_fonts::cjk_sans(10));
         password_value_      = create_label(password_panel_, "", metric(LayoutMetric::PasswordTextX), 50, 0xFFFFFF, input_font(16));
         password_prefix_     = create_label(password_panel_, "", metric(LayoutMetric::PasswordTextX), 50, 0xFFFFFF, input_font(16));
         password_suffix_     = create_label(password_panel_, "", metric(LayoutMetric::PasswordTextX), 50, 0xFFFFFF, input_font(16));
@@ -607,9 +606,9 @@ void LvSettingWifiScanPage3::create_password_panel(){
         }
         if (password_prefix_) lv_obj_add_flag(password_prefix_, LV_OBJ_FLAG_HIDDEN);
         if (password_suffix_) lv_obj_add_flag(password_suffix_, LV_OBJ_FLAG_HIDDEN);
-        password_status_ = create_label(password_panel_, "", 8, 78, 0xFF4444, &lv_font_montserrat_10);
+        password_status_ = create_label(password_panel_, "", 8, 78, 0xFF4444, settings_fonts::sans(10));
         password_hint_ =
-            create_label(password_panel_, "", 8, metric(LayoutMetric::ScreenH) - 14, 0x555555, &lv_font_montserrat_10);
+            create_label(password_panel_, "", 8, metric(LayoutMetric::ScreenH) - 14, 0x555555, settings_fonts::sans(10));
 
         if (password_network_) lv_obj_set_width(password_network_, metric(LayoutMetric::ScreenW) - 16);
         if (password_value_) {
@@ -715,9 +714,9 @@ void LvSettingWifiScanPage3::create_hidden_network_panel(){
         lv_obj_remove_flag(hidden_panel_, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(hidden_panel_, LV_OBJ_FLAG_SCROLLABLE);
 
-        create_label(hidden_panel_, "Add Hidden WiFi", 10, 4, 0x58A6FF, &lv_font_montserrat_12);
-        create_label(hidden_panel_, "SSID", 10, 25, 0xCCCCCC, &lv_font_montserrat_10);
-        create_label(hidden_panel_, "PASSWORD", 10, 59, 0xCCCCCC, &lv_font_montserrat_10);
+        create_label(hidden_panel_, "Add Hidden WiFi", 10, 4, 0x58A6FF, settings_fonts::sans(12));
+        create_label(hidden_panel_, "SSID", 10, 25, 0xCCCCCC, settings_fonts::sans(10));
+        create_label(hidden_panel_, "PASSWORD", 10, 59, 0xCCCCCC, settings_fonts::sans(10));
 
         hidden_ssid_input_     = create_hidden_input(hidden_panel_, 18, metric(LayoutMetric::MaxSsidBytes));
         hidden_password_input_ = create_hidden_input(hidden_panel_, 52, metric(LayoutMetric::MaxPasswordBytes));
@@ -728,7 +727,7 @@ void LvSettingWifiScanPage3::create_hidden_network_panel(){
         lv_textarea_set_password_mode(hidden_password_input_, true);
 
         hidden_hint_ = create_label(hidden_panel_, "TAB:switch  ALT:show  OK:connect", 10,
-                                    metric(LayoutMetric::ScreenH) - 14, 0x555555, &lv_font_montserrat_10);
+                                    metric(LayoutMetric::ScreenH) - 14, 0x555555, settings_fonts::sans(10));
         lv_obj_add_flag(hidden_panel_, LV_OBJ_FLAG_HIDDEN);
     }
 
@@ -890,7 +889,7 @@ void LvSettingWifiScanPage3::show_power_warning(){
         }
         if (title) {
             lv_obj_set_style_text_color(title, lv_color_hex(0xFFAA00), LV_PART_MAIN);
-            lv_obj_set_style_text_font(title, &lv_font_montserrat_14, LV_PART_MAIN);
+            lv_obj_set_style_text_font(title, settings_fonts::sans(14, LV_FREETYPE_FONT_STYLE_BOLD), LV_PART_MAIN);
         }
         if (content) {
             lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_OFF);
@@ -901,7 +900,7 @@ void LvSettingWifiScanPage3::show_power_warning(){
         }
         if (message) {
             lv_obj_set_style_text_color(message, lv_color_hex(0xCCCCCC), LV_PART_MAIN);
-            lv_obj_set_style_text_font(message, &lv_font_montserrat_12, LV_PART_MAIN);
+            lv_obj_set_style_text_font(message, settings_fonts::sans(12), LV_PART_MAIN);
         }
         if (footer) {
             lv_obj_set_height(footer, 28);
@@ -924,7 +923,7 @@ void LvSettingWifiScanPage3::show_power_warning(){
         }
         if (ok_label) {
             lv_obj_set_style_text_color(ok_label, lv_color_hex(0x58A6FF), LV_PART_MAIN);
-            lv_obj_set_style_text_font(ok_label, &lv_font_montserrat_12, LV_PART_MAIN);
+            lv_obj_set_style_text_font(ok_label, settings_fonts::sans(12), LV_PART_MAIN);
         }
         DComponens::lvgl_bind_event(power_warning_, LV_EVENT_KEY, nullptr,
                                     std::bind(&LvSettingWifiScanPage3::handle_key_event, this, std::placeholders::_1));

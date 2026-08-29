@@ -129,7 +129,7 @@ void LvSettingRollerPage2::style_label(lv_obj_t *label, int distance, bool compa
         color     = 0x777777;
     }
 
-    lv_obj_set_style_text_font(label, cp0_fonts().get("Montserrat-Bold.ttf", font_size, LV_FREETYPE_FONT_STYLE_BOLD),
+    lv_obj_set_style_text_font(label, settings_fonts::sans(font_size, LV_FREETYPE_FONT_STYLE_BOLD),
                                LV_PART_MAIN);
     lv_obj_set_style_text_color(label, lv_color_hex(color), LV_PART_MAIN);
     lv_obj_set_style_opa(label, opa, LV_PART_MAIN);
@@ -246,7 +246,7 @@ void LvSettingRollerPage2::show_power_warning()
     }
     if (title) {
         lv_obj_set_style_text_color(title, lv_color_hex(0xFFAA00), LV_PART_MAIN);
-        lv_obj_set_style_text_font(title, &lv_font_montserrat_14, LV_PART_MAIN);
+        lv_obj_set_style_text_font(title, settings_fonts::sans(14, LV_FREETYPE_FONT_STYLE_BOLD), LV_PART_MAIN);
         lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
     }
     if (content) {
@@ -261,7 +261,7 @@ void LvSettingRollerPage2::show_power_warning()
     }
     if (message) {
         lv_obj_set_style_text_color(message, lv_color_hex(0xCCCCCC), LV_PART_MAIN);
-        lv_obj_set_style_text_font(message, &lv_font_montserrat_12, LV_PART_MAIN);
+        lv_obj_set_style_text_font(message, settings_fonts::sans(12), LV_PART_MAIN);
         lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
     }
     if (footer) {
@@ -283,7 +283,7 @@ void LvSettingRollerPage2::show_power_warning()
     }
     if (ok_label) {
         lv_obj_set_style_text_color(ok_label, lv_color_hex(0x58A6FF), LV_PART_MAIN);
-        lv_obj_set_style_text_font(ok_label, &lv_font_montserrat_12, LV_PART_MAIN);
+        lv_obj_set_style_text_font(ok_label, settings_fonts::sans(12), LV_PART_MAIN);
         lv_obj_set_style_text_align(ok_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
     }
 
@@ -378,8 +378,17 @@ void LvSettingRollerPage2::stop_direct_status_poll()
 
 void LvSettingRollerPage2::request_status_refresh(lv_obj_t *row, const NodeIter &selected_node)
 {
+    if (!row || !selected_node->Componens_api) return;
+
+    // Rows keep the label first and the optional status icon second. Keep the
+    // row as the API boundary so future refreshes can update either control.
+    lv_obj_t *label = lv_obj_get_child(row, 0);
     lv_obj_t *icon_obj = lv_obj_get_child(row, 1);
-    if (!icon_obj || !selected_node->Componens_api) return;
+    if (!label || !icon_obj) return;
+
+    // Render a deterministic state immediately. Async status reads can take a
+    // few frames, but the row should never appear to be missing its icon.
+    set_status_icon(icon_obj, false);
 
     if (selected_node->status_read_policy == SettingStatusReadPolicy::Direct) {
         stop_direct_status_poll();
@@ -786,7 +795,7 @@ void LvSettingRollerPage2::create_ui(lv_obj_t *parent)
 
         if (it->icon_enabled) {
             lv_obj_t *status_icon = lv_img_create(row);
-            request_status_refresh(status_icon, it);
+            if (status_icon) request_status_refresh(row, it);
         }
     }
     item_count_ = lv_obj_get_child_count(ComponensObj);
@@ -818,7 +827,7 @@ void LvSettingRollerPage2::create_ui(lv_obj_t *parent)
     if (hint_) {
         lv_label_set_text(hint_, "ok:enter");
         lv_obj_set_style_text_color(hint_, lv_color_hex(0x00CC66), LV_PART_MAIN);
-        lv_obj_set_style_text_font(hint_, cp0_fonts().get("Montserrat-Bold.ttf", 16, LV_FREETYPE_FONT_STYLE_BOLD),
+        lv_obj_set_style_text_font(hint_, settings_fonts::sans(16, LV_FREETYPE_FONT_STYLE_BOLD),
                                    LV_PART_MAIN);
         lv_obj_update_layout(hint_);
         lv_obj_set_pos(hint_, metric(LayoutMetric::PanelX) + metric(LayoutMetric::PanelW) - 6 - lv_obj_get_width(hint_),

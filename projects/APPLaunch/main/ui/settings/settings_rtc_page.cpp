@@ -1,4 +1,5 @@
 #include "settings_rtc_page.hpp"
+#include "settings_fonts.hpp"
 
 #include <array>
 #include <cstddef>
@@ -1040,7 +1041,7 @@ void LvSettingRtcPage3::create_status_label()
         impl_->status_label, lv_color_hex(::metric(::LayoutMetric::StatusTextColor)), LV_PART_MAIN);
     lv_obj_set_style_text_font(
         impl_->status_label,
-        cp0_fonts().get("Montserrat-Bold.ttf", ::metric(::LayoutMetric::StatusFontSize), LV_FREETYPE_FONT_STYLE_BOLD),
+        settings_fonts::sans(::metric(::LayoutMetric::StatusFontSize), LV_FREETYPE_FONT_STYLE_BOLD),
         LV_PART_MAIN);
     lv_label_set_text(impl_->status_label, "");
     lv_obj_add_flag(impl_->status_label, LV_OBJ_FLAG_HIDDEN);
@@ -1259,7 +1260,7 @@ void LvSettingRtcConfirmPage3::create_status_label()
         impl_->status_label, lv_color_hex(::metric(::LayoutMetric::StatusTextColor)), LV_PART_MAIN);
     lv_obj_set_style_text_font(
         impl_->status_label,
-        cp0_fonts().get("Montserrat-Bold.ttf", ::metric(::LayoutMetric::StatusFontSize), LV_FREETYPE_FONT_STYLE_BOLD),
+        settings_fonts::sans(::metric(::LayoutMetric::StatusFontSize), LV_FREETYPE_FONT_STYLE_BOLD),
         LV_PART_MAIN);
     lv_label_set_text(impl_->status_label, "");
     lv_obj_add_flag(impl_->status_label, LV_OBJ_FLAG_HIDDEN);

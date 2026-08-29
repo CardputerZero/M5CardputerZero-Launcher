@@ -1043,7 +1043,7 @@ void LvSettingBluetoothAliasPage3::enqueue_api_result(
             2,
             metric(LayoutMetric::ScreenW) - 16,
             0x58A6FF,
-            cp0_fonts().get("Montserrat-Bold.ttf", 12, LV_FREETYPE_FONT_STYLE_BOLD));
+            settings_fonts::sans(12, LV_FREETYPE_FONT_STYLE_BOLD));
 
         const char *hint = mode_ == LvSettingBluetoothListMode::Scan
             ? "OK:act  R:restart  ESC:back"
@@ -1055,7 +1055,7 @@ void LvSettingBluetoothAliasPage3::enqueue_api_result(
                          mode_ == LvSettingBluetoothListMode::Scan ? 45 : 52,
                          metric(LayoutMetric::ScreenW) - 16,
                          0x58A6FF,
-                         &lv_font_montserrat_14);
+                         settings_fonts::sans(14, LV_FREETYPE_FONT_STYLE_BOLD));
             hint = "ESC:back";
         } else {
             std::string message;
@@ -1077,7 +1077,7 @@ void LvSettingBluetoothAliasPage3::enqueue_api_result(
                              mode_ == LvSettingBluetoothListMode::Scan ? 45 : 52,
                              metric(LayoutMetric::ScreenW) - 16,
                              error_message_.empty() ? 0x666666 : 0xFFAA00,
-                             &lv_font_montserrat_12);
+                             settings_fonts::sans(12));
             }
 
             if (mode_ == LvSettingBluetoothListMode::Scan) {
@@ -1087,7 +1087,7 @@ void LvSettingBluetoothAliasPage3::enqueue_api_result(
                              metric(LayoutMetric::ScanSectionY),
                              metric(LayoutMetric::ScreenW) - 16,
                              0x888888,
-                             &lv_font_montserrat_10);
+                             settings_fonts::sans(10));
             }
 
             const int count = static_cast<int>(devices_.size());
@@ -1132,14 +1132,14 @@ void LvSettingBluetoothAliasPage3::enqueue_api_result(
                              y + 1,
                              208,
                              color,
-                             &lv_font_montserrat_10);
+                             settings_fonts::cjk_sans(10));
                 create_label(ComponensObj,
                              address.c_str(),
                              8,
                              y + 10,
                              214,
                              selected ? 0xBBBBBB : 0x777777,
-                             &lv_font_montserrat_8);
+                             settings_fonts::mono(8));
 
                 std::string state;
                 if (device.connected)
@@ -1148,6 +1148,9 @@ void LvSettingBluetoothAliasPage3::enqueue_api_result(
                     state = "Paired";
                 else
                     state = std::to_string(device.rssi);
+                const lv_font_t *state_font = (device.connected || device.paired)
+                    ? settings_fonts::sans(8)
+                    : settings_fonts::mono(8);
                 lv_obj_t *state_label = create_label(
                     ComponensObj,
                     state.c_str(),
@@ -1155,7 +1158,7 @@ void LvSettingBluetoothAliasPage3::enqueue_api_result(
                     y + 2,
                     80,
                     color,
-                    &lv_font_montserrat_8);
+                    state_font);
                 if (state_label)
                     lv_obj_set_style_text_align(state_label, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
             }
@@ -1167,7 +1170,7 @@ void LvSettingBluetoothAliasPage3::enqueue_api_result(
                      metric(LayoutMetric::HintY),
                      metric(LayoutMetric::ScreenW) - 16,
                      0x555555,
-                     &lv_font_montserrat_10);
+                     settings_fonts::sans(10));
     }
 
 
@@ -1201,11 +1204,11 @@ void LvSettingBluetoothAliasPage3::enqueue_api_result(
         lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
 
         create_label(dialog, "Bluetooth power is off", 12, 10, 250,
-                     0xFFAA00, &lv_font_montserrat_14);
+                     0xFFAA00, settings_fonts::sans(14, LV_FREETYPE_FONT_STYLE_BOLD));
         create_label(dialog, "Turn on Power before continuing.", 12, 36, 250,
-                     0xCCCCCC, &lv_font_montserrat_12);
+                     0xCCCCCC, settings_fonts::sans(12));
         create_label(dialog, "OK", 246, 68, 28,
-                     0x58A6FF, &lv_font_montserrat_12);
+                     0x58A6FF, settings_fonts::sans(12));
     }
 
 
@@ -1423,10 +1426,7 @@ LvSettingBluetoothAliasPage3::LvSettingBluetoothAliasPage3()
 
     const lv_font_t *LvSettingBluetoothAliasPage3::input_font(uint16_t size)
 {
-        return cp0_fonts().get("AlibabaPuHuiTi-3-55-Regular.ttf",
-                               size,
-                               LV_FREETYPE_FONT_STYLE_NORMAL,
-                               LV_FREETYPE_FONT_RENDER_MODE_BITMAP);
+        return settings_fonts::cjk_sans(size);
     }
 
 
@@ -1463,8 +1463,8 @@ LvSettingBluetoothAliasPage3::LvSettingBluetoothAliasPage3()
                      8,
                      metric(LayoutMetric::ScreenW) - 16,
                      0x58A6FF,
-                     cp0_fonts().get("Montserrat-Bold.ttf", 13, LV_FREETYPE_FONT_STYLE_BOLD));
-        create_label(ComponensObj, "Name:", 8, 38, 52, 0xCCCCCC, &lv_font_montserrat_12);
+                     settings_fonts::sans(13, LV_FREETYPE_FONT_STYLE_BOLD));
+        create_label(ComponensObj, "Name:", 8, 38, 52, 0xCCCCCC, settings_fonts::sans(12));
 
         const bool show_cursor = !saving_ && cursor_visible_;
         if (!show_cursor) {
@@ -1525,7 +1525,7 @@ LvSettingBluetoothAliasPage3::LvSettingBluetoothAliasPage3()
                      metric(LayoutMetric::ScreenH) - 14,
                      metric(LayoutMetric::ScreenW) - 16,
                      saving_ ? 0xFFAA00 : 0x555555,
-                     &lv_font_montserrat_10);
+                     settings_fonts::sans(10));
         if (!error_message_.empty())
             create_label(ComponensObj,
                          error_message_.c_str(),
@@ -1533,7 +1533,7 @@ LvSettingBluetoothAliasPage3::LvSettingBluetoothAliasPage3()
                          76,
                          metric(LayoutMetric::ScreenW) - 16,
                          0xFF4444,
-                         &lv_font_montserrat_10);
+                         settings_fonts::sans(10));
     }
 
 
@@ -1586,7 +1586,7 @@ LvSettingBluetoothAliasPage3::LvSettingBluetoothAliasPage3()
         }
         if (title) {
             lv_obj_set_style_text_color(title, lv_color_hex(0xFFAA00), LV_PART_MAIN);
-            lv_obj_set_style_text_font(title, &lv_font_montserrat_14, LV_PART_MAIN);
+            lv_obj_set_style_text_font(title, settings_fonts::sans(14, LV_FREETYPE_FONT_STYLE_BOLD), LV_PART_MAIN);
             lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
         }
         if (content) {
@@ -1601,7 +1601,7 @@ LvSettingBluetoothAliasPage3::LvSettingBluetoothAliasPage3()
         }
         if (message) {
             lv_obj_set_style_text_color(message, lv_color_hex(0xCCCCCC), LV_PART_MAIN);
-            lv_obj_set_style_text_font(message, &lv_font_montserrat_12, LV_PART_MAIN);
+            lv_obj_set_style_text_font(message, settings_fonts::sans(12), LV_PART_MAIN);
             lv_obj_set_style_text_align(message, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
         }
         if (footer) {
@@ -1623,7 +1623,7 @@ LvSettingBluetoothAliasPage3::LvSettingBluetoothAliasPage3()
         }
         if (ok_label) {
             lv_obj_set_style_text_color(ok_label, lv_color_hex(0x58A6FF), LV_PART_MAIN);
-            lv_obj_set_style_text_font(ok_label, &lv_font_montserrat_12, LV_PART_MAIN);
+            lv_obj_set_style_text_font(ok_label, settings_fonts::sans(12), LV_PART_MAIN);
             lv_obj_set_style_text_align(ok_label, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
         }
     }

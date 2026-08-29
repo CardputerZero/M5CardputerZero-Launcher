@@ -79,19 +79,17 @@ std::string lvgl_version()
 
 const lv_font_t *title_font()
 {
-    const lv_font_t *font = cp0_fonts().get("Montserrat-Bold.ttf", 14, LV_FREETYPE_FONT_STYLE_BOLD);
-    return font ? font : &lv_font_montserrat_14;
+    return settings_fonts::sans(14, LV_FREETYPE_FONT_STYLE_BOLD);
 }
 
 const lv_font_t *body_font()
 {
-    return &lv_font_montserrat_12;
+    return settings_fonts::sans(12);
 }
 
 const lv_font_t *hint_font()
 {
-    const lv_font_t *font = cp0_fonts().get("Montserrat-Bold.ttf", 12, LV_FREETYPE_FONT_STYLE_BOLD);
-    return font ? font : &lv_font_montserrat_12;
+    return settings_fonts::sans(12, LV_FREETYPE_FONT_STYLE_BOLD);
 }
 
 lv_obj_t *create_label(lv_obj_t *parent,
@@ -351,6 +349,18 @@ void render_system_info(LvSettingSystemInfoPage3 *page)
         break;
     case SettingsSystemPageKind::Auto:
         break;
+    }
+
+    // Keep machine-readable values (addresses, versions and commits) in a
+    // fixed-width face while account and explanatory text retain CJK coverage.
+    const bool machine_values = state->kind == SettingsSystemPageKind::Network ||
+                                state->kind == SettingsSystemPageKind::Ethernet ||
+                                state->kind == SettingsSystemPageKind::OS ||
+                                state->kind == SettingsSystemPageKind::Version ||
+                                state->kind == SettingsSystemPageKind::Build;
+    const lv_font_t *line_font = machine_values ? settings_fonts::mono(11) : settings_fonts::cjk_sans(12);
+    for (lv_obj_t *line : {state->line_one, state->line_two, state->line_three}) {
+        if (line) lv_obj_set_style_text_font(line, line_font, LV_PART_MAIN);
     }
 
     set_label(state->status_label, state->status);
@@ -805,7 +815,7 @@ void show_update_confirmation(LvSettingUpdatePage3 *page)
     state->dialog_message = lv_msgbox_add_text(state->dialog, message.c_str());
     if (state->dialog_message) {
         lv_label_set_long_mode(state->dialog_message, LV_LABEL_LONG_DOT);
-        lv_obj_set_style_text_font(state->dialog_message, &lv_font_montserrat_12, LV_PART_MAIN);
+        lv_obj_set_style_text_font(state->dialog_message, settings_fonts::sans(12), LV_PART_MAIN);
     }
     state->update_button = lv_msgbox_add_footer_button(state->dialog, "Update");
     state->skip_button = lv_msgbox_add_footer_button(state->dialog, "Not now");

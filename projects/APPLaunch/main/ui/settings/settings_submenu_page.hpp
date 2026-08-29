@@ -17,7 +17,7 @@
 #include <utility>
 #include <tuple>
 
-#include "cp0_font_service.hpp"
+#include "settings_fonts.hpp"
 #include "cp0_lvgl_app_page_assets.h"
 #include "settings_tree_types.hpp"
 
@@ -99,7 +99,7 @@ private:
 
     void stop_direct_status_poll();
 
-    void request_status_refresh(lv_obj_t *icon_obj, const NodeIter &selected_node);
+    void request_status_refresh(lv_obj_t *row, const NodeIter &selected_node);
 
     void handle_power_warning_key(lv_event_t *event);
 

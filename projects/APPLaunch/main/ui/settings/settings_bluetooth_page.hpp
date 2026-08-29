@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "cp0_bounded_task_registry.hpp"
-#include "cp0_font_service.hpp"
+#include "settings_fonts.hpp"
 #include "cp0_lvgl_app.h"
 #include "cp0_lvgl_app_page_assets.h"
 #include "hal_lvgl_bsp.h"

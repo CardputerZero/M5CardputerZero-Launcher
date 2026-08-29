@@ -14,6 +14,7 @@
 #include "cp0_lvgl_app_page_assets.h"
 #include "input_keys.h"
 #include "keyboard_input.h"
+#include "settings_fonts.hpp"
 #include "settings_tree_types.hpp"
 
 #define LVGL_COMPONENTS_ROLLER1_ONLY
