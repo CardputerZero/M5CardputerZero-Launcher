@@ -1,8 +1,7 @@
 #pragma once
 
-#include "settings_t12b_boot_action_policy.hpp"
-#include "settings_t12b_extport_model.hpp"
-#include "settings_t12b_launcher_model.hpp"
+#include "settings_boot_action_policy.hpp"
+#include "settings_launcher_model.hpp"
 #include "settings_tree_types.hpp"
 
 #include <cstddef>
@@ -59,8 +58,6 @@ SettingApiCallBackFunc make_boot_confirmation_api(boot_actions::Action action,
                                                    bool confirmed,
                                                    BootActionController::Completion completion = {});
 
-SettingApiCallBackFunc make_ext_port_toggle_api(extport::Port port);
-
 std::vector<launcher::AppEntry> launcher_app_entries();
 bool populate_launcher_children(Tree &tree, const NodeIter &parent);
 
@@ -72,8 +69,6 @@ void append_boot_action_child(Tree &tree,
                               boot_actions::Action action,
                               const SettingPageFactory &confirmation_factory,
                               BootActionController::Completion completion = {});
-void append_ext_port_children(Tree &tree, const NodeIter &parent);
-
 #ifdef LAUNCHER_BUILD
 SettingApiCallBackFunc make_launcher_toggle_api(const AppDescriptor &descriptor);
 

@@ -1,4 +1,4 @@
-#include "settings_t12b_adapter.hpp"
+#include "settings_adapter.hpp"
 
 #include "cp0_lvgl_app.h"
 #include "hal_lvgl_bsp.h"
@@ -20,6 +20,7 @@ bool operation_succeeded(int code, const std::string &data)
     return code == 0 && (data.empty() || data == "ok");
 }
 
+#ifdef LAUNCHER_BUILD
 void mark_operation_started(void *data)
 {
     if (!data) return;
@@ -27,6 +28,7 @@ void mark_operation_started(void *data)
     if (std::get<1>(*result))
         std::get<1>(*result)->store(true, std::memory_order_release);
 }
+#endif
 
 void invoke_process(std::list<std::string> arguments,
                     std::function<void(int, std::string)> callback)
@@ -45,16 +47,6 @@ void invoke_filesystem(std::list<std::string> arguments,
         cp0_signal_filesystem_api(std::move(arguments), callback);
     } catch (...) {
         if (callback) callback(-1, "filesystem api exception");
-    }
-}
-
-void invoke_settings(std::list<std::string> arguments,
-                     std::function<void(int, std::string)> callback)
-{
-    try {
-        cp0_signal_settings_api(std::move(arguments), callback);
-    } catch (...) {
-        if (callback) callback(-1, "settings api exception");
     }
 }
 
@@ -300,204 +292,6 @@ SettingApiCallBackFunc make_boot_confirmation_api(boot_actions::Action action,
     return make_boot_action_binding(action, std::move(completion)).callback;
 }
 
-namespace {
-
-struct ExtPortState
-{
-    mutable std::mutex mutex;
-    bool value = false;
-    bool initialized = false;
-    bool pending = false;
-    bool read_pending = false;
-    uint64_t generation = 0;
-};
-
-void query_ext_port_async(extport::Port port,
-                          std::function<void(bool, bool)> completion)
-{
-    const std::string name(extport::spec(port).api_name);
-    invoke_settings(
-        {"GpioGet", name},
-        [completion = std::move(completion)](int code, std::string data) mutable {
-            bool value = false;
-            const bool succeeded = code == 0 && extport::parse_logical_value(data, value);
-            if (completion) completion(succeeded, value);
-        });
-}
-
-void send_ext_port_set(extport::Port port,
-                       bool value,
-                       std::function<void(int, std::string)> completion)
-{
-    const std::string name(extport::spec(port).api_name);
-    invoke_settings({"GpioSet", name, value ? "1" : "0"}, std::move(completion));
-}
-
-void finish_ext_port_read(const std::shared_ptr<ExtPortState> &state,
-                          uint64_t generation,
-                          bool succeeded,
-                          bool value)
-{
-    if (!state) return;
-    std::lock_guard<std::mutex> lock(state->mutex);
-    if (state->generation != generation) return;
-    state->read_pending = false;
-    if (succeeded) {
-        state->value = value;
-        state->initialized = true;
-    }
-}
-
-void start_ext_port_write(extport::Port port,
-                          const std::shared_ptr<ExtPortState> &state,
-                          uint64_t generation,
-                          bool previous,
-                          bool requested)
-{
-    {
-        std::lock_guard<std::mutex> lock(state->mutex);
-        if (state->generation != generation || !state->pending) return;
-        state->value = requested;
-        state->initialized = true;
-    }
-
-    send_ext_port_set(
-        port,
-        requested,
-        [state, port, generation, previous, requested](int code, std::string response) mutable {
-            const bool succeeded = extport::gpio_set_succeeded(code, response);
-            if (!succeeded) {
-                send_ext_port_set(
-                    port,
-                    previous,
-                    [state, port, generation, previous](int rollback_code,
-                                                        std::string rollback_response) {
-                        if (!extport::gpio_set_succeeded(rollback_code, rollback_response)) {
-                            {
-                                std::lock_guard<std::mutex> lock(state->mutex);
-                                if (state->generation != generation || !state->pending) return;
-                                state->read_pending = true;
-                            }
-                            query_ext_port_async(
-                                port,
-                                [state, generation, previous](bool read_succeeded, bool observed) {
-                                    {
-                                        std::lock_guard<std::mutex> lock(state->mutex);
-                                        if (state->generation != generation || !state->pending) return;
-                                        state->pending = false;
-                                        state->read_pending = false;
-                                        state->value = read_succeeded ? observed : previous;
-                                        state->initialized = true;
-                                    }
-                                });
-                            return;
-                        }
-                        std::lock_guard<std::mutex> lock(state->mutex);
-                        if (state->generation != generation) return;
-                        state->pending = false;
-                        state->read_pending = false;
-                        state->value = previous;
-                        state->initialized = true;
-                    });
-                return;
-            }
-
-            {
-                std::lock_guard<std::mutex> lock(state->mutex);
-                if (state->generation != generation || !state->pending) return;
-                state->read_pending = true;
-            }
-            query_ext_port_async(
-                port,
-                [state, generation, requested](bool read_succeeded, bool observed) {
-                    std::lock_guard<std::mutex> lock(state->mutex);
-                    if (state->generation != generation || !state->pending) return;
-                    state->pending = false;
-                    state->read_pending = false;
-                    state->value = read_succeeded ? observed : requested;
-                    state->initialized = true;
-                });
-        });
-}
-
-} // namespace
-
-SettingApiCallBackFunc make_ext_port_toggle_api(extport::Port port)
-{
-    auto state = std::make_shared<ExtPortState>();
-    return [state, port](int command, void *data) {
-        if (command == SettingApiReadFlag && data) {
-            uint64_t generation = 0;
-            bool should_query = false;
-            {
-                std::lock_guard<std::mutex> lock(state->mutex);
-                should_query = !state->pending && !state->read_pending;
-                generation = state->generation;
-                if (should_query) state->read_pending = true;
-            }
-            if (should_query) {
-                query_ext_port_async(
-                    port,
-                    [state, generation](bool succeeded, bool value) {
-                        finish_ext_port_read(state, generation, succeeded, value);
-                    });
-            }
-            std::lock_guard<std::mutex> lock(state->mutex);
-            *static_cast<bool *>(data) = state->value;
-            return;
-        }
-
-        if (command == SettingApiReadFlagTimeStart && data) {
-            mark_operation_started(data);
-            auto *result = static_cast<SettingApiReadFlagTimeStartData *>(data);
-            uint64_t generation = 0;
-            bool should_query = false;
-            {
-                std::lock_guard<std::mutex> lock(state->mutex);
-                should_query = !state->pending && !state->read_pending;
-                generation = state->generation;
-                if (should_query) state->read_pending = true;
-            }
-            if (should_query) {
-                query_ext_port_async(
-                    port,
-                    [state, generation](bool succeeded, bool value) {
-                        finish_ext_port_read(state, generation, succeeded, value);
-                    });
-            }
-            std::lock_guard<std::mutex> lock(state->mutex);
-            std::get<0>(*result) = state->value;
-            return;
-        }
-
-        if (command != SettingApiActivate) return;
-
-        uint64_t generation = 0;
-        {
-            std::lock_guard<std::mutex> lock(state->mutex);
-            if (state->pending || state->read_pending) return;
-            state->pending = true;
-            generation = ++state->generation;
-            state->read_pending = true;
-        }
-
-        query_ext_port_async(
-            port,
-            [state, port, generation](bool succeeded, bool previous) {
-                {
-                    std::lock_guard<std::mutex> lock(state->mutex);
-                    if (state->generation != generation || !state->pending) return;
-                    state->read_pending = false;
-                    if (!succeeded) {
-                        state->pending = false;
-                        return;
-                    }
-                }
-                start_ext_port_write(port, state, generation, previous, !previous);
-            });
-    };
-}
-
 std::vector<launcher::AppEntry> launcher_app_entries()
 {
 #ifdef LAUNCHER_BUILD
@@ -648,10 +442,9 @@ SettingApiCallBackFunc make_launcher_toggle_api(const AppDescriptor &descriptor)
         {
             std::lock_guard<std::mutex> lock(state->mutex);
             state->pending = false;
-            state->value = launcher::state_after_write(previous, !previous, succeeded);
+            state->value = succeeded ? !previous : previous;
         }
-        if (launcher::should_notify_registry(succeeded))
-            launcher_app_registry_notify_changed();
+        if (succeeded) launcher_app_registry_notify_changed();
     };
 }
 
@@ -781,16 +574,6 @@ void append_boot_children(Tree &tree,
         tree, parent, boot_actions::Action::Reboot, confirmation_factory);
     append_boot_action_child(
         tree, parent, boot_actions::Action::Shutdown, confirmation_factory);
-}
-
-void append_ext_port_children(Tree &tree, const NodeIter &parent)
-{
-    for (const extport::Port port : {extport::Port::Grove5V, extport::Port::Ext5V}) {
-        const auto &port_spec = extport::spec(port);
-        tree.append_child(
-            parent,
-            SettingEntry{std::string(port_spec.label), make_ext_port_toggle_api(port), true});
-    }
 }
 
 } // namespace settings_t12b

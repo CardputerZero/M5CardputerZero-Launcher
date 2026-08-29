@@ -1,8 +1,9 @@
 #include "settings_system_page.hpp"
 
+#include "cp0_lvgl_app.h"
 #include "cp0_font_service.hpp"
+#include "hal_lvgl_bsp.h"
 #include "settings_about_info_model.hpp"
-#include "settings_system_api.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -17,10 +18,9 @@
 
 namespace {
 
-constexpr int kScreenWidth = 320;
-constexpr int kScreenHeight = 150;
-constexpr int kTextWidth = 304;
-constexpr int kUpdatePollMs = 500;
+enum class TimerInterval : uint32_t {
+    UpdatePollMs = 500,
+};
 constexpr std::chrono::seconds kUpdateTimeout{20 * 60};
 
 #define SETTINGS_SYSTEM_STRINGIFY_IMPL(value) #value
@@ -115,10 +115,10 @@ lv_obj_t *create_label(lv_obj_t *parent,
     return label;
 }
 
-void configure_page(lv_obj_t *object)
+void configure_page(lv_obj_t *object, int width, int height)
 {
     if (!object) return;
-    lv_obj_set_size(object, kScreenWidth, kScreenHeight);
+    lv_obj_set_size(object, width, height);
     lv_obj_set_pos(object, 0, 0);
     lv_obj_set_style_bg_color(object, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(object, LV_OPA_COVER, LV_PART_MAIN);
@@ -157,6 +157,32 @@ bool is_update_page_label(const NodeIter &page_node)
     if (!page_node.node) return false;
     return page_node->label == "Update" || page_node->label == "Update Launcher" ||
            page_node->label == "System update" || page_node->label == "Check system";
+}
+
+// Keep the OS-info transport private to this page.  The page is the only
+// consumer, so exposing a separate API surface only added an unnecessary
+// coupling between settings modules.
+void request_osinfo(std::list<std::string> arguments,
+                    std::function<void(int, std::string)> callback) noexcept
+{
+    if (!callback) return;
+
+    auto delivered = std::make_shared<std::atomic_bool>(false);
+    auto safe_callback = [callback = std::move(callback), delivered](int code,
+                                                                       std::string data) mutable {
+        bool expected = false;
+        if (!delivered->compare_exchange_strong(expected, true)) return;
+        try {
+            callback(code, std::move(data));
+        } catch (...) {
+        }
+    };
+
+    try {
+        cp0_signal_osinfo_api(std::move(arguments), safe_callback);
+    } catch (...) {
+        safe_callback(-1, "osinfo service unavailable");
+    }
 }
 
 template <typename Owner>
@@ -199,7 +225,7 @@ bool start_osinfo_request(Owner *owner,
     return owner->async_tasks().start(
         [arguments = std::move(arguments), callback = std::move(callback)](auto stop) mutable {
             if (stop && stop->load(std::memory_order_acquire)) return;
-            settings_system::request(std::move(arguments), std::move(callback));
+            request_osinfo(std::move(arguments), std::move(callback));
         });
 }
 
@@ -238,7 +264,8 @@ constexpr std::chrono::seconds kInfoRequestTimeout{15};
 
 void render_system_info(LvSettingSystemInfoPage3 *page);
 
-void stop_system_request_timer(LvSettingSystemInfoPage3::State *state)
+template <typename StateT>
+void stop_system_request_timer(StateT *state)
 {
     if (!state) return;
     stop_timer(state->request_timer);
@@ -575,21 +602,48 @@ void LvSettingSystemInfoPage3::LeaveNextPage()
 void LvSettingSystemInfoPage3::create_ui(lv_obj_t *parent)
 {
     if (!parent || !state_) return;
+    using LayoutMetric = LvSettingSystemInfoPage3::LayoutMetric;
     ComponensObj = lv_obj_create(parent);
     if (!ComponensObj) return;
-    configure_page(ComponensObj);
+    configure_page(ComponensObj,
+                   LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::ScreenW),
+                   LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::ScreenH));
     DComponens::lvgl_bind_event(
         ComponensObj,
         LV_EVENT_KEY,
         nullptr,
         std::bind(&system_info_key_event, this, std::placeholders::_1));
 
-    state_->title = create_label(ComponensObj, 8, 3, kTextWidth, "System", 0x58A6FF, title_font());
-    state_->line_one = create_label(ComponensObj, 8, 31, kTextWidth, "", 0xECECEC, body_font());
-    state_->line_two = create_label(ComponensObj, 8, 53, kTextWidth, "", 0xCCCCCC, body_font());
-    state_->line_three = create_label(ComponensObj, 8, 75, kTextWidth, "", 0xAAAAAA, body_font());
-    state_->status_label = create_label(ComponensObj, 8, 99, kTextWidth, "", 0xF0C850, body_font(), true);
-    state_->hint = create_label(ComponensObj, 8, 133, kTextWidth, "", 0x46DC87, hint_font());
+    state_->title = create_label(ComponensObj,
+                                 LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                 LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TitleY),
+                                 LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                 "System", 0x58A6FF, title_font());
+    state_->line_one = create_label(ComponensObj,
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::LineOneY),
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                    "", 0xECECEC, body_font());
+    state_->line_two = create_label(ComponensObj,
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::LineTwoY),
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                    "", 0xCCCCCC, body_font());
+    state_->line_three = create_label(ComponensObj,
+                                      LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                      LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::LineThreeY),
+                                      LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                      "", 0xAAAAAA, body_font());
+    state_->status_label = create_label(ComponensObj,
+                                        LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                        LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::StatusY),
+                                        LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                        "", 0xF0C850, body_font(), true);
+    state_->hint = create_label(ComponensObj,
+                                LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::HintY),
+                                LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                "", 0x46DC87, hint_font());
     refresh_system_info(this);
 }
 
@@ -610,7 +664,7 @@ struct LvSettingUpdatePage3::State
     std::string candidate_version;
     std::string candidate_commit;
     std::string status = "Press ENTER to check for updates";
-    int progress = settings_system::UpdateStatusInfo::kUnknownProgress;
+    int progress = static_cast<int>(settings_system::UpdateStatusInfo::Progress::Unknown);
     settings_system::UpdatePhase phase = settings_system::UpdatePhase::Idle;
     std::chrono::steady_clock::time_point deadline;
     lv_timer_t *poll_timer = nullptr;
@@ -653,7 +707,7 @@ bool is_update_progress_state(const std::string &state)
 
 int stage_progress(const settings_system::UpdateStatusInfo &info)
 {
-    if (info.progress != settings_system::UpdateStatusInfo::kUnknownProgress)
+    if (info.progress != static_cast<int>(settings_system::UpdateStatusInfo::Progress::Unknown))
         return info.progress;
     if (info.stage == "checking") return 10;
     if (info.stage == "downloading") return 25;
@@ -677,7 +731,8 @@ std::string progress_status(const settings_system::UpdateStatusInfo &info)
     return "Working...";
 }
 
-void clear_dialog_state(LvSettingUpdatePage3::State *state)
+template <typename StateT>
+void clear_dialog_state(StateT *state)
 {
     if (!state) return;
     state->dialog = nullptr;
@@ -699,17 +754,22 @@ void close_update_dialog(LvSettingUpdatePage3 *page)
 void style_dialog(lv_obj_t *dialog)
 {
     if (!dialog) return;
-    lv_obj_set_size(dialog, 296, 132);
+    lv_obj_set_size(dialog,
+                    LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::DialogW),
+                    LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::DialogH));
     lv_obj_center(dialog);
-    lv_obj_set_style_radius(dialog, 4, LV_PART_MAIN);
-    lv_obj_set_style_border_width(dialog, 1, LV_PART_MAIN);
+    lv_obj_set_style_radius(
+        dialog, LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::DialogRadius), LV_PART_MAIN);
+    lv_obj_set_style_border_width(
+        dialog, LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::DialogBorderWidth), LV_PART_MAIN);
     lv_obj_set_style_border_color(dialog, lv_color_hex(0x58A6FF), LV_PART_MAIN);
     lv_obj_set_style_bg_color(dialog, lv_color_hex(0x171717), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(dialog, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
 }
 
-void render_dialog_selection(LvSettingUpdatePage3::State *state)
+template <typename StateT>
+void render_dialog_selection(StateT *state)
 {
     if (!state || !state->update_button || !state->skip_button) return;
     const auto style_button = [](lv_obj_t *button, bool selected) {
@@ -767,7 +827,8 @@ void show_update_progress(LvSettingUpdatePage3 *page)
     lv_obj_t *content = lv_msgbox_get_content(state->dialog);
     if (!content) return;
     lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(content, 8, LV_PART_MAIN);
+    lv_obj_set_style_pad_row(
+        content, LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::ContentPadRow), LV_PART_MAIN);
     state->progress_label = lv_label_create(content);
     if (state->progress_label) {
         lv_obj_set_width(state->progress_label, lv_pct(100));
@@ -776,7 +837,10 @@ void show_update_progress(LvSettingUpdatePage3 *page)
     }
     state->progress_bar = lv_bar_create(content);
     if (state->progress_bar) {
-        lv_obj_set_size(state->progress_bar, lv_pct(100), 10);
+        lv_obj_set_size(
+            state->progress_bar,
+            lv_pct(100),
+            LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::ProgressBarH));
         lv_bar_set_range(state->progress_bar, 0, 100);
         lv_bar_set_value(state->progress_bar, std::max(0, state->progress), LV_ANIM_OFF);
         lv_obj_set_style_bg_color(
@@ -821,11 +885,12 @@ void render_update_page(LvSettingUpdatePage3 *page)
 void schedule_job_cancel(std::string job_id)
 {
     if (job_id.empty()) return;
-    settings_system::request(
+    request_osinfo(
         {"UpdateJobCancel", std::move(job_id)}, [](int, std::string) {});
 }
 
-void stop_update_poll(LvSettingUpdatePage3::State *state)
+template <typename StateT>
+void stop_update_poll(StateT *state)
 {
     if (!state) return;
     stop_timer(state->poll_timer);
@@ -987,7 +1052,8 @@ void start_update(LvSettingUpdatePage3 *page, bool check_only = false)
     state->phase = settings_system::UpdatePhase::Starting;
     state->status = check_only ? "Starting update check..." : "Starting APPLaunch update...";
     state->deadline = std::chrono::steady_clock::now() + kUpdateTimeout;
-    state->poll_timer = lv_timer_create(update_poll_timer_cb, kUpdatePollMs, page);
+    state->poll_timer = lv_timer_create(
+        update_poll_timer_cb, static_cast<uint32_t>(TimerInterval::UpdatePollMs), page);
     if (!state->poll_timer) {
         state->request_pending = false;
         finish_update(page, settings_system::UpdatePhase::Failed, -1,
@@ -1031,7 +1097,7 @@ void start_update(LvSettingUpdatePage3 *page, bool check_only = false)
             },
             [](int code, std::string payload) {
                 if (code != 0 || payload.empty()) return;
-                settings_system::request(
+                request_osinfo(
                     {"UpdateJobCancel", std::move(payload)},
                     [](int, std::string) {});
             })) {
@@ -1185,23 +1251,58 @@ void LvSettingUpdatePage3::LeaveNextPage()
 void LvSettingUpdatePage3::create_ui(lv_obj_t *parent)
 {
     if (!parent || !state_) return;
+    using LayoutMetric = LvSettingUpdatePage3::LayoutMetric;
     ComponensObj = lv_obj_create(parent);
     if (!ComponensObj) return;
-    configure_page(ComponensObj);
+    configure_page(ComponensObj,
+                   LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::ScreenW),
+                   LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::ScreenH));
     DComponens::lvgl_bind_event(
         ComponensObj,
         LV_EVENT_KEY,
         nullptr,
         std::bind(&update_key_event, this, std::placeholders::_1));
 
-    state_->title = create_label(ComponensObj, 8, 2, kTextWidth, "APPLaunch", 0x58A6FF, title_font());
-    state_->device = create_label(ComponensObj, 8, 22, kTextWidth, "", 0xECECEC, body_font());
-    state_->lvgl = create_label(ComponensObj, 8, 39, kTextWidth, "", 0xDADADA, body_font());
-    state_->version = create_label(ComponensObj, 8, 56, kTextWidth, "", 0xCCCCCC, body_font());
-    state_->build = create_label(ComponensObj, 8, 73, kTextWidth, "", 0xBBBBBB, body_font());
-    state_->commit = create_label(ComponensObj, 8, 90, kTextWidth, "", 0xAAAAAA, body_font());
-    state_->status_label = create_label(ComponensObj, 8, 108, kTextWidth, "", 0xF0C850, body_font(), true);
-    state_->hint = create_label(ComponensObj, 8, 133, kTextWidth, "", 0x46DC87, hint_font());
+    state_->title = create_label(ComponensObj,
+                                 LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                 LvSettingUpdatePage3::metric(LayoutMetric::TitleY),
+                                 LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                 "APPLaunch", 0x58A6FF, title_font());
+    state_->device = create_label(ComponensObj,
+                                  LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                  LvSettingUpdatePage3::metric(LayoutMetric::DeviceY),
+                                  LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                  "", 0xECECEC, body_font());
+    state_->lvgl = create_label(ComponensObj,
+                                LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                LvSettingUpdatePage3::metric(LayoutMetric::LvglY),
+                                LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                "", 0xDADADA, body_font());
+    state_->version = create_label(ComponensObj,
+                                   LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                   LvSettingUpdatePage3::metric(LayoutMetric::VersionY),
+                                   LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                   "", 0xCCCCCC, body_font());
+    state_->build = create_label(ComponensObj,
+                                 LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                 LvSettingUpdatePage3::metric(LayoutMetric::BuildY),
+                                 LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                 "", 0xBBBBBB, body_font());
+    state_->commit = create_label(ComponensObj,
+                                  LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                  LvSettingUpdatePage3::metric(LayoutMetric::CommitY),
+                                  LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                  "", 0xAAAAAA, body_font());
+    state_->status_label = create_label(ComponensObj,
+                                        LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                        LvSettingUpdatePage3::metric(LayoutMetric::StatusY),
+                                        LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                        "", 0xF0C850, body_font(), true);
+    state_->hint = create_label(ComponensObj,
+                                LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                LvSettingUpdatePage3::metric(LayoutMetric::HintY),
+                                LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                "", 0x46DC87, hint_font());
     render_update_page(this);
 }
 

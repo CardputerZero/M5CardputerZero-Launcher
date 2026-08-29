@@ -1,4 +1,4 @@
-#include "settings_t12b_boot_action_policy.hpp"
+#include "settings_boot_action_policy.hpp"
 
 namespace settings_t12b::boot_actions {
 namespace {

@@ -32,7 +32,4 @@ std::vector<AppEntry> configurable_entries(const Descriptor *entries,
     return result;
 }
 
-bool state_after_write(bool previous, bool requested, bool succeeded) noexcept;
-bool should_notify_registry(bool succeeded) noexcept;
-
 } // namespace settings_t12b::launcher

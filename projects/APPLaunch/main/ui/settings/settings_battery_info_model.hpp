@@ -23,14 +23,19 @@ enum class SettingsBatteryReadState {
 
 class SettingsBatteryInfoModel {
 public:
-    static constexpr std::size_t kLabelCount = 6;
+    enum class LabelMetric : std::size_t {
+        Count = 6,
+    };
 
     bool update(int result_code, const std::string &response);
     void set_status(const std::string &status);
     void invalidate(const std::string &reason = "Battery unavailable");
 
     const SettingsBatterySnapshot &snapshot() const { return snapshot_; }
-    const std::array<std::string, kLabelCount> &labels() const { return labels_; }
+    const std::array<std::string, static_cast<std::size_t>(LabelMetric::Count)> &labels() const
+    {
+        return labels_;
+    }
     SettingsBatteryReadState state() const { return state_; }
     bool valid() const { return state_ == SettingsBatteryReadState::Valid; }
     const std::string &status_text() const { return status_text_; }
@@ -44,7 +49,7 @@ private:
     SettingsBatterySnapshot snapshot_;
     SettingsBatteryReadState state_ = SettingsBatteryReadState::Invalid;
     std::string status_text_ = "Battery unavailable";
-    std::array<std::string, kLabelCount> labels_ = {
+    std::array<std::string, static_cast<std::size_t>(LabelMetric::Count)> labels_ = {
         "Battery: --%",
         "Temp: --C",
         "Current: --mA",

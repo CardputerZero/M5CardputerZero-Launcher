@@ -97,13 +97,11 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
 "$build_dir/test_setup_value_policy"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$settings_ui_root" \
-    "$test_root/test_settings_t12b_models.cpp" \
-    "$settings_ui_root/settings_t12b_about_help_model.cpp" \
-    "$settings_ui_root/settings_t12b_boot_action_policy.cpp" \
-    "$settings_ui_root/settings_t12b_extport_model.cpp" \
-    "$settings_ui_root/settings_t12b_launcher_model.cpp" \
-    -o "$build_dir/test_settings_t12b_models"
-"$build_dir/test_settings_t12b_models"
+    "$test_root/test_settings_models.cpp" \
+    "$settings_ui_root/settings_about_help_model.cpp" \
+    "$settings_ui_root/settings_boot_action_policy.cpp" \
+    -o "$build_dir/test_settings_models"
+"$build_dir/test_settings_models"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$settings_ui_root" \
     "$test_root/test_settings_battery_info_model.cpp" \
@@ -130,13 +128,11 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -pthread \
     -I"$settings_ui_root" \
     -I"$test_root/../../../ext_components/cp0_lvgl/include" \
     -I"$test_root/../../../SDK/github_source/eventpp/include" \
-    "$test_root/test_settings_t12b_adapter.cpp" \
-    "$settings_ui_root/settings_t12b_adapter.cpp" \
-    "$settings_ui_root/settings_t12b_boot_action_policy.cpp" \
-    "$settings_ui_root/settings_t12b_extport_model.cpp" \
-    "$settings_ui_root/settings_t12b_launcher_model.cpp" \
-    -o "$build_dir/test_settings_t12b_adapter"
-"$build_dir/test_settings_t12b_adapter"
+    "$test_root/test_settings_adapter.cpp" \
+    "$settings_ui_root/settings_adapter.cpp" \
+    "$settings_ui_root/settings_boot_action_policy.cpp" \
+    -o "$build_dir/test_settings_adapter"
+"$build_dir/test_settings_adapter"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$test_root/test_screensaver_model.cpp" \
     "$test_root/../main/ui/model/screensaver_model.cpp" \
