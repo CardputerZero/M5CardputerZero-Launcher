@@ -1,7 +1,9 @@
 #include "settings_system_model.hpp"
 
 #include <cerrno>
+#include <cctype>
 #include <cstddef>
+#include <cstdlib>
 #include <sstream>
 #include <vector>
 
@@ -38,6 +40,171 @@ bool split_strict(const std::string &payload,
 std::string normalized_field(const std::string &value)
 {
     return value.empty() ? kUnavailable : value;
+}
+
+std::string trim_copy(const std::string &value)
+{
+    std::size_t first = 0;
+    while (first < value.size() &&
+           std::isspace(static_cast<unsigned char>(value[first])))
+        ++first;
+    std::size_t last = value.size();
+    while (last > first &&
+           std::isspace(static_cast<unsigned char>(value[last - 1])))
+        --last;
+    return value.substr(first, last - first);
+}
+
+std::string lowercase_ascii(std::string value)
+{
+    for (char &character : value)
+        character = static_cast<char>(
+            std::tolower(static_cast<unsigned char>(character)));
+    return value;
+}
+
+bool parse_progress(const std::string &text, int &progress)
+{
+    std::string value = trim_copy(text);
+    if (!value.empty() && value.back() == '%') {
+        value.pop_back();
+        value = trim_copy(value);
+    }
+    if (value.empty()) return false;
+
+    errno = 0;
+    char *end = nullptr;
+    const long parsed = std::strtol(value.c_str(), &end, 10);
+    if (errno == ERANGE || end == value.c_str() || *end != '\0') return false;
+    if (parsed < 0) progress = 0;
+    else if (parsed > 100) progress = 100;
+    else progress = static_cast<int>(parsed);
+    return true;
+}
+
+bool parse_boolean(const std::string &text, bool &value)
+{
+    const std::string normalized = lowercase_ascii(trim_copy(text));
+    if (normalized == "1" || normalized == "true" || normalized == "yes") {
+        value = true;
+        return true;
+    }
+    if (normalized == "0" || normalized == "false" || normalized == "no") {
+        value = false;
+        return true;
+    }
+    return false;
+}
+
+bool is_progress_stage(const std::string &stage)
+{
+    return stage == "checking" || stage == "downloading" ||
+           stage == "verifying" || stage == "repairing" ||
+           stage == "installing" || stage == "restarting" ||
+           stage == "recovering";
+}
+
+void apply_update_token(const std::string &raw_token, UpdateStatusInfo &result)
+{
+    const std::string token = trim_copy(raw_token);
+    if (token.empty()) return;
+
+    const std::size_t separator = token.find('=');
+    if (separator == std::string::npos) {
+        const std::string marker = lowercase_ascii(token);
+        if (marker == "update-available") {
+            result.availability_known = true;
+            result.available = true;
+        } else if (marker == "up-to-date" || marker == "no-update") {
+            result.availability_known = true;
+            result.available = false;
+        }
+        return;
+    }
+
+    const std::string key = lowercase_ascii(trim_copy(token.substr(0, separator)));
+    const std::string value = trim_copy(token.substr(separator + 1));
+    if (key == "version") result.version = value;
+    else if (key == "commit") result.commit = value;
+    else if (key == "stage" && !value.empty()) result.stage = lowercase_ascii(value);
+    else if (key == "progress") {
+        int progress = -1;
+        result.progress = parse_progress(value, progress) ? progress : -1;
+    } else if (key == "available") {
+        bool available = false;
+        if (parse_boolean(value, available)) {
+            result.availability_known = true;
+            result.available = available;
+        }
+    }
+}
+
+void apply_update_record(const std::string &raw_record, UpdateStatusInfo &result)
+{
+    std::string record = trim_copy(raw_record);
+    if (record.empty()) return;
+    for (char &character : record)
+        if (character == '\n' || character == '\r') character = '|';
+
+    const std::size_t metadata = record.find('|');
+    const std::string head = trim_copy(record.substr(0, metadata));
+    const std::string normalized_head = lowercase_ascii(head);
+    bool head_consumed = false;
+
+    if (normalized_head.rfind("succeeded:", 0) == 0 || normalized_head == "succeeded") {
+        result.terminal = true;
+        result.stage = "succeeded";
+        head_consumed = true;
+        const std::size_t separator = head.find(':');
+        const std::string detail = separator == std::string::npos
+            ? std::string() : trim_copy(head.substr(separator + 1));
+        const std::string normalized_detail = lowercase_ascii(detail);
+        if (normalized_detail == "update-available") {
+            result.availability_known = true;
+            result.available = true;
+        } else if (normalized_detail == "up-to-date" || normalized_detail == "no-update") {
+            result.availability_known = true;
+            result.available = false;
+        } else if (!detail.empty()) {
+            // Legacy `succeeded:<version>` means the installed launcher is current.
+            result.availability_known = true;
+            result.available = false;
+            result.version = detail;
+        }
+    } else if (normalized_head.rfind("failed:", 0) == 0 || normalized_head == "failed") {
+        result.terminal = true;
+        result.stage = "failed";
+        head_consumed = true;
+    } else if (normalized_head == "cancelled" || normalized_head == "canceled" ||
+               normalized_head == "timeout" || normalized_head == "timed-out") {
+        result.terminal = true;
+        result.stage = normalized_head;
+        head_consumed = true;
+    } else {
+        const std::size_t separator = normalized_head.find(':');
+        const std::string stage = normalized_head.substr(0, separator);
+        if (is_progress_stage(stage)) {
+            result.stage = stage;
+            head_consumed = true;
+            if (separator != std::string::npos) {
+                int progress = -1;
+                result.progress = parse_progress(head.substr(separator + 1), progress)
+                    ? progress : -1;
+            }
+        } else if (normalized_head == "running") {
+            result.stage = "running";
+            head_consumed = true;
+        }
+    }
+
+    if (!head_consumed) apply_update_token(head, result);
+    std::size_t start = metadata == std::string::npos ? record.size() : metadata + 1;
+    while (start < record.size()) {
+        const std::size_t end = record.find('|', start);
+        apply_update_token(record.substr(start, end - start), result);
+        if (end == std::string::npos) break;
+        start = end + 1;
+    }
 }
 
 std::string update_failure_label(UpdateAction action,
@@ -78,6 +245,15 @@ bool parse_account_info_strict(const std::string &payload, AccountInfo &result)
     if (!split_strict(payload, 2, fields)) return false;
     result = {normalized_field(fields[0]), normalized_field(fields[1])};
     return true;
+}
+
+UpdateStatusInfo parse_update_status(const std::string &state,
+                                     const std::string &payload)
+{
+    UpdateStatusInfo result;
+    apply_update_record(state, result);
+    apply_update_record(payload, result);
+    return result;
 }
 
 std::string version_label(const std::string &version)

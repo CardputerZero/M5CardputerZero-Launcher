@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
+#include <cctype>
 #include <cstdlib>
 #include <cstring>
 #include <functional>
@@ -54,6 +55,16 @@ public:
     void api_call(arg_t arg, callback_t callback)
     {
         const std::string command = arg.empty() ? std::string() : arg.front();
+        if (command == "UpdateLauncherCheckStart") {
+            auto progress = std::make_shared<std::atomic<int>>(0);
+            const std::string id = jobs_.start(
+                [progress](const std::atomic<bool> &cancel) {
+                    return check_launcher(cancel, *progress);
+                },
+                [progress] { return "checking:" + std::to_string(progress->load()); });
+            cp0::callback::invoke(callback, 0, id);
+            return;
+        }
         if (command == "AptUpdateStart" || command == "UpdateLauncherStart") {
             const bool launcher = command == "UpdateLauncherStart";
             std::string id;
@@ -80,7 +91,7 @@ public:
             return;
         }
         if (command == "UpdateLauncherState") {
-            std::ifstream input("/var/lib/applaunch-updater/status");
+            std::ifstream input(update_state_root() + "/status");
             std::string status;
             std::getline(input, status);
             cp0::callback::invoke(callback, input.bad() || status.empty() ? -1 : 0, status);
@@ -106,19 +117,54 @@ private:
     cp0::osinfo::Operations operations_;
     cp0::update::Jobs jobs_;
 
-    static std::string launcher_progress()
+    static std::string update_state_root()
     {
         const char *configured_root = std::getenv("APPLAUNCH_UPDATE_STATE_DIR");
-        const std::string root = configured_root && configured_root[0]
+        return configured_root && configured_root[0]
             ? configured_root : "/var/lib/applaunch-updater";
-        std::ifstream input(root + "/status");
+    }
+
+    static std::string update_release_url()
+    {
+        const char *configured_url = std::getenv("APPLAUNCH_UPDATE_RELEASE_URL");
+        return configured_url && configured_url[0]
+            ? configured_url
+            : "https://github.com/CardputerZero/launcher/releases/download/launcher-latest";
+    }
+
+    static std::string launcher_progress()
+    {
+        std::ifstream input(update_state_root() + "/status");
         std::string state;
         if (!std::getline(input, state)) return {};
         if (state == "downloading" || state == "repairing" ||
             state == "installing" || state == "restarting" ||
             state.rfind("recovering:", 0) == 0)
             return state;
+        for (const char *stage : {"downloading", "repairing", "installing", "restarting"}) {
+            const std::string prefix = std::string(stage) + ":";
+            if (state.rfind(prefix, 0) != 0) continue;
+            const std::string value = state.substr(prefix.size());
+            if (value.empty() || value.size() > 3 ||
+                !std::all_of(value.begin(), value.end(), [](unsigned char c) { return std::isdigit(c); }))
+                return {};
+            const int percent = std::atoi(value.c_str());
+            return percent <= 100 ? state : std::string();
+        }
         return {};
+    }
+
+    static cp0::update::Result check_launcher(const std::atomic<bool> &cancel,
+                                               std::atomic<int> &progress)
+    {
+        auto capture = [&cancel](const std::vector<std::string> &arguments,
+                                 std::string &output) {
+            return cp0_process_commands::capture_argv_with_timeout(
+                arguments, output, 120000, &cancel);
+        };
+        return cp0::update::check_launcher(
+            capture, update_release_url(),
+            [&progress](int value) { progress.store(value); });
     }
 
     static cp0::update::Result apt_update(const std::atomic<bool> &cancel)
@@ -154,7 +200,25 @@ private:
         };
         const cp0::update::Result apt_result = apt_update(cancel);
         if (apt_result.code != 0) return apt_result;
-        return cp0::update::launcher(argv, capture);
+        cp0::update::Result result = cp0::update::launcher(argv, capture);
+        if (result.code != -ECANCELED) return result;
+
+        std::string ignored;
+        const int stop_code = cp0_process_commands::capture_argv_with_timeout(
+            {"systemctl", "stop", "applaunch-updater.service"},
+            ignored, 330000, nullptr);
+        if (stop_code != 0) return {stop_code, "cancel-stop"};
+
+        std::string state;
+        const int state_code = cp0_process_commands::capture_argv_with_timeout(
+            {"cat", update_state_root() + "/status"}, state, 30000, nullptr);
+        state = cp0::update::trim(std::move(state));
+        if (state_code == 0 && state == "cancelled") return {-ECANCELED, "cancelled"};
+        if (state_code == 0 && state.rfind("succeeded:", 0) == 0)
+            return {0, state.substr(10)};
+        if (state_code == 0 && state.rfind("failed:", 0) == 0)
+            return {-1, state.substr(7)};
+        return {-EIO, "cancel-state"};
     }
 
     static uint32_t random_u32() noexcept
