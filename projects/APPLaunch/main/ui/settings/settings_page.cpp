@@ -471,8 +471,11 @@ void UISettingTreePage::create_page_detail()
     }
 
     {
+        NodeIter about = mode_tree.append_child(root, SettingEntry{"About", roller_page_factory});
         mode_tree.append_child(
-            root, SettingEntry{"About", settings_t12b_about_page_factory, PageType::FullCustom});
+            about, SettingEntry{"OS", settings_system_info_page3_factory, PageType::FullCustom});
+        mode_tree.append_child(
+            about, SettingEntry{"APPLaunch", settings_update_page_factory, PageType::FullCustom});
     }
 
     {
@@ -515,10 +518,6 @@ void UISettingTreePage::create_page_detail()
 
     {
         mode_tree.append_child(root, SettingEntry{"Account", settings_account_page_factory, PageType::FullCustom});
-    }
-
-    {
-        mode_tree.append_child(root, SettingEntry{"Update", settings_update_page_factory, PageType::FullCustom});
     }
 
     {

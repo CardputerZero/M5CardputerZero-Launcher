@@ -5,6 +5,7 @@ settings_ui_root=$(CDPATH= cd -- "$test_root/../main/ui/settings" && pwd)
 python3 "$test_root/test_store_cache_sync.py"
 python3 "$test_root/test_carousel_border_contract.py"
 python3 "$test_root/test_external_framebuffer_ownership.py"
+python3 "$test_root/test_settings_input_font_contract.py"
 PYTHONPATH="$test_root/..${PYTHONPATH:+:$PYTHONPATH}" \
     python3 "$test_root/test_config_default_file.py"
 build_dir="${TMPDIR:-/tmp}/applaunch-tests"
@@ -109,6 +110,12 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$settings_ui_root/settings_page_battery_info_model.cpp" \
     -o "$build_dir/test_settings_battery_info_model"
 "$build_dir/test_settings_battery_info_model"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$settings_ui_root" \
+    "$test_root/test_settings_about_info_model.cpp" \
+    "$settings_ui_root/settings_about_info_model.cpp" \
+    -o "$build_dir/test_settings_about_info_model"
+"$build_dir/test_settings_about_info_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$settings_ui_root" \
     "$test_root/test_settings_system_update_model.cpp" \

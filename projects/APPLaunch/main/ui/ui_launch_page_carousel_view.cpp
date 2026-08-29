@@ -8,7 +8,6 @@
 
 #include "animation/launcher_carousel_layout.h"
 #include "launcher_platform.hpp"
-#include "sample_log.h"
 
 #include <algorithm>
 #include <string>
@@ -55,7 +54,6 @@ lv_obj_t *create_carousel_card(lv_obj_t *parent, const Slot &slot,
     if (slot.hidden)
         lv_obj_add_flag(card, LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_style_radius(card, radius, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_clip_corner(card, true, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_color(card, lv_color_hex(0xFFFFFF), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_bg_opa(card, LV_OPA_TRANSP, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(card, lv_color_hex(border_color), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -131,22 +129,10 @@ void UILaunchPage::set_carousel_element_clickable(size_t element, bool clickable
         lv_obj_clear_flag(carousel_elements_[element], LV_OBJ_FLAG_CLICKABLE);
 }
 
-void UILaunchPage::set_panel_icon(lv_obj_t *panel, const char *src)
+void UILaunchPage::set_panel_icon(lv_obj_t *panel, const std::string &src)
 {
     if (!panel)
         return;
-
-    const char *icon_src = src ? src : "";
-    if (icon_src[0] == '\0') {
-        SLOGW("[LAUNCHER] set panel icon with empty path");
-    } else {
-        bool exists = false;
-        cp0_signal_filesystem_api({"Exists", icon_src}, [&](int code, std::string data) {
-            exists = code == 0 && data == "1";
-        });
-        if (!exists)
-            SLOGW("[LAUNCHER] set panel icon missing/unreadable: %s", icon_src);
-    }
 
     lv_obj_set_style_pad_all(panel, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_t *image = lv_obj_get_child(panel, 0);
@@ -157,16 +143,16 @@ void UILaunchPage::set_panel_icon(lv_obj_t *panel, const char *src)
         lv_obj_set_align(image, LV_ALIGN_CENTER);
         lv_image_set_inner_align(image, LV_IMAGE_ALIGN_STRETCH);
     }
-    lv_image_set_src(image, icon_src);
+    lv_image_set_src(image, home_icon_pool_.find(src));
 }
 
-void UILaunchPage::update_carousel_slot(size_t slot, const char *title, const char *icon)
+void UILaunchPage::update_carousel_slot(size_t slot, const char *title, const std::string &icon)
 {
     update_carousel_item(panel(slot), label(slot), title, icon);
 }
 
 void UILaunchPage::update_carousel_item(lv_obj_t *panel, lv_obj_t *label,
-                                        const char *title, const char *icon)
+                                        const char *title, const std::string &icon)
 {
     if (label)
         lv_label_set_text(label, title ? title : "");

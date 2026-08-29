@@ -1,12 +1,15 @@
 import os
+from pathlib import Path
 
 Import("env")
 with open(env["PROJECT_TOOL_S"]) as f:
     exec(f.read())
 
+applaunch_lvgl_dir = ADir("../../APPLaunch/main/lvgl")
+
 SRCS = Glob("src/*.c*")
 SRCS += append_srcs_dir(ADir("ui"))
-INCLUDE = [ADir("."), ADir("ui")]
+INCLUDE = [ADir("."), ADir("ui"), applaunch_lvgl_dir]
 PRIVATE_INCLUDE = []
 REQUIREMENTS = ["cp0_lvgl", "lvgl_component", "pthread", "crypt", "Sigslot", "eventpp", "Miniaudio"]
 STATIC_LIB = []
@@ -16,6 +19,34 @@ DEFINITIONS_PRIVATE = []
 LDFLAGS = []
 LINK_SEARCH_PATH = []
 STATIC_FILES = []
+
+lvgl_component = list(filter(
+    lambda component: component["target"] == "lvgl_component",
+    env["COMPONENTS"],
+))[0]
+toolchain_sysroot = os.environ.get("CONFIG_TOOLCHAIN_SYSROOT", "") or "/"
+
+# Keep the same FreeType backend as APPLaunch. Normal grayscale bitmap
+# rendering retains the public LVGL ABI; APPLaunch additionally supplies its
+# monochrome bitmap mode.
+local_lvgl_override_srcs = Glob("../../APPLaunch/main/lvgl/lv_freetype*.c")
+local_lvgl_override_names = {Path(str(src)).name for src in local_lvgl_override_srcs}
+lvgl_component["SRCS"] = [
+    src for src in lvgl_component["SRCS"]
+    if Path(str(src)).name not in local_lvgl_override_names
+]
+lvgl_component["SRCS"] += local_lvgl_override_srcs
+lvgl_component["PRIVATE_INCLUDE"] = [
+    applaunch_lvgl_dir,
+    ADir("../../../SDK/github_source/lvgl/lvgl_9_5/lvgl/src/libs/freetype"),
+] + lvgl_component["PRIVATE_INCLUDE"]
+
+if "CONFIG_V9_5_LV_USE_FREETYPE" in os.environ:
+    lvgl_component["REQUIREMENTS"] += ["freetype"]
+    lvgl_component["INCLUDE"] += [
+        os.path.join(toolchain_sysroot, "usr", "include", "freetype2"),
+        os.path.join(toolchain_sysroot, "usr", "include", "libpng16"),
+    ]
 
 env["COMPONENTS"].append({
     "target": env["PROJECT_NAME"],

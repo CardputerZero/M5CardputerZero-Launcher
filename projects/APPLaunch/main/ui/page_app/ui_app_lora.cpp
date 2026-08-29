@@ -7,6 +7,7 @@
 #define APP_PAGE_IMPLEMENTATION_UNIT
 #include "ui_app_lora.hpp"
 
+#include <atomic>
 #include <exception>
 #include <mutex>
 #include <thread>
@@ -14,6 +15,7 @@
 namespace lora_app_detail {
 
 struct LoraInitializationState {
+    std::atomic<bool> stop_requested{false};
     std::mutex mutex;
     bool done        = false;
     int init_code    = -1;
@@ -138,10 +140,19 @@ void run_lora_initialization(const std::shared_ptr<lora_app_detail::LoraInitiali
     cp0_lora_info_t info{};
 
     try {
-        init_code = lora_app_detail::call_lora_api({"Init"});
-        info_code = lora_app_detail::call_lora_api({"Info"}, &info);
-        if (init_code == 0 && info_code == 0 && info.hw_ready)
-            receive_code = lora_app_detail::call_lora_api({"StartReceive"});
+        const auto cancelled = [&] { return state->stop_requested.load(std::memory_order_acquire); };
+        if (!cancelled()) {
+            init_code = lora_app_detail::call_lora_api({"Init"});
+            if (!cancelled()) {
+                info_code = lora_app_detail::call_lora_api({"Info"}, &info);
+                if (!cancelled() && init_code == 0 && info_code == 0 && info.hw_ready)
+                    receive_code = lora_app_detail::call_lora_api({"StartReceive"});
+            }
+        }
+        if (cancelled()) {
+            init_code = -1;
+            std::snprintf(info.diag, sizeof(info.diag), "LoRa initialization cancelled");
+        }
     } catch (...) {
         init_code = -1;
     }
@@ -182,9 +193,11 @@ UILoraPage::~UILoraPage()
     cancel_message_title_animation();
     app_active_ = false;
     poll_timer_.stop();
-    // Reap the async init thread before the page is gone. Joining here (rather
-    // than detaching) guarantees the hardware init on the global backend state
-    // is fully finished before the next page instance can touch it.
+    // Tell the worker to stop before reaping it. The worker only owns the
+    // shared state, so it can safely observe this flag while the page is being
+    // destroyed and will not start another hardware phase after cancellation.
+    if (initialization_state_) initialization_state_->stop_requested.store(true, std::memory_order_release);
+    cp0_lora_request_stop();
     if (init_thread_.joinable()) init_thread_.join();
     detach_delete_callbacks();
 }
@@ -219,7 +232,9 @@ void UILoraPage::start_lora_initialization()
     // A previous attempt (successful or failed) must be fully reaped before a
     // new one starts, otherwise two init threads could race on the global
     // backend hardware state.
+    if (initialization_state_) initialization_state_->stop_requested.store(true, std::memory_order_release);
     if (init_thread_.joinable()) init_thread_.join();
+    cp0_lora_clear_stop();
 
     initialization_pending_ = true;
     initialization_state_   = std::make_shared<lora_app_detail::LoraInitializationState>();

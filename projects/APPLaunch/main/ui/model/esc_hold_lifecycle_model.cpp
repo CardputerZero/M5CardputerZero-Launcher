@@ -29,10 +29,16 @@ void EscHoldLifecycleModel::clear_hint_ownership()
 }
 
 EscHoldPollDecision EscHoldLifecycleModel::poll(uint32_t now, bool hardware_key_down,
-                                               bool force_callback_available)
+                                               bool force_callback_available,
+                                               bool return_home_enabled)
 {
     EscHoldPollDecision decision;
     if (!holding_) {
+        decision.pause_timer = true;
+        return decision;
+    }
+    if (!return_home_enabled) {
+        decision.hide_hint = release();
         decision.pause_timer = true;
         return decision;
     }

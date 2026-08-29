@@ -28,6 +28,8 @@ std::string runtime_font_path()
 {
     const char *env_path = std::getenv("ZCLAW_FONT");
     const std::vector<std::string> candidates = {
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
         cp0_file_path("share/font/DejaVuSans.ttf"),
         cp0_file_path("share/font/DejaVuSerif.ttf"),
         "./APPLaunch/share/font/DejaVuSans.ttf",
@@ -40,8 +42,6 @@ std::string runtime_font_path()
         "../dist/APPLaunch/share/font/DejaVuSerif.ttf",
         "/usr/share/APPLaunch/share/font/DejaVuSans.ttf",
         "/usr/share/APPLaunch/share/font/DejaVuSerif.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
     };
     return zclaw::select_font_path(env_path ? env_path : "", candidates,
                                    file_exists);
@@ -51,6 +51,8 @@ std::string runtime_fallback_font_path()
 {
     const char *env_path = std::getenv("ZCLAW_FALLBACK_FONT");
     const std::vector<std::string> candidates = {
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
         cp0_file_path("share/font/NotoSansCJK-Regular.ttc"),
         cp0_file_path("share/font/NotoSerifCJK-Regular.ttc"),
         "./APPLaunch/share/font/NotoSansCJK-Regular.ttc",
@@ -63,8 +65,6 @@ std::string runtime_fallback_font_path()
         "../dist/APPLaunch/share/font/NotoSerifCJK-Regular.ttc",
         "/usr/share/APPLaunch/share/font/NotoSansCJK-Regular.ttc",
         "/usr/share/APPLaunch/share/font/NotoSerifCJK-Regular.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
     };
     return zclaw::select_font_path(env_path ? env_path : "", candidates,
                                    file_exists);

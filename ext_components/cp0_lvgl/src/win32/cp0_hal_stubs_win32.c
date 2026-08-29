@@ -64,6 +64,9 @@ int cp0_sudo_run_argv_async_ex(const char *const *argv,
 int cp0_sudo_cancel(uint64_t request_id)
 { (void)request_id; return -ENOTSUP; }
 
+void cp0_lora_request_stop(void) {}
+void cp0_lora_clear_stop(void) {}
+
 void hal_audio_init(void) {}
 void hal_audio_play(const char *path) { (void)path; }
 void hal_audio_play_sync(const char *path) { (void)path; }

@@ -173,6 +173,7 @@ void InputDialog::open(const FontManager *fonts)
     lv_obj_set_style_border_width(textarea_, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(textarea_, lv_color_hex(theme::kWhite), LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_font(textarea_, fonts->font_10(), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_letter_space(textarea_, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(textarea_, 8, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     if (!cursor_style_initialized_) {
@@ -180,8 +181,8 @@ void InputDialog::open(const FontManager *fonts)
         lv_style_set_bg_opa(&cursor_style_, LV_OPA_TRANSP);
         lv_style_set_border_color(&cursor_style_, lv_color_hex(theme::kPurple));
         lv_style_set_border_side(&cursor_style_, LV_BORDER_SIDE_LEFT);
-        lv_style_set_border_width(&cursor_style_, 2);
-        lv_style_set_pad_left(&cursor_style_, -4);
+        lv_style_set_border_width(&cursor_style_, 1);
+        lv_style_set_pad_left(&cursor_style_, -1);
         lv_style_set_pad_right(&cursor_style_, 0);
         cursor_style_initialized_ = true;
     }

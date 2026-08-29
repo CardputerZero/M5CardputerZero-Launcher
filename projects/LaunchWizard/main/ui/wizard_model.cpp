@@ -94,10 +94,10 @@ WifiSecurity classify_wifi_security(const std::string &security)
 WifiScanDecision WifiScanRetryPolicy::observe(int error, std::size_t network_count)
 {
     ++attempts_;
-    if (error != 0) return WifiScanDecision::Error;
     if (network_count != 0) return WifiScanDecision::Results;
-    return attempts_ < kWifiMaxAutomaticScans ? WifiScanDecision::Retry
-                                               : WifiScanDecision::Empty;
+    if (attempts_ < kWifiMaxAutomaticScans)
+        return WifiScanDecision::Retry;
+    return error != 0 ? WifiScanDecision::Error : WifiScanDecision::Empty;
 }
 
 bool validate_wifi_credentials(const std::string &ssid,

@@ -134,6 +134,7 @@ UILaunchPage::UILaunchPage(Launch *launch)
 
 UILaunchPage::~UILaunchPage()
 {
+    startup_sound_state_->alive.store(false);
     *carousel_alive_ = false;
     navigation_.cancel_navigation();
     if (carousel_container_) {
@@ -221,6 +222,7 @@ void UILaunchPage::on_root_deleted(lv_event_t *event) noexcept
             return;
         self->stop_startup_delay();
         self->stop_startup_sound_timer();
+        self->startup_sound_state_->alive.store(false);
         *self->carousel_alive_ = false;
         self->carousel_elements_.fill(nullptr);
         self->carousel_container_ = nullptr;
@@ -277,7 +279,7 @@ void UILaunchPage::fill_right_entering_slot(lv_obj_t *panel, lv_obj_t *label)
 
     launch_->select_next_app();
     if (const app *item = launch_->carousel_slot_app(kCardFarRight))
-        update_carousel_item(panel, label, item->Name.c_str(), item->Icon.c_str());
+        update_carousel_item(panel, label, item->Name.c_str(), item->Icon);
 }
 
 void UILaunchPage::fill_left_entering_slot(lv_obj_t *panel, lv_obj_t *label)
@@ -287,7 +289,7 @@ void UILaunchPage::fill_left_entering_slot(lv_obj_t *panel, lv_obj_t *label)
 
     launch_->select_previous_app();
     if (const app *item = launch_->carousel_slot_app(kCardFarLeft))
-        update_carousel_item(panel, label, item->Name.c_str(), item->Icon.c_str());
+        update_carousel_item(panel, label, item->Name.c_str(), item->Icon);
 }
 
 void UILaunchPage::refresh_carousel()
@@ -297,8 +299,20 @@ void UILaunchPage::refresh_carousel()
 
     for (size_t slot = 0; slot < launcher_carousel_layout::kPanelCount; ++slot) {
         if (const app *item = launch_->carousel_slot_app(slot))
-            update_carousel_slot(slot, item->Name.c_str(), item->Icon.c_str());
+            update_carousel_slot(slot, item->Name.c_str(), item->Icon);
     }
+}
+
+void UILaunchPage::reload_home_icons(const std::vector<std::string> &icon_paths)
+{
+    HomeIconBufferPool replacement;
+    replacement.rebuild(icon_paths);
+    home_icon_pool_.swap(replacement);
+
+    // Keep the old pool alive until every image widget no longer references it.
+    for (size_t slot = 0; slot < launcher_carousel_layout::kPanelCount; ++slot)
+        set_panel_icon(panel(slot), {});
+    refresh_carousel();
 }
 
 void UILaunchPage::launch_selected_app()

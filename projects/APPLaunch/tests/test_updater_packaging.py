@@ -29,7 +29,9 @@ def run_update(fail_install: bool = False,
                unhealthy_process: bool = False,
                audit_required: bool = False,
                interrupted_candidate: bool = False,
-               compatible: bool = True) -> tuple[subprocess.CompletedProcess[str], str, str]:
+               compatible: bool = True,
+               cancel_during_download: bool = False,
+               cancel_during_install: bool = False) -> tuple[subprocess.CompletedProcess[str], str, str]:
     with tempfile.TemporaryDirectory() as temp_dir:
         root = Path(temp_dir)
         fake_bin = root / "bin"
@@ -49,7 +51,7 @@ def run_update(fail_install: bool = False,
         (proc / "4242" / "exe").symlink_to(running_executable)
         if interrupted_candidate:
             state.mkdir()
-            (state / "status").write_text("installing\n", encoding="ascii")
+            (state / "status").write_text("installing:85\n", encoding="ascii")
         package = release / "applaunch_arm64.deb"
         package.write_bytes(b"trusted test package")
         digest = hashlib.sha256(package.read_bytes()).hexdigest()
@@ -68,7 +70,13 @@ def run_update(fail_install: bool = False,
             )
         log = root / "commands.log"
 
-        executable(fake_bin / "wget", 'src=$5\ndst=$7\ncp "${src#file://}" "$dst"\n')
+        executable(
+            fake_bin / "wget",
+            'src=$5\ndst=$7\n'
+            'case "$src" in */applaunch_arm64.deb) '
+            '[ "${TEST_CANCEL_DOWNLOAD:-0}" != 1 ] || { kill -TERM "$PPID"; exit 143; };; esac\n'
+            'cp "${src#file://}" "$dst"\n',
+        )
         executable(
             fake_bin / "dpkg-deb",
             'case "$3" in Package) echo applaunch;; Architecture) echo arm64;; '
@@ -89,6 +97,7 @@ def run_update(fail_install: bool = False,
             '[ "${TEST_KEEP_AUDIT_DIRTY:-0}" = 1 ] || rm -f "$TEST_AUDIT_MARKER";; -i) '
             'case "$2" in *rollback.deb) [ "${TEST_FAIL_ROLLBACK:-0}" != 1 ] || exit 43; '
             'rm -f "$TEST_MARKER";; *) [ "${TEST_FAIL_INSTALL:-0}" != 1 ] || exit 42; '
+            '[ "${TEST_CANCEL_INSTALL:-0}" != 1 ] || { kill -TERM "$PPID"; exit 143; }; '
             'touch "$TEST_MARKER";; esac;; esac\n',
         )
         executable(fake_bin / "systemctl", 'echo "systemctl $*" >>"$TEST_LOG"\n')
@@ -119,6 +128,8 @@ def run_update(fail_install: bool = False,
                 "APPLAUNCH_UPDATE_PROC_ROOT": str(proc),
                 "APPLAUNCH_UPDATE_HEALTH_CHECKS": "1",
                 "TEST_UPDATE_ABI": "1" if compatible else "0",
+                "TEST_CANCEL_DOWNLOAD": "1" if cancel_during_download else "0",
+                "TEST_CANCEL_INSTALL": "1" if cancel_during_install else "0",
             }
         )
         if interrupted_candidate:
@@ -191,6 +202,17 @@ assert status == "failed:incompatible"
 assert "dpkg -i" not in commands
 assert "applaunch_arm64.deb" not in commands
 
+cancelled_download, status, commands = run_update(cancel_during_download=True)
+assert cancelled_download.returncode == 0
+assert status == "cancelled"
+assert "dpkg -i" not in commands
+
+cancelled_install, status, commands = run_update(cancel_during_install=True)
+assert cancelled_install.returncode == 0
+assert status == "cancelled"
+assert "dpkg -i" in commands
+assert "rollback.deb" in commands
+
 old_source_date_epoch = os.environ.get("SOURCE_DATE_EPOCH")
 try:
     os.environ["SOURCE_DATE_EPOCH"] = "1704067200"
@@ -212,7 +234,12 @@ assert "/usr/share/APPLaunch/bin/M5CardputerZero-APPLaunch" in packager._updater
 assert 'mktemp -d "$state_root/self.XXXXXX"' in packager._updater_script_text()
 assert "/run/applaunch-updater" not in packager._updater_script_text()
 assert "TimeoutStartSec=20min" in packager._updater_service_text()
-assert "dpkg -i" not in commands
+assert "TimeoutStopSec=5min" in packager._updater_service_text()
+assert 'action.lookup("unit") == "applaunch-updater.service"' in packager._updater_polkit_text()
+assert 'action.lookup("verb") == "stop"' in packager._updater_polkit_text()
+assert "status downloading:5" in packager._updater_script_text()
+assert "status installing:85" in packager._updater_script_text()
+assert "status restarting:95" in packager._updater_script_text()
 
 workflow = (repo / ".github" / "workflows" / "launcher-build.yml").read_text(
     encoding="utf-8"
@@ -223,9 +250,15 @@ assert "startsWith(github.ref, 'refs/heads/ci/')" not in workflow
 assert workflow.count("tag_name: launcher-latest") == 1
 assert "scripts/build_cardputerzero_release_local.sh" in workflow
 assert "python3 scripts/debian_packager.py --version" not in workflow
+assert "artifacts/applaunch_arm64.deb.update-info" in workflow
+assert "${{ steps.version.outputs.version }}" in workflow
+assert "${GITHUB_SHA:0:12}" in workflow
 
 release_builder = (repo / "scripts" / "build_cardputerzero_release_local.sh").read_text(
     encoding="utf-8"
 )
 assert 'CLEAN_BUILD=${CLEAN_BUILD:-1}' in release_builder
 assert '"$ROOT/projects/$project/main/build"' in release_builder
+assert "applaunch_arm64.deb.update-info" in release_builder
+assert "printf 'format=1\\n'" in release_builder
+assert "printf 'commit=%s\\n'" in release_builder

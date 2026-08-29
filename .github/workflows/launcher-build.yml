@@ -204,6 +204,13 @@ jobs:
         cp "${package}" artifacts/applaunch_arm64.deb
         (cd artifacts && sha256sum applaunch_arm64.deb > applaunch_arm64.deb.sha256)
         printf '1\n' > artifacts/applaunch_arm64.deb.update-abi
+        package_version="$(dpkg-deb -f artifacts/applaunch_arm64.deb Version)"
+        {
+          printf 'format=1\n'
+          printf 'version=%s\n' "${{ steps.version.outputs.version }}"
+          printf 'package_version=%s\n' "${package_version}"
+          printf 'commit=%s\n' "${GITHUB_SHA:0:12}"
+        } > artifacts/applaunch_arm64.deb.update-info
 
     - uses: actions/upload-artifact@v4
       with:
@@ -271,6 +278,7 @@ jobs:
           artifacts/*.deb
           artifacts/*.sha256
           artifacts/*.update-abi
+          artifacts/*.update-info
           artifacts/M5CardputerZero-APPLaunch
 
     - name: Publish launcher update channel
@@ -284,3 +292,4 @@ jobs:
           artifacts/applaunch_arm64.deb
           artifacts/applaunch_arm64.deb.sha256
           artifacts/applaunch_arm64.deb.update-abi
+          artifacts/applaunch_arm64.deb.update-info

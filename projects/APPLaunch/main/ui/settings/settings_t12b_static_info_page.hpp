@@ -1,5 +1,6 @@
 #pragma once
 
+#include "cp0_font_service.hpp"
 #include "settings_t12b_about_help_model.hpp"
 #include "settings_tree_types.hpp"
 
@@ -77,7 +78,10 @@ public:
             y += lv_obj_get_height(label) + 3;
         }
 
-        add_label("ESC: back", 8, 136, 0x8A8A8A, &lv_font_montserrat_10, false);
+        const lv_font_t *hint_font = cp0_fonts().get(
+            "Montserrat-Bold.ttf", 12, LV_FREETYPE_FONT_STYLE_BOLD);
+        add_label("ESC: back", 8, 133, 0x46DC87,
+                  hint_font ? hint_font : &lv_font_montserrat_12, false);
         DComponens::lvgl_bind_event(
             ComponensObj, LV_EVENT_KEY, nullptr,
             [this](lv_event_t *event) { handle_key_event(event); });

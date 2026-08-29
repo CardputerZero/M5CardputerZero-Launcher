@@ -132,6 +132,14 @@ extern "C" void init_lora(void)
     });
 }
 
+extern "C" void cp0_lora_request_stop(void)
+{
+}
+
+extern "C" void cp0_lora_clear_stop(void)
+{
+}
+
 extern "C" void deinit_lora(void) noexcept
 {
     try {

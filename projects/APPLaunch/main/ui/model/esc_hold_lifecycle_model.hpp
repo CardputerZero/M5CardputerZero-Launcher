@@ -23,7 +23,8 @@ public:
     bool cancel();
     void clear_hint_ownership();
     EscHoldPollDecision poll(uint32_t now, bool hardware_key_down,
-                             bool force_callback_available);
+                             bool force_callback_available,
+                             bool return_home_enabled = true);
 
     bool holding() const { return holding_; }
 

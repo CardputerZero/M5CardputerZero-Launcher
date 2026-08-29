@@ -26,6 +26,19 @@ struct AccountInfo
     std::string hostname;
 };
 
+struct UpdateStatusInfo
+{
+    static constexpr int kUnknownProgress = -1;
+
+    bool terminal = false;
+    bool availability_known = false;
+    bool available = false;
+    std::string version;
+    std::string commit;
+    int progress = kUnknownProgress;
+    std::string stage;
+};
+
 enum class UpdateAction
 {
     CheckSystem,
@@ -47,6 +60,8 @@ NetworkInfo parse_network_info(const std::string &payload);
 AccountInfo parse_account_info(const std::string &payload);
 bool parse_network_info_strict(const std::string &payload, NetworkInfo &result);
 bool parse_account_info_strict(const std::string &payload, AccountInfo &result);
+UpdateStatusInfo parse_update_status(const std::string &state,
+                                     const std::string &payload = {});
 
 std::string version_label(const std::string &version);
 std::string build_label(const std::string &date,
@@ -71,6 +86,7 @@ namespace system_page {
 
 using NetworkInfo = settings_system::NetworkInfo;
 using AccountInfo = settings_system::AccountInfo;
+using UpdateStatusInfo = settings_system::UpdateStatusInfo;
 using UpdateAction = settings_system::UpdateAction;
 using UpdatePhase = settings_system::UpdatePhase;
 
@@ -98,6 +114,12 @@ inline bool parse_network_info_strict(const std::string &payload, NetworkInfo &r
 inline bool parse_account_info_strict(const std::string &payload, AccountInfo &result)
 {
     return settings_system::parse_account_info_strict(payload, result);
+}
+
+inline UpdateStatusInfo parse_update_status(const std::string &state,
+                                            const std::string &payload = {})
+{
+    return settings_system::parse_update_status(state, payload);
 }
 
 inline std::string version_label(const std::string &version)

@@ -374,6 +374,7 @@ Wants=network-online.target
 Type=oneshot
 ExecStart=/usr/libexec/applaunch-updater
 TimeoutStartSec=20min
+TimeoutStopSec=5min
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7
@@ -404,7 +405,8 @@ polkit.addRule(function(action, subject) {
          action.lookup("unit") == "applaunch-apt-update.service") &&
         (action.lookup("verb") == "start" ||
          (action.lookup("verb") == "stop" &&
-          action.lookup("unit") == "applaunch-apt-update.service")) &&
+          (action.lookup("unit") == "applaunch-updater.service" ||
+           action.lookup("unit") == "applaunch-apt-update.service"))) &&
         subject.isInGroup("sudo")) {
         return polkit.Result.YES;
     }
@@ -452,6 +454,7 @@ package=$tmp_dir/applaunch_arm64.deb
 checksum=$tmp_dir/applaunch_arm64.deb.sha256
 abi_file=$tmp_dir/applaunch_arm64.deb.update-abi
 phase=starting
+rollback=
 cleanup() { rm -rf "$tmp_dir"; [ -z "$SELF_DIR" ] || rm -rf "$SELF_DIR"; }
 trap cleanup EXIT
 status() {
@@ -460,7 +463,6 @@ status() {
     mv -f "$STATUS_FILE.tmp" "$STATUS_FILE"
 }
 fail() { status "failed:$1"; exit 1; }
-trap 'status "failed:interrupted:$phase"; exit 1' HUP INT TERM
 
 APP_USER=$(getent passwd "$APP_UID" | cut -d: -f1 || true)
 user_systemctl() {
@@ -517,18 +519,50 @@ rollback_and_fail() {
     service_healthy || fail "$reason:rollback-service-health"
     fail "$reason"
 }
+cancel_and_exit() {
+    trap - HUP INT TERM
+    status "cancelling:$phase"
+    case "$phase" in
+        repairing)
+            dpkg --configure -a >/dev/null 2>&1 || fail cancelled-repair
+            ;;
+        installing|restarting)
+            dpkg --configure -a >/dev/null 2>&1 || true
+            if [ -z "$rollback" ] || ! dpkg -i "$rollback" >/dev/null 2>&1; then
+                recover_service
+                fail cancelled-rollback-install
+            fi
+            dpkg --configure -a >/dev/null 2>&1 || fail cancelled-rollback-configure
+            recover_service
+            package_healthy "$installed" || fail cancelled-rollback-package-health
+            dpkg_healthy || fail cancelled-rollback-audit
+            service_healthy || fail cancelled-rollback-service-health
+            ;;
+        complete)
+            status "succeeded:$candidate"
+            exit 0
+            ;;
+    esac
+    status cancelled
+    exit 0
+}
+trap cancel_and_exit HUP INT TERM
 
 previous_status=$(sed -n '1p' "$STATUS_FILE" 2>/dev/null || true)
 phase=downloading
-status downloading
+status downloading:5
 wget -q --https-only --timeout=30 --tries=3 "$RELEASE_URL/applaunch_arm64.deb.update-abi" -O "$abi_file" || fail incompatible
 [ "$(tr -d '[:space:]' <"$abi_file")" = "$UPDATE_ABI" ] || fail incompatible
+status downloading:20
 wget -q --https-only --timeout=30 --tries=3 "$RELEASE_URL/applaunch_arm64.deb" -O "$package" || fail download-package
+status downloading:65
 wget -q --https-only --timeout=30 --tries=3 "$RELEASE_URL/applaunch_arm64.deb.sha256" -O "$checksum" || fail download-checksum
+status downloading:70
 expected=$(awk 'NF && $1 ~ /^[0-9a-fA-F]{64}$/ { print tolower($1); exit }' "$checksum")
 [ ${#expected} -eq 64 ] || fail checksum-manifest
 actual=$(sha256sum "$package" | awk '{print $1}')
 [ "$actual" = "$expected" ] || fail checksum
+status downloading:75
 
 [ "$(dpkg-deb -f "$package" Package)" = "$PACKAGE_NAME" ] || fail package-name
 [ "$(dpkg-deb -f "$package" Architecture)" = "$ARCHITECTURE" ] || fail architecture
@@ -538,13 +572,13 @@ installed=$(dpkg-query -W -f='${Version}' "$PACKAGE_NAME" 2>/dev/null) || fail i
 audit=$(dpkg --audit 2>/dev/null || true)
 if [ -n "$audit" ]; then
     phase=repairing
-    status repairing
+    status repairing:80
     dpkg --configure -a >/dev/null 2>&1 || fail repair
     installed=$(dpkg-query -W -f='${Version}' "$PACKAGE_NAME" 2>/dev/null) || fail installed-version
 fi
 if [ "$candidate" = "$installed" ]; then
     case "$previous_status" in
-        installing|repairing|recovering:*)
+        installing|installing:*|repairing|repairing:*|recovering:*)
             package_healthy "$candidate" || fail interrupted-package-health
             recover_service
             service_healthy || fail interrupted-service-health
@@ -558,7 +592,6 @@ dpkg --compare-versions "$candidate" gt "$installed" || fail version-not-newer
 
 # Retain the last trusted package so a later upgrade can roll back after a
 # failed install or service health check.
-rollback=
 if [ -f "$CACHE_DIR/installed.deb" ] &&
    [ "$(dpkg-deb -f "$CACHE_DIR/installed.deb" Package 2>/dev/null || true)" = "$PACKAGE_NAME" ] &&
    [ "$(dpkg-deb -f "$CACHE_DIR/installed.deb" Version 2>/dev/null || true)" = "$installed" ]; then
@@ -585,7 +618,7 @@ fi
 [ -n "$rollback" ] || fail rollback-unavailable
 
 phase=installing
-status installing
+status installing:85
 if ! dpkg -i "$package"; then
     rollback_and_fail install
 fi
@@ -593,6 +626,7 @@ fi
 package_healthy "$candidate" || rollback_and_fail package-health
 
 phase=restarting
+status restarting:95
 recover_service
 service_healthy || rollback_and_fail service-health
 dpkg_healthy || rollback_and_fail dpkg-audit

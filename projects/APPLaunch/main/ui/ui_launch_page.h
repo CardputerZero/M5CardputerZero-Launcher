@@ -6,11 +6,15 @@
 
 #pragma once
 
+#include "home_icon_buffer_pool.hpp"
 #include "launcher_ui_app_page.hpp"
 #include "model/launcher_navigation_model.hpp"
 #include "model/launcher_startup_contract.hpp"
+#include <atomic>
 #include <array>
 #include <memory>
+#include <string>
+#include <vector>
 
 class Launch;
 
@@ -50,8 +54,10 @@ public:
     lv_obj_t *label(size_t slot);
 
     void refresh_carousel();
-    void update_carousel_slot(size_t slot, const char *title, const char *icon);
-    void update_carousel_item(lv_obj_t *panel, lv_obj_t *label, const char *title, const char *icon);
+    void reload_home_icons(const std::vector<std::string> &icon_paths);
+    void update_carousel_slot(size_t slot, const char *title, const std::string &icon);
+    void update_carousel_item(lv_obj_t *panel, lv_obj_t *label, const char *title,
+                              const std::string &icon);
     void launch_selected_app();
 
 protected:
@@ -64,6 +70,19 @@ private:
         LauncherStartupGeneration::Token generation = 0;
     };
 
+    struct StartupSoundAsyncState
+    {
+        std::atomic<bool> alive{true};
+        std::atomic<bool> pending{false};
+    };
+
+    struct StartupSoundResultContext
+    {
+        UILaunchPage *page = nullptr;
+        std::weak_ptr<StartupSoundAsyncState> state;
+        int code = -1;
+    };
+
     void create_app_container(lv_obj_t *parent);
     void switch_left();
     void switch_right();
@@ -74,6 +93,7 @@ private:
     void handle_home_key(lv_event_t *event);
     void handle_startup_gif_event(lv_event_t *event);
     void play_startup_sound_with_retry();
+    void handle_startup_sound_result(int code);
     void stop_startup_presentation();
     void stop_startup_sound_timer();
     void stop_startup_delay();
@@ -84,7 +104,7 @@ private:
     void rotate_carousel_right(size_t start, size_t end);
     void set_page_dot_selected(size_t element, bool selected);
     void set_carousel_element_clickable(size_t element, bool clickable);
-    static void set_panel_icon(lv_obj_t *panel, const char *src);
+    void set_panel_icon(lv_obj_t *panel, const std::string &src);
     static void on_left_arrow_clicked(lv_event_t *event) noexcept;
     static void on_right_arrow_clicked(lv_event_t *event) noexcept;
     static void on_app_clicked(lv_event_t *event) noexcept;
@@ -93,6 +113,7 @@ private:
     static void on_owned_obj_deleted(lv_event_t *event) noexcept;
     static void on_root_deleted(lv_event_t *event) noexcept;
     static void startup_sound_timer_cb(lv_timer_t *timer) noexcept;
+    static void startup_sound_result_async(void *user_data) noexcept;
     static void startup_delay_timer_cb(lv_timer_t *timer) noexcept;
 
     Launch *launch_ = nullptr;
@@ -113,6 +134,9 @@ private:
     LauncherStartupDelayModel startup_delay_model_;
     LauncherStartupGeneration startup_sound_generation_;
     LauncherStartupGeneration startup_delay_generation_;
+    HomeIconBufferPool home_icon_pool_;
+    std::shared_ptr<StartupSoundAsyncState> startup_sound_state_ =
+        std::make_shared<StartupSoundAsyncState>();
     std::shared_ptr<bool> carousel_alive_ = std::make_shared<bool>(true);
     bool home_key_registered_ = false;
     bool active_navigation_moves_next_ = false;

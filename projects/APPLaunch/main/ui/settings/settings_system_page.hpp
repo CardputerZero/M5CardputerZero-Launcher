@@ -17,6 +17,7 @@ enum class SettingsSystemPageKind
     Ethernet,
     Account,
     Password,
+    OS,
     Version,
     Build,
 };

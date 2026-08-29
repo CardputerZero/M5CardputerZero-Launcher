@@ -8,6 +8,7 @@
 #include "manual_datetime_validation.h"
 #include "wizard_model.h"
 #include "wizard_input_context.hpp"
+#include "wizard_fonts.h"
 #include "wizard_service.h"
 #include "cp0_lvgl_app_runner.hpp"
 #include "cp0_bounded_task_registry.hpp"
@@ -88,14 +89,15 @@ struct UiRuntime {
 
 launch_wizard::WizardModel g;
 UiRuntime ui;
+launch_wizard::WizardFonts fonts;
 
 const Timezone &current_timezone() { return g.current_timezone(); }
 
-const lv_font_t *font_xs() { return &lv_font_montserrat_10; }
-const lv_font_t *font_sm() { return &lv_font_montserrat_12; }
-const lv_font_t *font_md() { return &lv_font_montserrat_14; }
-const lv_font_t *font_lg() { return &lv_font_montserrat_16; }
-const lv_font_t *font_xl() { return &lv_font_montserrat_22; }
+const lv_font_t *font_xs() { return fonts.xs(); }
+const lv_font_t *font_sm() { return fonts.sm(); }
+const lv_font_t *font_md() { return fonts.md(); }
+const lv_font_t *font_lg() { return fonts.lg(); }
+const lv_font_t *font_xl() { return fonts.xl(); }
 
 lv_obj_t *add_label(lv_obj_t *parent, const char *text, const lv_font_t *font,
                     uint32_t color, int x, int y)
@@ -194,7 +196,7 @@ lv_obj_t *add_text_field(lv_obj_t *parent, int x, int y, int w, int h,
 
     lv_obj_set_style_text_font(field, font ? font : font_md(), 0);
     lv_obj_set_style_text_color(field, lv_color_hex(0xffffff), 0);
-    lv_obj_set_style_text_letter_space(field, 0, 0);
+    lv_obj_set_style_text_letter_space(field, 1, LV_PART_MAIN);
     lv_obj_set_style_bg_color(
         field, lv_color_hex(focused ? kColorFieldFocusBg : kColorFieldBg), 0);
     lv_obj_set_style_bg_opa(field, LV_OPA_COVER, 0);
@@ -209,8 +211,12 @@ lv_obj_t *add_text_field(lv_obj_t *parent, int x, int y, int w, int h,
 
     if (focused) {
         lv_obj_add_state(field, LV_STATE_FOCUSED);
-        lv_obj_set_style_bg_color(field, lv_color_hex(accent), LV_PART_CURSOR);
-        lv_obj_set_style_bg_opa(field, LV_OPA_COVER, LV_PART_CURSOR);
+        lv_obj_set_style_bg_opa(field, LV_OPA_TRANSP, LV_PART_CURSOR);
+        lv_obj_set_style_border_color(field, lv_color_hex(accent), LV_PART_CURSOR);
+        lv_obj_set_style_border_width(field, 1, LV_PART_CURSOR);
+        lv_obj_set_style_border_side(field, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
+        lv_obj_set_style_pad_left(field, -1, LV_PART_CURSOR);
+        lv_obj_set_style_anim_duration(field, 400, LV_PART_CURSOR);
     }
     return field;
 }
@@ -825,6 +831,8 @@ void enter_wifi_list()
                 g.wifi_scan_result_error = scan.error;
                 g.wifi_scan_status = connection;
                 g.wifi_scan_final_empty = final_empty;
+                g.wifi_scan_retrying = decision == launch_wizard::WifiScanDecision::Retry;
+                g.wifi_scanning = g.wifi_scan_retrying;
                 g.wifi_scan_ready = true;
             }
             cp0_lvgl_wake();
@@ -844,6 +852,7 @@ void enter_wifi_list()
         }
     })) {
         g.wifi_scanning = false;
+        g.wifi_scan_retrying = false;
         g.wifi_scan_error = "Unable to start Wi-Fi scan. Press R.";
         render();
     }
@@ -856,6 +865,7 @@ void cancel_wifi_scan()
     g.wifi_scan_ready = false;
     g.wifi_scan_result.clear();
     g.wifi_scanning = false;
+    g.wifi_scan_retrying = false;
 }
 
 void enter_hidden_wifi()
@@ -1381,14 +1391,18 @@ void poll_worker_cb(lv_timer_t *timer)
                 g.wifi_status_ssid = g.wifi_scan_status.ssid;
                 g.wifi_status_ip = g.wifi_scan_status.ip;
             }
-            g.wifi_scan_retrying = scan_error == 0 && g.wifi_list.empty() &&
-                                   !g.wifi_scan_final_empty;
-            g.wifi_scanning = g.wifi_scan_retrying;
-            switch (scan_error) {
-            case 0: g.wifi_scan_error.clear(); break;
-            case CP0_WIFI_ERROR_RADIO_OFF: g.wifi_scan_error = "Could not enable Wi-Fi radio. Press R."; break;
-            case CP0_WIFI_ERROR_TIMEOUT: g.wifi_scan_error = "Wi-Fi scan timed out. Press R."; break;
-            default: g.wifi_scan_error = "Network service unavailable. Press R."; break;
+            if (g.wifi_scan_retrying) {
+                // A transient service/radio error is reported by the worker
+                // while it retries; keep the retry state visible instead of
+                // turning the intermediate result into a terminal error.
+                g.wifi_scan_error.clear();
+            } else {
+                switch (scan_error) {
+                case 0: g.wifi_scan_error.clear(); break;
+                case CP0_WIFI_ERROR_RADIO_OFF: g.wifi_scan_error = "Could not enable Wi-Fi radio. Press R."; break;
+                case CP0_WIFI_ERROR_TIMEOUT: g.wifi_scan_error = "Wi-Fi scan timed out. Press R."; break;
+                default: g.wifi_scan_error = "Network service unavailable. Press R."; break;
+                }
             }
             wifi_updated = true;
         }
@@ -1491,6 +1505,7 @@ void launch_wizard_register_event(void)
 bool launch_wizard_ui_setup(void)
 {
     cp0_keyboard_set_lvgl_keypad_intercept(0);
+    fonts.init();
     ui.input_context_scope = std::make_unique<Cp0KeyboardInputContextScope>(
         launch_wizard::wizard_input_context(g));
     ui.cancel.store(false);
@@ -1541,4 +1556,5 @@ void launch_wizard_ui_teardown(void)
     ui.config_status_label = nullptr;
     ui.page.reset();
     ui.input_context_scope.reset();
+    fonts.release();
 }
