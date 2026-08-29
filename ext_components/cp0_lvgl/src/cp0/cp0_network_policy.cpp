@@ -37,7 +37,10 @@ bool parse_signal(std::string_view text, int &signal)
         return false;
     int parsed = 0;
     const auto result = std::from_chars(text.data(), text.data() + text.size(), parsed);
-    if (result.ec != std::errc{} || result.ptr != text.data() + text.size() || parsed < 0 || parsed > 100)
+    // Wi-Fi RSSI is expressed in dBm. Keep accepting the historical 0..100
+    // values so older backends remain readable while allowing real RSSI
+    // values such as -42 dBm.
+    if (result.ec != std::errc{} || result.ptr != text.data() + text.size() || parsed < -120 || parsed > 100)
         return false;
     signal = parsed;
     return true;

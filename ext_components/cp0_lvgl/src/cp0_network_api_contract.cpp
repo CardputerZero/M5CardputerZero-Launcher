@@ -192,7 +192,7 @@ bool decode_status_payload(const std::string &payload, cp0_wifi_status_t &status
     int ethernet = 0;
     if (!split_record(payload, fields) || fields.size() != 5 ||
         !parse_integer(fields[0], 0, 1, connected) ||
-        !parse_integer(fields[3], 0, 100, signal) ||
+        !parse_integer(fields[3], -120, 100, signal) ||
         !parse_integer(fields[4], 0, 1, ethernet))
         return false;
 
@@ -239,7 +239,7 @@ int decode_scan_payload(const std::string &payload, cp0_wifi_ap_t *access_points
         int in_use = 0;
         int saved = 0;
         if (!split_record(record, fields) || (fields.size() != 4 && fields.size() != 5) || fields[0].empty() ||
-            !parse_integer(fields[1], 0, 100, signal) ||
+            !parse_integer(fields[1], -120, 100, signal) ||
             !parse_integer(fields[3], 0, 1, in_use) ||
             (fields.size() == 5 && !parse_integer(fields[4], 0, 1, saved)))
             continue;

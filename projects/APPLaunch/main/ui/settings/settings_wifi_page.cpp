@@ -88,7 +88,7 @@ public:
         status.connected = raw.connected != 0;
         status.ssid      = bounded_string(raw.ssid);
         status.ip        = bounded_string(raw.ip);
-        status.signal    = std::clamp(raw.signal, 0, 100);
+        status.signal    = raw.signal;
         status.ethernet  = raw.ethernet != 0;
         return 0;
     }
@@ -110,7 +110,7 @@ public:
             AccessPoint access_point;
             access_point.ssid     = bounded_string(source.ssid);
             access_point.security = bounded_string(source.security);
-            access_point.signal   = std::clamp(source.signal, 0, 100);
+            access_point.signal   = source.signal;
             access_point.in_use   = source.in_use != 0;
             access_point.saved    = source.saved != 0;
             if (!access_point.ssid.empty()) access_points.push_back(std::move(access_point));
@@ -307,7 +307,7 @@ void LvSettingWifiScanPage3::create_ui(lv_obj_t *parent){
 
         create_label(ComponensObj, "SSID", 8, 18, 0x888888, settings_fonts::sans(10));
         create_label(ComponensObj, "Security", 180, 18, 0x888888, settings_fonts::sans(10));
-        create_label(ComponensObj, "Signal", 270, 18, 0x888888, settings_fonts::sans(10));
+        create_label(ComponensObj, "dBm", 275, 18, 0x888888, settings_fonts::sans(10));
 
         for (int index = 0; index < metric(LayoutMetric::VisibleRows); ++index) {
             auto &row   = rows_[index];
@@ -990,7 +990,7 @@ void LvSettingWifiScanPage3::render(){
             set_row_text(row.ssid, ssid);
             set_row_text(row.security, access_point.security.empty() ? "Open" : access_point.security);
             char signal[16];
-            std::snprintf(signal, sizeof(signal), "%d%%", std::clamp(access_point.signal, 0, 100));
+            std::snprintf(signal, sizeof(signal), "%d dBm", access_point.signal);
             set_row_text(row.signal, signal);
 
             if (row.ssid) lv_obj_set_style_text_color(row.ssid, lv_color_hex(color), LV_PART_MAIN);
