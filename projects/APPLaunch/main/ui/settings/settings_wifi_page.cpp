@@ -252,10 +252,6 @@ LvSettingWifiScanPage3::~LvSettingWifiScanPage3(){
             ui_dispatch_->pending.clear();
         }
         lifetime_token_.reset();
-        if (password_cursor_timer_) {
-            lv_timer_delete(password_cursor_timer_);
-            password_cursor_timer_ = nullptr;
-        }
         stop_scan();
         stop_connection();
         scan_tasks_.join_all();
@@ -268,6 +264,13 @@ LvSettingWifiScanPage3::~LvSettingWifiScanPage3(){
         title_                 = nullptr;
         empty_                 = nullptr;
         hint_                  = nullptr;
+        password_panel_        = nullptr;
+        password_title_        = nullptr;
+        password_network_      = nullptr;
+        password_value_        = nullptr;
+        password_input_        = nullptr;
+        password_status_       = nullptr;
+        password_hint_         = nullptr;
         hidden_panel_          = nullptr;
         hidden_ssid_input_     = nullptr;
         hidden_password_input_ = nullptr;
@@ -342,7 +345,6 @@ void LvSettingWifiScanPage3::create_ui(lv_obj_t *parent){
         hint_ = create_label(ComponensObj, "", 8, metric(LayoutMetric::ScreenH) - 14, 0x555555, settings_fonts::sans(10));
         create_password_panel();
         create_hidden_network_panel();
-        password_cursor_timer_ = lv_timer_create(password_cursor_timer_cb, 500, this);
         ui_dispatch_timer_     = lv_timer_create(ui_dispatch_timer_cb, 30, this);
 
         refresh_status();
@@ -551,26 +553,6 @@ std::size_t LvSettingWifiScanPage3::utf8_cursor_position(const std::string &valu
         return position;
     }
 
-std::string LvSettingWifiScanPage3::masked_password(const std::string &password, bool visible){
-        if (visible) return password;
-        std::size_t codepoints = 0;
-        for (unsigned char value : password)
-            if (!is_utf8_continuation(value)) ++codepoints;
-        return std::string(codepoints, '*');
-    }
-
-std::size_t LvSettingWifiScanPage3::display_cursor_offset(const std::string &password, std::size_t cursor, bool visible){
-        if (visible) return std::min(cursor, password.size());
-        std::size_t offset      = 0;
-        std::size_t index       = 0;
-        const std::size_t limit = std::min(cursor, password.size());
-        while (index < limit) {
-            index = next_utf8_end(password, index);
-            ++offset;
-        }
-        return offset;
-    }
-
 void LvSettingWifiScanPage3::initialize(lv_obj_t *parent){
         create_ui(parent);
     }
@@ -588,24 +570,22 @@ void LvSettingWifiScanPage3::create_password_panel(){
         lv_obj_remove_flag(password_panel_, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(password_panel_, LV_OBJ_FLAG_SCROLLABLE);
 
-        password_title_      = create_label(password_panel_, "WiFi password", 8, 8, 0x58A6FF,
-                                            settings_fonts::sans(13, LV_FREETYPE_FONT_STYLE_BOLD));
-        password_network_    = create_label(password_panel_, "", 8, 28, 0xCCCCCC, settings_fonts::cjk_sans(10));
-        password_value_      = create_label(password_panel_, "", metric(LayoutMetric::PasswordTextX), 50, 0xFFFFFF, input_font(16));
-        password_prefix_     = create_label(password_panel_, "", metric(LayoutMetric::PasswordTextX), 50, 0xFFFFFF, input_font(16));
-        password_suffix_     = create_label(password_panel_, "", metric(LayoutMetric::PasswordTextX), 50, 0xFFFFFF, input_font(16));
-        password_cursor_bar_ = lv_obj_create(password_panel_);
-        if (password_cursor_bar_) {
-            lv_obj_set_size(password_cursor_bar_, metric(LayoutMetric::CursorWidth), metric(LayoutMetric::CursorHeight));
-            lv_obj_set_style_bg_color(password_cursor_bar_, lv_color_hex(0x58A6FF), LV_PART_MAIN);
-            lv_obj_set_style_bg_opa(password_cursor_bar_, LV_OPA_COVER, LV_PART_MAIN);
-            lv_obj_set_style_border_width(password_cursor_bar_, 0, LV_PART_MAIN);
-            lv_obj_set_style_pad_all(password_cursor_bar_, 0, LV_PART_MAIN);
-            lv_obj_clear_flag(password_cursor_bar_, LV_OBJ_FLAG_CLICKABLE);
-            lv_obj_add_flag(password_cursor_bar_, LV_OBJ_FLAG_HIDDEN);
+        password_title_   = create_label(password_panel_, "WiFi password", 8, 8, 0x58A6FF,
+                                         settings_fonts::sans(13, LV_FREETYPE_FONT_STYLE_BOLD));
+        password_network_ = create_label(password_panel_, "", 8, 28, 0xCCCCCC, settings_fonts::cjk_sans(10));
+        password_input_   = create_hidden_input(password_panel_, 48, metric(LayoutMetric::MaxPasswordBytes));
+        if (password_input_) {
+            lv_obj_set_pos(password_input_, metric(LayoutMetric::PasswordTextX), 48);
+            lv_obj_set_width(password_input_, metric(LayoutMetric::ScreenW) -
+                                             metric(LayoutMetric::PasswordTextX) -
+                                             metric(LayoutMetric::PasswordTextRightInset));
+            lv_textarea_set_password_bullet(password_input_, "*");
+            lv_textarea_set_password_show_time(password_input_, 0);
+            lv_textarea_set_password_mode(password_input_, true);
+            lv_obj_add_state(password_input_, LV_STATE_FOCUSED);
+            lv_obj_set_style_border_color(password_input_, lv_color_hex(0x58A6FF), LV_PART_MAIN);
         }
-        if (password_prefix_) lv_obj_add_flag(password_prefix_, LV_OBJ_FLAG_HIDDEN);
-        if (password_suffix_) lv_obj_add_flag(password_suffix_, LV_OBJ_FLAG_HIDDEN);
+        password_value_  = create_label(password_panel_, "", 8, 50, 0xFFFFFF, settings_fonts::sans(12));
         password_status_ = create_label(password_panel_, "", 8, 78, 0xFF4444, settings_fonts::sans(10));
         password_hint_ =
             create_label(password_panel_, "", 8, metric(LayoutMetric::ScreenH) - 14, 0x555555, settings_fonts::sans(10));
@@ -614,6 +594,7 @@ void LvSettingWifiScanPage3::create_password_panel(){
         if (password_value_) {
             lv_obj_set_width(password_value_, metric(LayoutMetric::ScreenW) - 16);
             lv_label_set_long_mode(password_value_, LV_LABEL_LONG_CLIP);
+            lv_obj_add_flag(password_value_, LV_OBJ_FLAG_HIDDEN);
         }
         if (password_status_) lv_obj_set_width(password_status_, metric(LayoutMetric::ScreenW) - 16);
         if (password_hint_) lv_obj_set_width(password_hint_, metric(LayoutMetric::ScreenW) - 16);
@@ -621,53 +602,9 @@ void LvSettingWifiScanPage3::create_password_panel(){
     }
 
 void LvSettingWifiScanPage3::render_password_editor(){
-        if (!password_prefix_ || !password_suffix_) return;
-        const std::string display = masked_password(password_, password_visible_);
-        const std::size_t split =
-            std::min(display_cursor_offset(password_, password_cursor_byte_, password_visible_), display.size());
-        const std::string prefix = display.substr(0, split);
-        const std::string suffix = display.substr(split);
-        const int field_right    = metric(LayoutMetric::ScreenW) - metric(LayoutMetric::PasswordTextRightInset);
-        const int max_prefix_width =
-            std::max(0, field_right - metric(LayoutMetric::PasswordTextX) - metric(LayoutMetric::CursorGap) -
-                                metric(LayoutMetric::CursorWidth) - metric(LayoutMetric::CursorGap));
-
-        lv_obj_set_width(password_prefix_, LV_SIZE_CONTENT);
-        lv_label_set_long_mode(password_prefix_, LV_LABEL_LONG_CLIP);
-        lv_label_set_text(password_prefix_, prefix.c_str());
-        lv_obj_set_pos(password_prefix_, metric(LayoutMetric::PasswordTextX), 50);
-        lv_obj_update_layout(password_prefix_);
-        const int measured_prefix_width = lv_obj_get_width(password_prefix_);
-        const int prefix_width          = std::min(measured_prefix_width, max_prefix_width);
-        if (measured_prefix_width > max_prefix_width) {
-            lv_obj_set_width(password_prefix_, max_prefix_width);
-            lv_label_set_long_mode(password_prefix_, LV_LABEL_LONG_CLIP);
-        }
-
-        const int cursor_x = metric(LayoutMetric::PasswordTextX) + prefix_width + metric(LayoutMetric::CursorGap);
-        if (password_cursor_bar_) {
-            lv_obj_set_pos(password_cursor_bar_, cursor_x, 49);
-            if (password_cursor_visible_)
-                lv_obj_clear_flag(password_cursor_bar_, LV_OBJ_FLAG_HIDDEN);
-            else
-                lv_obj_add_flag(password_cursor_bar_, LV_OBJ_FLAG_HIDDEN);
-        }
-
-        const int suffix_x = cursor_x + metric(LayoutMetric::CursorWidth) + metric(LayoutMetric::CursorGap);
-        lv_label_set_text(password_suffix_, suffix.c_str());
-        lv_obj_set_pos(password_suffix_, suffix_x, 50);
-        lv_obj_set_width(password_suffix_, std::max(1, field_right - suffix_x));
-        lv_label_set_long_mode(password_suffix_, LV_LABEL_LONG_CLIP);
-    }
-
-void LvSettingWifiScanPage3::password_cursor_timer_cb(lv_timer_t *timer) noexcept{
-        try {
-            auto *self = timer ? static_cast<LvSettingWifiScanPage3 *>(lv_timer_get_user_data(timer)) : nullptr;
-            if (!self || timer != self->password_cursor_timer_ || self->view_ != View::Password) return;
-            self->password_cursor_visible_ = !self->password_cursor_visible_;
-            self->render_password_panel();
-        } catch (...) {
-        }
+        if (!password_input_) return;
+        update_hidden_input(password_input_, password_, password_cursor_byte_);
+        lv_textarea_set_password_mode(password_input_, !password_visible_);
     }
 
 lv_obj_t *LvSettingWifiScanPage3::create_hidden_input(lv_obj_t *parent, int y, uint32_t max_length){
@@ -738,9 +675,7 @@ void LvSettingWifiScanPage3::render_password_panel(){
 
         if (view_ == View::Connecting) {
             if (password_value_) lv_obj_clear_flag(password_value_, LV_OBJ_FLAG_HIDDEN);
-            if (password_prefix_) lv_obj_add_flag(password_prefix_, LV_OBJ_FLAG_HIDDEN);
-            if (password_suffix_) lv_obj_add_flag(password_suffix_, LV_OBJ_FLAG_HIDDEN);
-            if (password_cursor_bar_) lv_obj_add_flag(password_cursor_bar_, LV_OBJ_FLAG_HIDDEN);
+            if (password_input_) lv_obj_add_flag(password_input_, LV_OBJ_FLAG_HIDDEN);
             const bool forgetting = connection_state_ && connection_state_->operation == NetworkOperation::Forget;
             if (password_title_)
                 lv_label_set_text(password_title_, forgetting ? "Forgetting WiFi..." : "Connecting...");
@@ -759,8 +694,7 @@ void LvSettingWifiScanPage3::render_password_panel(){
         }
 
         if (password_value_) lv_obj_add_flag(password_value_, LV_OBJ_FLAG_HIDDEN);
-        if (password_prefix_) lv_obj_clear_flag(password_prefix_, LV_OBJ_FLAG_HIDDEN);
-        if (password_suffix_) lv_obj_clear_flag(password_suffix_, LV_OBJ_FLAG_HIDDEN);
+        if (password_input_) lv_obj_remove_flag(password_input_, LV_OBJ_FLAG_HIDDEN);
         if (password_title_) lv_label_set_text(password_title_, "WiFi password");
         if (password_network_) {
             std::string text = password_ssid_;
@@ -1078,7 +1012,6 @@ bool LvSettingWifiScanPage3::append_text(std::string &value, std::size_t &cursor
 bool LvSettingWifiScanPage3::append_password_text(const char *text){
         const bool changed = append_text(password_, password_cursor_byte_, text,
                                          static_cast<std::size_t>(metric(LayoutMetric::MaxPasswordBytes)));
-        if (changed) password_cursor_visible_ = true;
         return changed;
     }
 
@@ -1094,7 +1027,6 @@ bool LvSettingWifiScanPage3::erase_password_last(){
         for (std::size_t index = start; index < password_cursor_byte_; ++index) bytes[index] = '\0';
         password_.erase(start, password_cursor_byte_ - start);
         password_cursor_byte_    = start;
-        password_cursor_visible_ = true;
         return true;
     }
 
@@ -1102,7 +1034,6 @@ bool LvSettingWifiScanPage3::move_password_cursor_left(){
         const std::size_t next = previous_utf8_start(password_, password_cursor_byte_);
         if (next == password_cursor_byte_) return false;
         password_cursor_byte_    = next;
-        password_cursor_visible_ = true;
         return true;
     }
 
@@ -1110,7 +1041,6 @@ bool LvSettingWifiScanPage3::move_password_cursor_right(){
         const std::size_t next = next_utf8_end(password_, password_cursor_byte_);
         if (next == password_cursor_byte_) return false;
         password_cursor_byte_    = next;
-        password_cursor_visible_ = true;
         return true;
     }
 
@@ -1179,7 +1109,6 @@ void LvSettingWifiScanPage3::show_password_prompt(const std::string &ssid, const
         password_security_       = security;
         password_error_          = error;
         password_visible_        = false;
-        password_cursor_visible_ = true;
         clear_password();
         enter_text_input_mode();
         render();
@@ -1194,7 +1123,6 @@ void LvSettingWifiScanPage3::show_hidden_ssid_prompt(const std::string &initial)
         password_security_ = "WPA2";
         password_error_.clear();
         password_visible_        = false;
-        password_cursor_visible_ = true;
         hidden_focus_            = 0;
         clear_hidden_ssid();
         clear_password();

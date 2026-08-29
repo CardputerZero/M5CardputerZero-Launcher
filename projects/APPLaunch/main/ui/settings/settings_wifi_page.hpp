@@ -140,17 +140,11 @@ private:
 
     static std::size_t utf8_cursor_position(const std::string &value, std::size_t cursor);
 
-    static std::string masked_password(const std::string &password, bool visible);
-
-    static std::size_t display_cursor_offset(const std::string &password, std::size_t cursor, bool visible);
-
     void initialize(lv_obj_t *parent);
 
     void create_password_panel();
 
     void render_password_editor();
-
-    static void password_cursor_timer_cb(lv_timer_t *timer) noexcept;
 
     static lv_obj_t *create_hidden_input(lv_obj_t *parent, int y, uint32_t max_length);
 
@@ -288,7 +282,6 @@ private:
     std::size_t password_cursor_byte_                    = 0;
     int hidden_focus_                                    = 0;
     bool password_visible_                               = false;
-    bool password_cursor_visible_                        = true;
     bool hidden_network_                                 = false;
     bool wifi_power_enabled_                             = true;
     uint64_t generation_                                 = 0;
@@ -302,9 +295,7 @@ private:
     lv_obj_t *password_title_                            = nullptr;
     lv_obj_t *password_network_                          = nullptr;
     lv_obj_t *password_value_                            = nullptr;
-    lv_obj_t *password_prefix_                           = nullptr;
-    lv_obj_t *password_suffix_                           = nullptr;
-    lv_obj_t *password_cursor_bar_                       = nullptr;
+    lv_obj_t *password_input_                            = nullptr;
     lv_obj_t *password_status_                           = nullptr;
     lv_obj_t *password_hint_                             = nullptr;
     lv_obj_t *hidden_panel_                              = nullptr;
@@ -313,7 +304,6 @@ private:
     lv_obj_t *hidden_hint_                               = nullptr;
     lv_obj_t *keyboard_root_                             = nullptr;
     lv_event_dsc_t *keyboard_event_dsc_                  = nullptr;
-    lv_timer_t *password_cursor_timer_                   = nullptr;
     lv_timer_t *ui_dispatch_timer_                       = nullptr;
     lv_obj_t *power_warning_overlay_                     = nullptr;
     lv_obj_t *power_warning_                             = nullptr;
