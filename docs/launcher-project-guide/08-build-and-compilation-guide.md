@@ -28,15 +28,13 @@ Build artifacts usually appear in:
 projects/APPLaunch/dist/
 ├── M5CardputerZero-APPLaunch
 └── APPLaunch/
-    └── bin/
-        └── store_cache_sync.py
+    └── share/
 ```
 
 Where:
 
 - `M5CardputerZero-APPLaunch` is the main executable.
 - `APPLaunch/` is the runtime resource tree and is copied to `dist/APPLaunch`.
-- `store_cache_sync.py` lives in `projects/APPLaunch/APPLaunch/bin/store_cache_sync.py` and is copied as part of the runtime resource tree.
 
 ## 2. Prerequisites
 
@@ -718,7 +716,7 @@ This file registers the APPLaunch main-program component:
 - Optional dependency: `Backward_cpp`.
 - Adds SDL2, FreeType, libinput, xkbcommon, udev, libcamera, jpeg, and other dependencies according to different configuration files; Windows SDL2 shares the same SDL2/FreeType `pkg-config` flag handling as Linux SDL2.
 - Uses `ext_components/RadioLib` as a static component; the RadioLib component owns the `wget_github('https://github.com/jgromes/RadioLib.git')` source cache and SX1262-related source list.
-- Adds the `../APPLaunch` runtime resource tree to `STATIC_FILES`; this tree includes `bin/store_cache_sync.py`.
+- Adds the `../APPLaunch` runtime resource tree to `STATIC_FILES`.
 - Registers project target: `M5CardputerZero-APPLaunch`.
 
 ## 12. Common SCons Commands

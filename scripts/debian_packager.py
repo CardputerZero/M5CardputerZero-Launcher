@@ -8,6 +8,7 @@ this repository to reuse the same cross-platform package builder.
 from __future__ import annotations
 
 import argparse
+import gzip
 import io
 import os
 import platform
@@ -795,12 +796,15 @@ def _tar_filter(tar_info: tarfile.TarInfo) -> tarfile.TarInfo:
 
 def _tar_tree(root: Path, names: Iterable[str]) -> bytes:
     buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w:gz", format=tarfile.GNU_FORMAT) as tar:
-        for name in names:
-            source = root / name
-            if not source.exists():
-                continue
-            tar.add(source, arcname=name, recursive=True, filter=_tar_filter)
+    with gzip.GzipFile(
+        fileobj=buffer, mode="wb", filename="", mtime=_source_date_epoch()
+    ) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w", format=tarfile.GNU_FORMAT) as tar:
+            for name in names:
+                source = root / name
+                if not source.exists():
+                    continue
+                tar.add(source, arcname=name, recursive=True, filter=_tar_filter)
     return buffer.getvalue()
 
 

@@ -207,9 +207,12 @@ if 'CONFIG_APPLAUNCH_WIN_X86_CROSS_CP0' in os.environ:
 # copied earlier in the same STATIC_FILES batch.
 _static_source = os.path.abspath('../APPLaunch')
 _staged_applaunch = os.path.abspath(os.path.join('build', 'static', 'APPLaunch'))
+_static_copy_ignore_patterns = ('__pycache__', '*.pyc', '*.pyo')
 if os.path.exists(_staged_applaunch):
     shutil.rmtree(_staged_applaunch)
-shutil.copytree(_static_source, _staged_applaunch)
+shutil.copytree(_static_source,
+                _staged_applaunch,
+                ignore=shutil.ignore_patterns(*_static_copy_ignore_patterns))
 _staged_font_dir = os.path.join(_staged_applaunch, 'share', 'font')
 os.makedirs(_staged_font_dir, exist_ok=True)
 shutil.copy2(os.path.join(_repo_root,

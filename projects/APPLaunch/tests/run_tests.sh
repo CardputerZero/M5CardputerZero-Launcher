@@ -2,10 +2,10 @@
 set -eu
 test_root=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 settings_ui_root=$(CDPATH= cd -- "$test_root/../main/ui/settings" && pwd)
-python3 "$test_root/test_store_cache_sync.py"
 python3 "$test_root/test_carousel_border_contract.py"
 python3 "$test_root/test_external_framebuffer_ownership.py"
 python3 "$test_root/test_settings_input_font_contract.py"
+python3 "$test_root/test_static_resource_staging.py"
 PYTHONPATH="$test_root/..${PYTHONPATH:+:$PYTHONPATH}" \
     python3 "$test_root/test_config_default_file.py"
 build_dir="${TMPDIR:-/tmp}/applaunch-tests"
@@ -172,6 +172,10 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -pthread \
     "$(dirname "$0")/test_app_registry_callback.cpp" \
     -o "$build_dir/test_app_registry_callback"
 "$build_dir/test_app_registry_callback"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    "$test_root/test_dynamic_app_registry.cpp" \
+    -o "$build_dir/test_dynamic_app_registry"
+"$build_dir/test_dynamic_app_registry" "$test_root/../main/ui/desktop_app_loader.cpp"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$(dirname "$0")/test_launcher_media_model.cpp" \
     "$(dirname "$0")/../main/ui/model/launcher_media_model.cpp" \

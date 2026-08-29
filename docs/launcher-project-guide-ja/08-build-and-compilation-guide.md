@@ -28,15 +28,13 @@ APPLaunch は複数の形式でビルドできます。中核的な違いは、`
 projects/APPLaunch/dist/
 ├── M5CardputerZero-APPLaunch
 └── APPLaunch/
-    └── bin/
-        └── store_cache_sync.py
+    └── share/
 ```
 
 各項目の意味:
 
 - `M5CardputerZero-APPLaunch` はメイン実行ファイルです。
 - `APPLaunch/` は実行時リソースツリーで、`dist/APPLaunch` にコピーされます。
-- `store_cache_sync.py` は `projects/APPLaunch/APPLaunch/bin/store_cache_sync.py` にあり、実行時リソースツリーの一部としてコピーされます。
 
 ## 2. 前提条件
 
@@ -718,7 +716,7 @@ SDK ビルドシステムは次を行います。
 - オプション依存: `Backward_cpp`。
 - 設定ファイルに応じて SDL2、FreeType、libinput、xkbcommon、udev、libcamera、jpeg などの依存を追加します。Windows SDL2 も Linux SDL2 と同じ SDL2/FreeType `pkg-config` フラグ処理を共有します。
 - `ext_components/RadioLib` を静的コンポーネントとして使います。RadioLib コンポーネントは `wget_github('https://github.com/jgromes/RadioLib.git')` のソースキャッシュと SX1262 関連ソースリストを所有します。
-- `../APPLaunch` 実行時リソースツリーを `STATIC_FILES` に追加します。このツリーには `bin/store_cache_sync.py` が含まれます。
+- `../APPLaunch` 実行時リソースツリーを `STATIC_FILES` に追加します。
 - プロジェクトターゲット `M5CardputerZero-APPLaunch` を登録します。
 
 ## 12. よく使う SCons コマンド
