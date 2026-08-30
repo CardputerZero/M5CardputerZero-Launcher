@@ -85,14 +85,12 @@ int hal_network_list(hal_netif_info_t *entries, int max_entries, int *out_count)
 void hal_paths_init(const char *exe_dir) { (void)exe_dir; }
 const char *hal_path_data_dir(void) { return "/"; }
 const char *hal_path_applications_dir(void) { return "/applications"; }
-const char *hal_path_store_cache_dir(void) { return "/store_cache"; }
 const char *hal_path_lock_file(void) { return "/tmp/lock"; }
 const char *hal_path_font_dir(void) { return "/font"; }
 const char *hal_path_font_regular(void) { return "/font/regular.ttf"; }
 const char *hal_path_font_mono(void) { return "/font/mono.ttf"; }
 const char *hal_path_keyboard_device(void) { return 0; }
 const char *hal_path_keyboard_map(void) { return 0; }
-const char *hal_path_store_sync_cmd(void) { return ""; }
 const char *hal_path_images_dir(void) { return "/images"; }
 const char *hal_path_audio_dir(void) { return "/audio"; }
 

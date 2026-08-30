@@ -176,7 +176,6 @@ private:
         if (file == "lock_file") return "/tmp/M5CardputerZero-APPLaunch_fcntl.lock";
         if (file == "keyboard_device") return "/dev/input/by-path/platform-3f804000.i2c-event";
         if (file == "keyboard_map") return "/usr/share/keymaps/tca8418_keypad_m5stack_keymap.map";
-        if (file == "store_sync_cmd") return std::string("python ") + kAppRoot + "/bin/store_cache_sync.py";
 
         const cp0::filesystem::ResourceKind kind = cp0::filesystem::classify_resource(file);
         if (kind != cp0::filesystem::ResourceKind::none &&

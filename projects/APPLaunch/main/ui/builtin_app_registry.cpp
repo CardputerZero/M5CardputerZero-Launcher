@@ -5,6 +5,7 @@
 #include "ui.h"
 #include "generated/page_app.h"
 #include "launcher_platform.hpp"
+#include "model/dynamic_app_registry.hpp"
 #include "settings/settings_page.hpp"
 #include <array>
 #include <cstring>
@@ -21,71 +22,6 @@ struct BuiltinAppRegistration {
     bool sysplause;
     bool run_as_root;
     BuiltinAppAppender append;
-};
-
-struct DynamicAppRegistration {
-    AppDescriptor desc{};
-    std::string label;
-    std::string icon;
-    std::string config_key;
-    std::size_t generation = 0;
-
-    void bind_descriptor()
-    {
-        desc = {label.c_str(), icon.c_str(), config_key.c_str(), true, false};
-    }
-
-    DynamicAppRegistration(std::string app_label,
-                           std::string app_icon,
-                           std::string app_config_key,
-                           std::size_t app_generation)
-        : label(std::move(app_label)),
-          icon(std::move(app_icon)),
-          config_key(std::move(app_config_key)),
-          generation(app_generation)
-    {
-        bind_descriptor();
-    }
-
-    DynamicAppRegistration(const DynamicAppRegistration &other)
-        : label(other.label),
-          icon(other.icon),
-          config_key(other.config_key),
-          generation(other.generation)
-    {
-        bind_descriptor();
-    }
-
-    DynamicAppRegistration(DynamicAppRegistration &&other) noexcept
-        : label(std::move(other.label)),
-          icon(std::move(other.icon)),
-          config_key(std::move(other.config_key)),
-          generation(other.generation)
-    {
-        bind_descriptor();
-    }
-
-    DynamicAppRegistration &operator=(const DynamicAppRegistration &other)
-    {
-        if (this == &other) return *this;
-        label = other.label;
-        icon = other.icon;
-        config_key = other.config_key;
-        generation = other.generation;
-        bind_descriptor();
-        return *this;
-    }
-
-    DynamicAppRegistration &operator=(DynamicAppRegistration &&other) noexcept
-    {
-        if (this == &other) return *this;
-        label = std::move(other.label);
-        icon = std::move(other.icon);
-        config_key = std::move(other.config_key);
-        generation = other.generation;
-        bind_descriptor();
-        return *this;
-    }
 };
 
 template <class PageT>
@@ -139,16 +75,10 @@ constexpr BuiltinAppRegistration BUILTIN_APPS[] = {
 #endif
 };
 
-std::vector<DynamicAppRegistration> &dynamic_apps()
+DynamicAppRegistry &dynamic_app_registry()
 {
-    static std::vector<DynamicAppRegistration> registrations;
-    return registrations;
-}
-
-std::size_t &dynamic_generation()
-{
-    static std::size_t generation = 0;
-    return generation;
+    static DynamicAppRegistry registry;
+    return registry;
 }
 
 bool is_first_registration(std::size_t index)
@@ -169,32 +99,36 @@ const AppDescriptor *launcher_app_registry_entries(std::size_t *count)
     constexpr std::size_t descriptor_count = sizeof(BUILTIN_APPS) / sizeof(BUILTIN_APPS[0]);
     static std::vector<AppDescriptor> descriptors;
     descriptors.clear();
-    descriptors.reserve(descriptor_count + dynamic_apps().size());
+    const auto &dynamic_entries = dynamic_app_registry().entries();
+    descriptors.reserve(descriptor_count + dynamic_entries.size());
     for (std::size_t i = 0; i < descriptor_count; ++i)
         if (is_first_registration(i)) descriptors.push_back(BUILTIN_APPS[i].desc);
-    for (const auto &registration : dynamic_apps()) {
-        if (registration.generation == dynamic_generation())
-            descriptors.push_back(registration.desc);
-    }
+    for (const auto &registration : dynamic_entries)
+        descriptors.push_back(registration.desc);
     if (count) *count = descriptors.size();
     return descriptors.data();
 }
 
 void launcher_app_registry_begin_dynamic_refresh()
 {
-    std::size_t &generation = dynamic_generation();
-    ++generation;
-    if (generation == 0) ++generation;
-    dynamic_apps().clear();
+    dynamic_app_registry().begin_refresh();
+}
+
+void launcher_app_registry_commit_dynamic_refresh()
+{
+    dynamic_app_registry().commit_refresh();
+}
+
+void launcher_app_registry_cancel_dynamic_refresh()
+{
+    dynamic_app_registry().cancel_refresh();
 }
 
 const AppDescriptor *launcher_app_registry_register_dynamic(const std::string &label,
                                                             const std::string &icon,
                                                             const std::string &config_key)
 {
-    if (label.empty() || config_key.empty()) return nullptr;
-    dynamic_apps().emplace_back(label, icon, config_key, dynamic_generation());
-    return &dynamic_apps().back().desc;
+    return dynamic_app_registry().register_pending(label, icon, config_key);
 }
 
 void launcher_append_enabled_builtin_apps(std::list<app> &apps)
