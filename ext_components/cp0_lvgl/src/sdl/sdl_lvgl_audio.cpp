@@ -98,6 +98,14 @@ public:
             SystemSoundPlay(request.value, callback);
             return;
         }
+        if (request.command == cp0::audio::ApiCommand::SystemSoundSuspend) {
+            SystemSoundSuspend(arg, callback);
+            return;
+        }
+        if (request.command == cp0::audio::ApiCommand::SystemSoundPrepare) {
+            SystemSoundPrepare(arg, callback);
+            return;
+        }
         if (request.command == cp0::audio::ApiCommand::SystemSoundEnable) {
             SystemSoundEnable(request.enabled, callback);
             return;
@@ -349,6 +357,19 @@ private:
         }
         system_play(system_sound_names_[static_cast<size_t>(index)]);
         report(callback, 0, "system sound play\n");
+    }
+
+    void SystemSoundSuspend(arg_t arg, callback_t callback)
+    {
+        (void)arg;
+        playing_ = false;
+        report(callback, 0, "system sound suspended\n");
+    }
+
+    void SystemSoundPrepare(arg_t arg, callback_t callback)
+    {
+        (void)arg;
+        report(callback, 0, "system sound ready\n");
     }
 
     void SystemSoundEnable(bool enabled, callback_t callback)

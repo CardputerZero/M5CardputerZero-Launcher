@@ -25,6 +25,8 @@ enum class ApiCommand {
     MuteToggle,
     SetSystemSoundNames,
     SystemSoundPlay,
+    SystemSoundSuspend,
+    SystemSoundPrepare,
     SystemSoundEnable,
 };
 

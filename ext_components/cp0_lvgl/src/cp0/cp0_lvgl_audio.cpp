@@ -300,6 +300,21 @@ public:
             cp0::audio::invoke_callback(response, -2, "system sound queue failed\n");
     }
 
+    void SystemSoundSuspend(arg_t arg, callback_t callback)
+    {
+        (void)arg;
+        system_sounds_.suspend();
+        report(callback, 0, "system sound suspended\n");
+    }
+
+    void SystemSoundPrepare(arg_t arg, callback_t callback)
+    {
+        (void)arg;
+        const bool ready = system_sounds_.prepare();
+        report(callback, ready ? 0 : -1,
+               ready ? "system sound ready\n" : "system sound prepare failed\n");
+    }
+
     void SystemSoundEnable(bool enabled, callback_t callback)
     {
         system_sounds_.set_enabled(enabled);
@@ -521,6 +536,14 @@ public:
         }
         if(request.command == cp0::audio::ApiCommand::SystemSoundPlay) {
             SystemSoundPlay(request.value, callback);
+            return;
+        }
+        if(request.command == cp0::audio::ApiCommand::SystemSoundSuspend) {
+            SystemSoundSuspend(arg, callback);
+            return;
+        }
+        if(request.command == cp0::audio::ApiCommand::SystemSoundPrepare) {
+            SystemSoundPrepare(arg, callback);
             return;
         }
         if(request.command == cp0::audio::ApiCommand::SystemSoundEnable) {

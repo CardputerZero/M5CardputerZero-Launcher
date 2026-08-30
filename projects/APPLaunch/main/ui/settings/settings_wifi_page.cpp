@@ -13,6 +13,8 @@
 
 namespace {
 
+constexpr uint32_t kWifiScanRefreshPeriodMs = 8000;
+
 class settings_wifi_com {
 private:
     enum class WifiDefaultDef : std::size_t {
@@ -232,6 +234,10 @@ void LvSettingWifiScanPage3::LoadNextPage(){
 void LvSettingWifiScanPage3::LeaveNextPage(){
         stop_scan();
         stop_connection();
+        if (scan_refresh_timer_) {
+            lv_timer_delete(scan_refresh_timer_);
+            scan_refresh_timer_ = nullptr;
+        }
         if (LeaveSelfPage) LeaveSelfPage();
     }
 
@@ -245,6 +251,10 @@ LvSettingWifiScanPage3::~LvSettingWifiScanPage3(){
         if (ui_dispatch_timer_) {
             lv_timer_delete(ui_dispatch_timer_);
             ui_dispatch_timer_ = nullptr;
+        }
+        if (scan_refresh_timer_) {
+            lv_timer_delete(scan_refresh_timer_);
+            scan_refresh_timer_ = nullptr;
         }
         if (ui_dispatch_) {
             std::lock_guard<std::mutex> lock(ui_dispatch_->mutex);
@@ -346,6 +356,7 @@ void LvSettingWifiScanPage3::create_ui(lv_obj_t *parent){
         create_password_panel();
         create_hidden_network_panel();
         ui_dispatch_timer_     = lv_timer_create(ui_dispatch_timer_cb, 30, this);
+        scan_refresh_timer_    = lv_timer_create(scan_refresh_timer_cb, kWifiScanRefreshPeriodMs, this);
 
         refresh_status();
         if (!wifi_power_enabled_) {
@@ -940,6 +951,14 @@ void LvSettingWifiScanPage3::render(){
             row.selected = selected;
             row.color    = color;
         }
+
+        // Text entry temporarily changes the keyboard routing.  Reassert the
+        // page root as the navigation focus whenever the list is restored so
+        // LVGL does not keep a stale focus target after connecting.
+        if (ComponensObj) {
+            lv_group_t *group = lv_obj_get_group(ComponensObj);
+            if (group) lv_group_focus_obj(ComponensObj);
+        }
     }
 
 void LvSettingWifiScanPage3::set_row_text(lv_obj_t *label, const std::string &text){
@@ -1204,6 +1223,9 @@ bool LvSettingWifiScanPage3::start_network_operation(NetworkOperation operation,
                                  const std::string &security, ConnectionOrigin origin, bool disconnect_active){
         if (ssid.empty() || connection_pending_ || !ui_dispatch_timer_) return false;
 
+        if (operation == NetworkOperation::Connect && forgotten_ssid_ == ssid)
+            forgotten_ssid_.clear();
+
         auto state               = std::make_shared<ConnectionState>();
         state->lifetime          = lifetime_token_;
         state->owner             = this;
@@ -1236,7 +1258,12 @@ bool LvSettingWifiScanPage3::start_network_operation(NetworkOperation operation,
                     bool status_valid = false;
                     if (state->operation == NetworkOperation::Forget) {
                         result = settings_wifi_com::profile_forget(state->ssid);
-                        if (result == 0) {
+                        // A profile can disappear between the scan and the D
+                        // key. Still disconnect the matching active Wi-Fi;
+                        // treating NOT_FOUND as a hard stop leaves stale state
+                        // on screen and skips the required refresh.
+                        if (result == 0 || result == CP0_WIFI_ERROR_NOT_FOUND) {
+                            const int forget_result = result;
                             WifiStatus before_disconnect;
                             const bool read_ok           = settings_wifi_com::read_status(before_disconnect) == 0;
                             const bool should_disconnect = read_ok
@@ -1250,7 +1277,11 @@ bool LvSettingWifiScanPage3::start_network_operation(NetworkOperation operation,
                                         !after_disconnect.connected)
                                         disconnect_result = 0;
                                 }
-                                if (disconnect_result != 0) result = disconnect_result;
+                                if (disconnect_result != 0) {
+                                    result = disconnect_result;
+                                } else if (forget_result == CP0_WIFI_ERROR_NOT_FOUND) {
+                                    result = 0;
+                                }
                             }
                         }
                     } else if (state->origin == ConnectionOrigin::HiddenPasswordEntry) {
@@ -1376,10 +1407,26 @@ void LvSettingWifiScanPage3::process_connection_result(const ConnectionResult &r
             password_ssid_.clear();
             password_security_.clear();
             scan_error_ = operation_result == 0 ? std::string() : connection_error_message(operation_result);
+            if (operation_result == 0) forgotten_ssid_ = state->ssid;
             if (result.status_valid) wifi_data_->status = result.status;
+            // Drop the old snapshot immediately. The replacement scan may
+            // take several seconds and must not leave the forgotten AP shown.
+            wifi_data_->access_points.clear();
+            selected_index_ = 0;
+            // Do not leave a stale title while the post-forget scan catches up.
+            // Preserve the Ethernet flag, but clear only the forgotten Wi-Fi.
+            if (operation_result == 0 && wifi_data_->status.ssid == state->ssid) {
+                wifi_data_->status.connected = false;
+                wifi_data_->status.ssid.clear();
+                wifi_data_->status.ip.clear();
+                wifi_data_->status.signal = 0;
+            }
             refresh_status();
             render();
-            if (operation_result == 0) start_scan();
+            // Refresh even when forgetting reports an error. The profile or
+            // active connection may already have changed before the backend
+            // returned its final status, and leaving the old scan is worse.
+            start_scan();
             return;
         }
 
@@ -1541,6 +1588,18 @@ void LvSettingWifiScanPage3::keyboard_event_cb(lv_event_t *event){
         lv_event_stop_processing(event);
     }
 
+void LvSettingWifiScanPage3::scan_refresh_timer_cb(lv_timer_t *timer) noexcept{
+        try {
+            auto *self = timer ? static_cast<LvSettingWifiScanPage3 *>(lv_timer_get_user_data(timer)) : nullptr;
+            if (!self || timer != self->scan_refresh_timer_) return;
+            // Keep the list current while it is visible. Network operations
+            // own the Wi-Fi device and must finish before a refresh starts.
+            if (self->view_ == View::List && !self->connection_pending_ && !self->power_warning_)
+                self->start_scan();
+        } catch (...) {
+        }
+}
+
 void LvSettingWifiScanPage3::start_scan(){
         if (scanning_) {
             scan_restart_pending_ = true;
@@ -1630,7 +1689,19 @@ void LvSettingWifiScanPage3::process_scan_result(const ScanResult &result){
 
 void LvSettingWifiScanPage3::apply_scan_result(const ScanResult &result){
         const int count = std::clamp(result.count, 0, metric(LayoutMetric::ApMax));
-        if (result.status_valid) wifi_data_->status = result.status;
+        if (result.status_valid) {
+            wifi_data_->status = result.status;
+            if (!forgotten_ssid_.empty()) {
+                if (result.status.ssid == forgotten_ssid_) {
+                    wifi_data_->status.connected = false;
+                    wifi_data_->status.ssid.clear();
+                    wifi_data_->status.ip.clear();
+                    wifi_data_->status.signal = 0;
+                } else if (result.status.connected && !result.status.ssid.empty()) {
+                    forgotten_ssid_.clear();
+                }
+            }
+        }
         if (result.count < 0) {
             wifi_data_->access_points.clear();
             selected_index_ = 0;
@@ -1648,6 +1719,14 @@ void LvSettingWifiScanPage3::apply_scan_result(const ScanResult &result){
         }
 
         wifi_data_->access_points.assign(result.access_points.begin(), result.access_points.begin() + count);
+        if (!forgotten_ssid_.empty()) {
+            for (auto &access_point : wifi_data_->access_points) {
+                if (access_point.ssid == forgotten_ssid_) {
+                    access_point.in_use = false;
+                    access_point.saved = false;
+                }
+            }
+        }
         if (wifi_data_->access_points.empty()) {
             selected_index_ = 0;
         } else {
@@ -1754,6 +1833,10 @@ void LvSettingWifiScanPage3::handle_key_event(lv_event_t *event){
             if (move_selection(-1)) render();
         } else if (key == LV_KEY_DOWN) {
             if (move_selection(1)) render();
+        } else if (key == KEY_R || key == 'r' || key == 'R') {
+            // R is a scan command. Handle all keypad representations before
+            // the generic Enter/Right activation branch.
+            start_scan();
         } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
             activate_selected();
         } else if (key == LV_KEY_DEL) {

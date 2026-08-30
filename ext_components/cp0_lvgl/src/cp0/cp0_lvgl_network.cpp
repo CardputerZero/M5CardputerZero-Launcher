@@ -297,12 +297,22 @@ public:
 
     int profile_disconnect_active()
     {
-        const std::string active = active_connection_name();
-        if (active.empty())
-            return -1;
+        // `con show --active` can list Ethernet before Wi-Fi. Disconnect by
+        // the active Wi-Fi device so forgetting a Wi-Fi profile cannot bring
+        // down eth0 as a side effect.
+        std::string device_output;
+        if (cp0_process_commands::capture_argv_with_timeout(
+                {"nmcli", "-t", "-f", "DEVICE,TYPE,STATE,CONNECTION",
+                 "dev", "status"}, device_output, 5000) != 0)
+            return CP0_WIFI_ERROR_SERVICE;
+
+        const std::string wifi_iface = cp0::network::parse_device_status(device_output).wifi_interface;
+        if (wifi_iface.empty())
+            return CP0_WIFI_ERROR_NOT_FOUND;
+
         std::string output;
         return cp0_process_commands::capture_argv_with_timeout(
-            {"nmcli", "con", "down", "id", active}, output, 5000);
+            {"nmcli", "dev", "disconnect", "iface", wifi_iface}, output, 5000);
     }
 
     int radio_enabled()

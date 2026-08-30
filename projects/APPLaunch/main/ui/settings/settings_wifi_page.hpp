@@ -244,6 +244,8 @@ private:
 
     static void keyboard_event_cb(lv_event_t *event);
 
+    static void scan_refresh_timer_cb(lv_timer_t *timer) noexcept;
+
     void start_scan();
 
     void stop_scan();
@@ -278,6 +280,8 @@ private:
     std::string password_;
     std::string password_error_;
     std::string hidden_ssid_;
+    // Keep a successful forget from being overwritten by one stale scan/status response.
+    std::string forgotten_ssid_;
     std::size_t hidden_ssid_cursor_byte_                 = 0;
     std::size_t password_cursor_byte_                    = 0;
     int hidden_focus_                                    = 0;
@@ -305,6 +309,7 @@ private:
     lv_obj_t *keyboard_root_                             = nullptr;
     lv_event_dsc_t *keyboard_event_dsc_                  = nullptr;
     lv_timer_t *ui_dispatch_timer_                       = nullptr;
+    lv_timer_t *scan_refresh_timer_                     = nullptr;
     lv_obj_t *power_warning_overlay_                     = nullptr;
     lv_obj_t *power_warning_                             = nullptr;
 };
