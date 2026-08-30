@@ -225,6 +225,50 @@ bool command_ok(const std::vector<std::string> &args, std::string &error)
     return false;
 }
 
+bool uid_has_processes(uid_t uid, bool &has_processes, std::string &error)
+{
+    CommandResult result = run_command(
+        {"pgrep", "-u", std::to_string(static_cast<unsigned int>(uid))});
+    if (result.code == 0) {
+        has_processes = true;
+        return true;
+    }
+    if (result.code == 1) {
+        has_processes = false;
+        return true;
+    }
+    error = result.output.empty() ? "Failed to inspect user processes"
+                                  : result.output;
+    return false;
+}
+
+bool stop_user_sessions_for_rename(uid_t uid, std::string &error)
+{
+    // pi-gen autologs UID 1000 into tty1 while LaunchWizard runs as root.
+    // Stopping only user@1000.service leaves that login shell alive, and
+    // usermod correctly refuses to rename a user that still owns processes.
+    if (!command_ok({"systemctl", "stop", "getty@tty1.service"}, error))
+        return false;
+
+    CommandResult terminated = run_command(
+        {"loginctl", "terminate-user",
+         std::to_string(static_cast<unsigned int>(uid))});
+
+    for (int attempt = 0; attempt < 50; ++attempt) {
+        bool has_processes = false;
+        if (!uid_has_processes(uid, has_processes, error))
+            return false;
+        if (!has_processes)
+            return true;
+        usleep(100 * 1000);
+    }
+
+    error = terminated.output.empty()
+        ? "UID 1000 still owns processes after terminating login sessions"
+        : "Failed to terminate UID 1000 login sessions: " + terminated.output;
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // Validation helpers (preserved).
 // ---------------------------------------------------------------------------
@@ -579,6 +623,10 @@ uid_t configure_account(const std::string &new_user, const std::string &password
             "/etc/sudoers.d/010_pi-nopasswd", old_user, ' ');
     }
 
+    if (record.source_user != record.target_user &&
+        !stop_user_sessions_for_rename(kDefaultUserUid, error))
+        return 0;
+
     bool password_applied = false;
     AccountMigrationOps ops;
     ops.save = save_account_record;
@@ -721,7 +769,8 @@ std::string configure_desktop_startup(const std::string &user)
     }
     if (!command_ok({"chmod", "0644",
                      "/etc/lightdm/lightdm.conf.d/50-launchwizard-autologin.conf"}, warning) ||
-        !command_ok({"systemctl", "disable", "lightdm.service"}, warning))
+        !command_ok({"systemctl", "disable", "lightdm.service"}, warning) ||
+        !command_ok({"systemctl", "disable", "getty@tty1.service"}, warning))
         return warning;
 
     return warning;
@@ -996,35 +1045,36 @@ std::string WizardService::apply(
         }),
         // The account migration has its own sub-step journal. The outer
         // checkpoint advances only after that migration is fully complete.
-        best_effort("Configuring user account...", [username, password] {
+        {"Configuring user account...", [username, password] {
             std::string error;
             return configure_account(username, password, error) == 0 ? error : std::string{};
-        }),
-        best_effort("Configuring desktop login...", [username] {
+        }},
+        {"Configuring desktop login...", [username] {
             return configure_desktop_startup(username);
-        }),
-        best_effort("Enabling APPLaunch service...", [username] {
-            const struct passwd *account = getpwnam(username.c_str());
-            if (!account || account->pw_uid == 0)
-                return std::string("Configured user account is unavailable");
-            return enable_applaunch_service(username, account->pw_uid);
-        }),
-        best_effort("Finalizing configuration...", [] {
-            std::string first_error;
-            CommandResult disabled = run_command(
-                {"systemctl", "disable", "LaunchWizard.service"});
+        }},
+        {"Enabling APPLaunch service...", [username] {
+            return enable_applaunch_service(username, kDefaultUserUid);
+        }},
+        {"Finalizing configuration...", [] {
+            CommandResult disabled =
+                run_command({"systemctl", "disable", "LaunchWizard.service"});
             if (disabled.code != 0)
-                first_error = disabled.output.empty()
+                return disabled.output.empty()
                     ? std::string("Failed to disable LaunchWizard.service")
                     : disabled.output;
-            remove_oobe_markers(&first_error);
+
+            std::string error;
+            remove_oobe_markers(&error);
+            if (!error.empty())
+                return error;
+
 #if !LAUNCH_WIZARD_DRY_RUN
             sync();
             sync();
             sync();
 #endif
-            return first_error;
-        }),
+            return std::string{};
+        }},
     };
 
     const ApplyCheckpointStore checkpoint(default_apply_checkpoint_path());
@@ -1126,10 +1176,10 @@ void launch_wizard::WizardService::run_keyboard_guide()
                     "LaunchWizard: failed to request user session startup: %s\n",
                     session_start.output.empty() ? "unknown error"
                                                  : session_start.output.c_str());
-        // Give the socket-activated pipewire-pulse a moment to come up. On
-        // timeout the guide still runs, merely without sound.
+        // Bound the blank-screen delay while still giving pipewire-pulse time
+        // to create its socket. On timeout the guide still runs without sound.
         for (int attempt = 0;
-             attempt < 50 && access(pulse_socket.c_str(), F_OK) != 0; ++attempt)
+             attempt < 15 && access(pulse_socket.c_str(), F_OK) != 0; ++attempt)
             usleep(200 * 1000);
         if (access(pulse_socket.c_str(), F_OK) != 0)
             fprintf(stderr,

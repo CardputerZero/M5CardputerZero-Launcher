@@ -1,5 +1,9 @@
 #include "apply_checkpoint.h"
 
+#if __has_include("global_config.h")
+#include "global_config.h"
+#endif
+
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
