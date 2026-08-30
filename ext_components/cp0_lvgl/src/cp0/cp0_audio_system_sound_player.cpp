@@ -24,7 +24,7 @@ constexpr ma_uint32 kSampleRate = 48000;
 constexpr ma_uint32 kPeriodMilliseconds = 20;
 // The first output frames after a PulseAudio stream is opened can be swallowed
 // while the sink settles. Let the device warm up before starting short sounds.
-constexpr auto kDeviceWarmupDuration = std::chrono::milliseconds(350);
+constexpr auto kDeviceWarmupDuration = std::chrono::milliseconds(300);
 
 std::string resolve_asset(const std::string &name)
 {

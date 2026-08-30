@@ -14,6 +14,7 @@
 #include "model/screensaver_runtime_contract.hpp"
 
 #include <cstdlib>
+#include <future>
 #include <utility>
 
 namespace {
@@ -75,6 +76,7 @@ lv_obj_t *s_block = nullptr;
 lv_timer_t *s_timer = nullptr;
 ScreensaverModel s_model;
 bool s_exiting = false;
+std::future<bool> s_audio_prepare_future;
 
 void set_block_color(size_t color_index)
 {
@@ -105,6 +107,28 @@ bool prepare_system_sound() noexcept
     return code == 0;
 }
 
+void start_system_sound_prepare() noexcept
+{
+    try {
+        if (s_audio_prepare_future.valid())
+            (void)s_audio_prepare_future.get();
+        s_audio_prepare_future = std::async(
+            std::launch::async, [] { return prepare_system_sound(); });
+    } catch (...) {
+    }
+}
+
+bool finish_system_sound_prepare() noexcept
+{
+    if (!s_audio_prepare_future.valid())
+        return false;
+    try {
+        return s_audio_prepare_future.get();
+    } catch (...) {
+        return false;
+    }
+}
+
 void curtain_exit_anim_exec(void *object, int32_t y) noexcept
 {
     try {
@@ -116,6 +140,7 @@ void curtain_exit_anim_exec(void *object, int32_t y) noexcept
 
 void finish_screensaver_exit() noexcept
 {
+    (void)finish_system_sound_prepare();
     try {
         if (s_overlay) {
             lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
@@ -255,7 +280,7 @@ void stop_screensaver(bool was_active = false, bool animated = false)
 {
     const bool active = was_active || s_model.active();
     if (active)
-        prepare_system_sound();
+        start_system_sound_prepare();
 
     s_model.deactivate();
     reset_animation_period();
@@ -371,6 +396,7 @@ extern "C" void ui_screensaver_deinit(void)
         s_timer = nullptr;
     }
     cancel_exit_animation();
+    (void)finish_system_sound_prepare();
     if (s_overlay)
         lv_obj_delete(s_overlay);
     s_overlay = nullptr;
