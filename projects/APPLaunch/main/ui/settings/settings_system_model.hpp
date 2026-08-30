@@ -28,14 +28,16 @@ struct AccountInfo
 
 struct UpdateStatusInfo
 {
-    static constexpr int kUnknownProgress = -1;
+    enum class Progress : int {
+        Unknown = -1,
+    };
 
     bool terminal = false;
     bool availability_known = false;
     bool available = false;
     std::string version;
     std::string commit;
-    int progress = kUnknownProgress;
+    int progress = static_cast<int>(Progress::Unknown);
     std::string stage;
 };
 

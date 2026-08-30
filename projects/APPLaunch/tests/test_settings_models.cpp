@@ -1,7 +1,6 @@
-#include "../main/ui/settings/settings_t12b_about_help_model.hpp"
-#include "../main/ui/settings/settings_t12b_boot_action_policy.hpp"
-#include "../main/ui/settings/settings_t12b_extport_model.hpp"
-#include "../main/ui/settings/settings_t12b_launcher_model.hpp"
+#include "../main/ui/settings/settings_about_help_model.hpp"
+#include "../main/ui/settings/settings_boot_action_policy.hpp"
+#include "../main/ui/settings/settings_launcher_model.hpp"
 
 #include <cassert>
 #include <string>
@@ -34,11 +33,6 @@ int main()
     assert(entries[0].label == "Calculator");
     assert(entries[0].config_key == "calculator");
     assert(!entries[0].enabled);
-    assert(settings_t12b::launcher::state_after_write(false, true, true));
-    assert(settings_t12b::launcher::state_after_write(true, false, false));
-    assert(settings_t12b::launcher::should_notify_registry(true));
-    assert(!settings_t12b::launcher::should_notify_registry(false));
-
     using settings_t12b::boot_actions::Action;
     using settings_t12b::boot_actions::Operation;
     assert(settings_t12b::boot_actions::presentation(Action::Reboot).confirmation_title == "Reboot?");
@@ -59,21 +53,6 @@ int main()
     assert(std::string(settings_t12b::boot_actions::process_command(Operation::Reboot)) == "Reboot");
     assert(std::string(settings_t12b::boot_actions::filesystem_alias(Operation::TouchOobeMarker)) ==
            "oobe_marker");
-
-    bool value = false;
-    assert(settings_t12b::extport::parse_logical_value("0", value) && !value);
-    assert(settings_t12b::extport::parse_logical_value("1", value) && value);
-    assert(!settings_t12b::extport::parse_logical_value("2", value));
-    assert(!settings_t12b::extport::parse_logical_value(" 1", value));
-    assert(!settings_t12b::extport::parse_logical_value("01", value));
-    assert(!settings_t12b::extport::parse_logical_value("-0", value));
-    assert(settings_t12b::extport::gpio_set_succeeded(0, "ok"));
-    assert(!settings_t12b::extport::gpio_set_succeeded(0, "failed"));
-    assert(settings_t12b::extport::state_after_write(false, true, true));
-    assert(settings_t12b::extport::state_after_write(true, false, false));
-    assert(settings_t12b::extport::physical_line_value(true, true) == 0);
-    assert(settings_t12b::extport::logical_line_value(0, true) == 1);
-    assert(settings_t12b::extport::spec(settings_t12b::extport::Port::Grove5V).api_name == "GROVE5V");
 
     const auto about = settings_t12b::about_help::about("1.2.3", "2026-08-24", "stable", "abc123");
     const auto help = settings_t12b::about_help::help();

@@ -20,6 +20,7 @@ namespace {
 
 constexpr uint32_t kIdleCheckMs = 500;
 constexpr uint32_t kAnimationFrameMs = 40;
+constexpr uint32_t kExitAnimationMs = 350;
 
 #define SCREEN_ICON_PIXELS \
     0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00, \
@@ -73,6 +74,7 @@ lv_obj_t *s_overlay = nullptr;
 lv_obj_t *s_block = nullptr;
 lv_timer_t *s_timer = nullptr;
 ScreensaverModel s_model;
+bool s_exiting = false;
 
 void set_block_color(size_t color_index)
 {
@@ -84,6 +86,68 @@ void reset_animation_period()
     if (s_timer) lv_timer_set_period(s_timer, kIdleCheckMs);
 }
 
+void suspend_system_sound() noexcept
+{
+    try {
+        cp0_signal_audio_api({"SystemSoundSuspend"}, nullptr);
+    } catch (...) {
+    }
+}
+
+bool prepare_system_sound() noexcept
+{
+    int code = -1;
+    try {
+        cp0_signal_audio_api({"SystemSoundPrepare"},
+                             [&](int result, std::string) { code = result; });
+    } catch (...) {
+    }
+    return code == 0;
+}
+
+void curtain_exit_anim_exec(void *object, int32_t y) noexcept
+{
+    try {
+        if (s_exiting && object && object == s_overlay)
+            lv_obj_set_y(static_cast<lv_obj_t *>(object), y);
+    } catch (...) {
+    }
+}
+
+void finish_screensaver_exit() noexcept
+{
+    try {
+        if (s_overlay) {
+            lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_y(s_overlay, 0);
+        }
+        if (lv_obj_t *active_screen = lv_screen_active())
+            lv_obj_invalidate(active_screen);
+        s_model.deactivate();
+        reset_animation_period();
+    } catch (...) {
+    }
+    s_exiting = false;
+}
+
+void curtain_exit_anim_completed(lv_anim_t *animation) noexcept
+{
+    try {
+        if (!animation || lv_anim_get_user_data(animation) != s_overlay || !s_exiting)
+            return;
+        finish_screensaver_exit();
+    } catch (...) {
+        finish_screensaver_exit();
+    }
+}
+
+void cancel_exit_animation() noexcept
+{
+    if (s_overlay)
+        lv_anim_delete(s_overlay, curtain_exit_anim_exec);
+    s_exiting = false;
+}
+
 void block_delete_cb(lv_event_t *event) noexcept
 {
     try {
@@ -91,11 +155,13 @@ void block_delete_cb(lv_event_t *event) noexcept
                 lv_event_get_target(event), lv_event_get_current_target(event), s_block))
             return;
         s_block = nullptr;
+        s_exiting = false;
         if (s_overlay) lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
         s_model.deactivate();
         reset_animation_period();
     } catch (...) {
         s_block = nullptr;
+        s_exiting = false;
         reset_animation_period();
         try {
             s_model.deactivate();
@@ -112,11 +178,13 @@ void overlay_delete_cb(lv_event_t *event) noexcept
             return;
         s_overlay = nullptr;
         s_block = nullptr;
+        s_exiting = false;
         s_model.deactivate();
         reset_animation_period();
     } catch (...) {
         s_overlay = nullptr;
         s_block = nullptr;
+        s_exiting = false;
         reset_animation_period();
         try {
             s_model.deactivate();
@@ -183,17 +251,39 @@ void create_objects()
     lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
-void stop_screensaver(bool was_active = false)
+void stop_screensaver(bool was_active = false, bool animated = false)
 {
-    if (s_overlay)
-        lv_obj_add_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
-    if (was_active || s_model.active())
-        if (lv_obj_t *active_screen = lv_screen_active())
-            lv_obj_invalidate(active_screen);
+    const bool active = was_active || s_model.active();
+    if (active)
+        prepare_system_sound();
 
     s_model.deactivate();
-    if (s_timer)
-        lv_timer_set_period(s_timer, kIdleCheckMs);
+    reset_animation_period();
+
+    if (active && animated && s_overlay) {
+        lv_display_t *display = lv_display_get_default();
+        const int height = display ? lv_display_get_vertical_resolution(display)
+                                   : lv_obj_get_height(s_overlay);
+        if (height > 0) {
+            cancel_exit_animation();
+            s_exiting = true;
+            lv_anim_t animation;
+            lv_anim_init(&animation);
+            lv_anim_set_var(&animation, s_overlay);
+            lv_anim_set_values(&animation, lv_obj_get_y(s_overlay), -height);
+            lv_anim_set_duration(&animation, kExitAnimationMs);
+            lv_anim_set_path_cb(&animation, lv_anim_path_ease_in_out);
+            lv_anim_set_exec_cb(&animation, curtain_exit_anim_exec);
+            lv_anim_set_user_data(&animation, s_overlay);
+            lv_anim_set_completed_cb(&animation, curtain_exit_anim_completed);
+            if (lv_anim_start(&animation))
+                return;
+            s_exiting = false;
+        }
+    }
+
+    cancel_exit_animation();
+    finish_screensaver_exit();
 }
 
 void start_screensaver()
@@ -206,12 +296,15 @@ void start_screensaver()
     if (!display) return;
     const int width = lv_display_get_horizontal_resolution(display);
     const int height = lv_display_get_vertical_resolution(display);
+    cancel_exit_animation();
+    lv_obj_set_y(s_overlay, 0);
     lv_obj_set_size(s_overlay, width, height);
 
     const ScreensaverFrame frame = s_model.activate(width, height, lv_tick_get());
     lv_obj_set_pos(s_block, frame.x, frame.y);
     set_block_color(frame.color_index);
 
+    suspend_system_sound();
     lv_obj_move_foreground(s_overlay);
     lv_obj_clear_flag(s_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_timer_set_period(s_timer, kAnimationFrameMs);
@@ -277,6 +370,7 @@ extern "C" void ui_screensaver_deinit(void)
         lv_timer_delete(s_timer);
         s_timer = nullptr;
     }
+    cancel_exit_animation();
     if (s_overlay)
         lv_obj_delete(s_overlay);
     s_overlay = nullptr;
@@ -291,10 +385,16 @@ extern "C" int ui_screensaver_filter_key(const struct key_item *item)
     if (!item)
         return 0;
 
+    if (s_exiting) {
+        s_model.filter_key(
+            item->key_code, item->key_state == KBD_KEY_RELEASED, lv_tick_get());
+        return 1;
+    }
+
     const bool was_active = s_model.active();
     const bool consumed = s_model.filter_key(
         item->key_code, item->key_state == KBD_KEY_RELEASED, lv_tick_get());
-    if (was_active && consumed) stop_screensaver(true);
+    if (was_active && consumed) stop_screensaver(true, true);
     return consumed ? 1 : 0;
     } catch (...) {
         stop_screensaver();

@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <deque>
+#include <future>
 #include <limits>
 #include <mutex>
 #include <thread>
@@ -21,8 +22,9 @@ constexpr std::size_t kSoundCount = 3;
 constexpr ma_uint32 kChannels = 2;
 constexpr ma_uint32 kSampleRate = 48000;
 constexpr ma_uint32 kPeriodMilliseconds = 20;
-constexpr auto kPlaybackPollInterval = std::chrono::milliseconds(20);
-constexpr auto kDeviceIdleTimeout = std::chrono::seconds(30);
+// The first output frames after a PulseAudio stream is opened can be swallowed
+// while the sink settles. Let the device warm up before starting short sounds.
+constexpr auto kDeviceWarmupDuration = std::chrono::milliseconds(350);
 
 std::string resolve_asset(const std::string &name)
 {
@@ -46,10 +48,19 @@ public:
 
     ~Impl()
     {
+        std::deque<Command> pending;
         {
             std::lock_guard<std::mutex> lock(mutex_);
             stopping_ = true;
-            commands_.clear();
+            pending.swap(commands_);
+        }
+        for (Command &command : pending) {
+            if (command.callback) {
+                try {
+                    command.callback(false);
+                } catch (...) {
+                }
+            }
         }
         wake_.notify_one();
         if (worker_.joinable()) worker_.join();
@@ -98,6 +109,40 @@ public:
         return index < kSoundCount && play_index(index, nullptr);
     }
 
+    void suspend()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (stopping_) return;
+            Command command;
+            command.type = CommandType::Suspend;
+            commands_.push_back(std::move(command));
+        }
+        wake_.notify_one();
+    }
+
+    bool prepare()
+    {
+        if (!enabled_.load(std::memory_order_acquire)) return true;
+        auto completion = std::make_shared<std::promise<bool>>();
+        auto result = completion->get_future();
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (stopping_) return false;
+            Command command;
+            command.type = CommandType::Prepare;
+            command.callback = [completion](bool ready) {
+                try {
+                    completion->set_value(ready);
+                } catch (...) {
+                }
+            };
+            commands_.push_back(std::move(command));
+        }
+        wake_.notify_one();
+        return result.get();
+    }
+
     bool contains(const std::string &name) const
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -126,6 +171,8 @@ private:
         Play,
         Reload,
         SetEnabled,
+        Suspend,
+        Prepare,
     };
 
     struct Command {
@@ -153,7 +200,6 @@ private:
         for (;;) {
             Command command;
             bool have_command = false;
-            bool close_for_idle = false;
             {
                 std::unique_lock<std::mutex> lock(mutex_);
                 for (;;) {
@@ -165,36 +211,11 @@ private:
                         break;
                     }
 
-                    if (!engine_initialized_) {
-                        wake_.wait(lock);
-                        continue;
-                    }
-
-                    if (any_sound_playing()) {
-                        idle_deadline_valid_ = false;
-                        wake_.wait_for(lock, kPlaybackPollInterval);
-                        continue;
-                    }
-
-                    const auto now = std::chrono::steady_clock::now();
-                    if (!idle_deadline_valid_) {
-                        idle_deadline_ = now + kDeviceIdleTimeout;
-                        idle_deadline_valid_ = true;
-                    }
-                    if (now >= idle_deadline_) {
-                        close_for_idle = true;
-                        idle_deadline_valid_ = false;
-                        break;
-                    }
-                    wake_.wait_until(lock, idle_deadline_);
+                    wake_.wait(lock);
                 }
                 if (stopping_) break;
             }
 
-            if (close_for_idle) {
-                close_engine();
-                continue;
-            }
             if (!have_command) continue;
 
             switch (command.type) {
@@ -217,6 +238,21 @@ private:
             case CommandType::SetEnabled:
                 if (!enabled_.load(std::memory_order_acquire)) close_engine();
                 break;
+            case CommandType::Suspend:
+                close_engine();
+                break;
+            case CommandType::Prepare:
+            {
+                const bool ready = open_engine();
+                if (ready) wait_for_engine_warmup();
+                if (command.callback) {
+                    try {
+                        command.callback(ready);
+                    } catch (...) {
+                    }
+                }
+                break;
+            }
             }
         }
 
@@ -304,8 +340,20 @@ private:
             sound_initialized_.begin(), sound_initialized_.end(),
             [](bool initialized) { return initialized; });
         if (!ready) close_engine();
-        idle_deadline_valid_ = false;
+        if (ready) {
+            engine_warmup_deadline_ = std::chrono::steady_clock::now() +
+                                      kDeviceWarmupDuration;
+        }
         return ready;
+    }
+
+    void wait_for_engine_warmup()
+    {
+        if (!engine_initialized_ || engine_warmup_deadline_ ==
+                                        std::chrono::steady_clock::time_point{})
+            return;
+        std::this_thread::sleep_until(engine_warmup_deadline_);
+        engine_warmup_deadline_ = {};
     }
 
     bool play(std::size_t index)
@@ -314,20 +362,13 @@ private:
             !sound_initialized_[index])
             return false;
 
+        wait_for_engine_warmup();
         ma_sound &sound = sounds_[index];
         if (ma_sound_is_playing(&sound)) return true;
         if (ma_sound_seek_to_pcm_frame(&sound, 0) == MA_SUCCESS &&
             ma_sound_start(&sound) == MA_SUCCESS) {
-            idle_deadline_valid_ = false;
             return true;
         }
-        return false;
-    }
-
-    bool any_sound_playing() const
-    {
-        for (std::size_t i = 0; i < sounds_.size(); ++i)
-            if (sound_initialized_[i] && ma_sound_is_playing(&sounds_[i])) return true;
         return false;
     }
 
@@ -344,7 +385,7 @@ private:
             ma_context_uninit(&context_);
             context_initialized_ = false;
         }
-        idle_deadline_valid_ = false;
+        engine_warmup_deadline_ = {};
     }
 
     mutable std::mutex mutex_;
@@ -362,8 +403,7 @@ private:
     std::array<bool, kSoundCount> sound_initialized_{};
     bool context_initialized_ = false;
     bool engine_initialized_ = false;
-    bool idle_deadline_valid_ = false;
-    std::chrono::steady_clock::time_point idle_deadline_{};
+    std::chrono::steady_clock::time_point engine_warmup_deadline_{};
 };
 
 Cp0SystemSoundPlayer::Cp0SystemSoundPlayer()
@@ -386,6 +426,16 @@ bool Cp0SystemSoundPlayer::play_index(std::size_t index, PlayCallback callback)
 bool Cp0SystemSoundPlayer::play_named(const std::string &name)
 {
     return impl_->play_named(name);
+}
+
+void Cp0SystemSoundPlayer::suspend()
+{
+    impl_->suspend();
+}
+
+bool Cp0SystemSoundPlayer::prepare()
+{
+    return impl_->prepare();
 }
 
 bool Cp0SystemSoundPlayer::contains(const std::string &name) const

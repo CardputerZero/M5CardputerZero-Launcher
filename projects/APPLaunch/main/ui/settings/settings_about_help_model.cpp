@@ -1,4 +1,4 @@
-#include "settings_t12b_about_help_model.hpp"
+#include "settings_about_help_model.hpp"
 
 namespace settings_t12b::about_help {
 namespace {

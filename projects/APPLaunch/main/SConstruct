@@ -218,6 +218,14 @@ os.makedirs(_staged_font_dir, exist_ok=True)
 shutil.copy2(os.path.join(_repo_root,
                           'SDK/github_source/lvgl/lvgl/scripts/built_in_font/DejaVuSans.ttf'),
              os.path.join(_staged_font_dir, 'DejaVuSans.ttf'))
+# _optional_font_sources = [
+#     (os.path.join('/usr/share/fonts/truetype/dejavu', 'DejaVuSerif.ttf'), 'DejaVuSerif.ttf'),
+#     (os.path.join('/usr/share/fonts/opentype/noto', 'NotoSansCJK-Regular.ttc'), 'NotoSansCJK-Regular.ttc'),
+#     (os.path.join('/usr/share/fonts/opentype/noto', 'NotoSerifCJK-Regular.ttc'), 'NotoSerifCJK-Regular.ttc'),
+# ]
+# for _font_source, _font_name in _optional_font_sources:
+#     if os.path.isfile(_font_source):
+#         shutil.copy2(_font_source, os.path.join(_staged_font_dir, _font_name))
 STATIC_FILES += [(_staged_applaunch, 'APPLaunch')]
 # register the component to the build system
 env['COMPONENTS'].append({'target':'M5CardputerZero-APPLaunch',

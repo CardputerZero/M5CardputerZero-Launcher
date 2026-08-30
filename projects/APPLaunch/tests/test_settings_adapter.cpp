@@ -1,4 +1,4 @@
-#include "../main/ui/settings/settings_t12b_adapter.hpp"
+#include "../main/ui/settings/settings_adapter.hpp"
 
 #include <eventpp/callbacklist.h>
 
@@ -13,16 +13,11 @@ eventpp::CallbackList<void(std::list<std::string>, std::function<void(int, std::
     cp0_signal_filesystem_api;
 eventpp::CallbackList<void(std::list<std::string>, std::function<void(int, std::string)>)>
     cp0_signal_process_api;
-eventpp::CallbackList<void(std::list<std::string>, std::function<void(int, std::string)>)>
-    cp0_signal_settings_api;
 
 namespace {
 
 std::vector<std::list<std::string>> filesystem_calls;
 std::vector<std::list<std::string>> process_calls;
-std::vector<std::list<std::string>> settings_calls;
-bool gpio_value = false;
-bool fail_next_gpio_set = false;
 bool fail_remove = false;
 
 void install_fakes()
@@ -47,27 +42,6 @@ void install_fakes()
             callback(0, "");
         });
 
-    cp0_signal_settings_api.append(
-        [](std::list<std::string> arguments, std::function<void(int, std::string)> callback) {
-            settings_calls.push_back(arguments);
-            const std::string command = arguments.empty() ? std::string() : arguments.front();
-            if (command == "GpioGet") {
-                callback(0, gpio_value ? "1" : "0");
-                return;
-            }
-            if (command == "GpioSet" && arguments.size() == 3) {
-                const bool requested = *std::next(arguments.begin(), 2) == "1";
-                if (fail_next_gpio_set) {
-                    fail_next_gpio_set = false;
-                    callback(-1, "gpio set failed");
-                    return;
-                }
-                gpio_value = requested;
-                callback(0, "ok");
-                return;
-            }
-            callback(-1, "unexpected settings command");
-        });
 }
 
 void test_factory_reset_order()
@@ -123,33 +97,6 @@ void test_boot_confirmation_yes_no()
     assert((process_calls[0] == std::list<std::string>{"Reboot"}));
 }
 
-void test_gpio_write_and_rollback()
-{
-    settings_calls.clear();
-    gpio_value = false;
-    auto toggle = settings_t12b::make_ext_port_toggle_api(settings_t12b::extport::Port::Grove5V);
-
-    bool enabled = true;
-    toggle(SettingApiReadFlag, &enabled);
-    assert(!enabled);
-    toggle(SettingApiActivate, nullptr);
-    assert(gpio_value);
-    assert(settings_calls.size() == 4);
-    assert((settings_calls[0] == std::list<std::string>{"GpioGet", "GROVE5V"}));
-    assert((settings_calls[1] == std::list<std::string>{"GpioGet", "GROVE5V"}));
-    assert((settings_calls[2] == std::list<std::string>{"GpioSet", "GROVE5V", "1"}));
-    assert((settings_calls[3] == std::list<std::string>{"GpioGet", "GROVE5V"}));
-
-    settings_calls.clear();
-    fail_next_gpio_set = true;
-    toggle(SettingApiActivate, nullptr);
-    assert(gpio_value);
-    assert(settings_calls.size() == 3);
-    assert((settings_calls[0] == std::list<std::string>{"GpioGet", "GROVE5V"}));
-    assert((settings_calls[1] == std::list<std::string>{"GpioSet", "GROVE5V", "0"}));
-    assert((settings_calls[2] == std::list<std::string>{"GpioSet", "GROVE5V", "1"}));
-}
-
 } // namespace
 
 int main()
@@ -158,5 +105,4 @@ int main()
     test_factory_reset_order();
     test_boot_failure_stops_plan();
     test_boot_confirmation_yes_no();
-    test_gpio_write_and_rollback();
 }

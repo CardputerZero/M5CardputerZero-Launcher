@@ -20,6 +20,8 @@ public:
     int reload(const std::vector<std::string> &names);
     bool play_index(std::size_t index, PlayCallback callback = nullptr);
     bool play_named(const std::string &name);
+    void suspend();
+    bool prepare();
     bool contains(const std::string &name) const;
     void set_enabled(bool enabled);
     bool enabled() const;

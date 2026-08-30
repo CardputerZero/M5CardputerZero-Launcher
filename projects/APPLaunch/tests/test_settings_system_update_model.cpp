@@ -40,7 +40,7 @@ int main()
     assert(!current.available);
     assert(current.version == "1.4.0");
     assert(current.commit == "abc1234");
-    assert(current.progress == UpdateStatusInfo::kUnknownProgress);
+    assert(current.progress == static_cast<int>(UpdateStatusInfo::Progress::Unknown));
     assert(current.stage == "succeeded");
 
     const UpdateStatusInfo available = parse_update_status(
@@ -79,5 +79,5 @@ int main()
     const UpdateStatusInfo legacy_stage = parse_update_status("recovering:install");
     assert(!legacy_stage.terminal);
     assert(legacy_stage.stage == "recovering");
-    assert(legacy_stage.progress == UpdateStatusInfo::kUnknownProgress);
+    assert(legacy_stage.progress == static_cast<int>(UpdateStatusInfo::Progress::Unknown));
 }

@@ -26,7 +26,7 @@ typedef struct {
 
 typedef struct {
     char ssid[CP0_WIFI_SSID_MAX];
-    int signal;
+    int signal; /* Wi-Fi RSSI in dBm; legacy backends may report 0..100 strength */
     char security[32];
     int in_use;
     int saved;
@@ -36,7 +36,7 @@ typedef struct {
     int connected;
     char ssid[CP0_WIFI_SSID_MAX];
     char ip[48];
-    int signal;
+    int signal; /* Wi-Fi RSSI in dBm; legacy backends may report 0..100 strength */
     int ethernet; /* 1 if a wired ethernet device is connected */
 } cp0_wifi_status_t;
 
