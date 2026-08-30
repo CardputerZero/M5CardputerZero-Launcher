@@ -661,6 +661,14 @@ void LvSettingRollerPage2::finish_page3_transition(bool entering)
         lv_group_add_obj(group, ComponensObj);
         lv_group_focus_obj(ComponensObj);
     }
+    for (auto it = parent_node_.begin(); it != parent_node_.end(); ++it) {
+        if (!it->icon_enabled) continue;
+        const auto index = static_cast<uint32_t>(std::distance(parent_node_.begin(), it));
+        lv_obj_t *row = ComponensObj ? lv_obj_get_child(ComponensObj, index) : nullptr;
+        if (!row) continue;
+        ++it->status_generation;
+        request_status_refresh(row, it);
+    }
     SetSelfUiMode(PageType::Normal);
     page3_transitioning_ = false;
     invoke_page3_animation_callback();

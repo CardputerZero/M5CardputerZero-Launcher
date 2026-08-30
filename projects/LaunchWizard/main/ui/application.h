@@ -13,8 +13,8 @@ void launch_wizard_ui_teardown(void);
 bool launch_wizard_should_run(void);
 int launch_wizard_finish_configured_system(void);
 
-// Shows the keyboard tutorial before the OOBE decision on every non-test
-// launch.
+// Shows the keyboard tutorial before the OOBE decision when pi-gen's one-shot
+// marker is present.
 void launch_wizard_run_keyboard_guide(void);
 
 #endif  // LAUNCH_WIZARD_APPLICATION_H
