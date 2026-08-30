@@ -61,7 +61,10 @@ KeyAction route_key(const KeyRouteContext &context, const KeyEvent &event)
 
     if (context.input_open) {
         if (event.key == Key::Escape)
-            return {KeyActionType::InputClose, {}};
+            return {input_saves_on_close(context.input_mode)
+                        ? KeyActionType::InputSubmit
+                        : KeyActionType::InputClose,
+                    {}};
         if (event.key == Key::Tab && context.input_mode != InputMode::PairingCode)
             return {KeyActionType::InputInsertNewline, {}};
         if (event.key == Key::Tab)

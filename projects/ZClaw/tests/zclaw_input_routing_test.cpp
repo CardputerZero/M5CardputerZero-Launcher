@@ -19,6 +19,12 @@ int main()
     assert(!zclaw::input_is_single_line(InputMode::ProviderEdit));
     assert(!zclaw::input_is_single_line(InputMode::ProviderUriEdit));
     assert(zclaw::input_is_single_line(InputMode::PairingCode));
+    assert(!zclaw::input_saves_on_close(InputMode::Chat));
+    assert(zclaw::input_saves_on_close(InputMode::SetupEdit));
+    assert(zclaw::input_saves_on_close(InputMode::SetupUriEdit));
+    assert(zclaw::input_saves_on_close(InputMode::ProviderEdit));
+    assert(zclaw::input_saves_on_close(InputMode::ProviderUriEdit));
+    assert(!zclaw::input_saves_on_close(InputMode::PairingCode));
     zclaw::InputSubmission submission =
         zclaw::input_submission(InputMode::Chat, "hello");
     assert(submission.action == InputSubmissionAction::SendChat);
@@ -107,19 +113,28 @@ int main()
     assert(routed(context, KeyPhase::Released, Key::Tab).type ==
            KeyActionType::InputInsertNewline);
     context.input_mode = InputMode::SetupEdit;
+    assert(routed(context, KeyPhase::Released, Key::Escape).type ==
+           KeyActionType::InputSubmit);
     assert(routed(context, KeyPhase::Released, Key::Tab).type ==
            KeyActionType::InputInsertNewline);
+    context.input_mode = InputMode::SetupUriEdit;
+    assert(routed(context, KeyPhase::Released, Key::Escape).type ==
+           KeyActionType::InputSubmit);
     context.input_mode = InputMode::ProviderEdit;
+    assert(routed(context, KeyPhase::Released, Key::Escape).type ==
+           KeyActionType::InputSubmit);
     assert(routed(context, KeyPhase::Released, Key::Tab).type ==
            KeyActionType::InputInsertNewline);
     context.input_mode = InputMode::PairingCode;
+    assert(routed(context, KeyPhase::Released, Key::Escape).type ==
+           KeyActionType::InputClose);
     assert(routed(context, KeyPhase::Released, Key::Tab).type ==
            KeyActionType::InputToggleSecretVisibility);
     context.input_mode = InputMode::ProviderUriEdit;
     assert(routed(context, KeyPhase::Released, Key::Tab).type ==
            KeyActionType::InputInsertNewline);
     assert(routed(context, KeyPhase::Released, Key::Escape).type ==
-           KeyActionType::InputClose);
+           KeyActionType::InputSubmit);
     assert(routed(context, KeyPhase::Released, Key::Enter, true).type ==
            KeyActionType::None);
     assert(routed(context, KeyPhase::Released, Key::Down).type ==
