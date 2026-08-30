@@ -12,6 +12,21 @@ bool input_is_single_line(InputMode mode)
     return mode == InputMode::PairingCode;
 }
 
+bool input_saves_on_close(InputMode mode)
+{
+    switch (mode) {
+    case InputMode::SetupEdit:
+    case InputMode::SetupUriEdit:
+    case InputMode::ProviderEdit:
+    case InputMode::ProviderUriEdit:
+        return true;
+    case InputMode::Chat:
+    case InputMode::PairingCode:
+        return false;
+    }
+    return false;
+}
+
 InputSubmission input_submission(InputMode mode, std::string value)
 {
     InputSubmission submission;

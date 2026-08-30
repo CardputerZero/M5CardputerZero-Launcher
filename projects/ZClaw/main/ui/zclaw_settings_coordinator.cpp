@@ -122,7 +122,7 @@ void SettingsCoordinator::show_setup_error(const std::string &error)
     lv_obj_move_foreground(setup_error_dialog_);
     const lv_coord_t title_height = lv_font_get_line_height(fonts_.font_12());
     const lv_coord_t text_height = lv_font_get_line_height(fonts_.font_10());
-    widgets::label(setup_error_dialog_, "Download failed", 12, 5, 226,
+    widgets::label(setup_error_dialog_, "Quickstart failed", 12, 5, 226,
                    title_height,
                    fonts_.font_12(), theme::kText);
     widgets::label(setup_error_dialog_,
