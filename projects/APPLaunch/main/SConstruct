@@ -207,14 +207,25 @@ if 'CONFIG_APPLAUNCH_WIN_X86_CROSS_CP0' in os.environ:
 # copied earlier in the same STATIC_FILES batch.
 _static_source = os.path.abspath('../APPLaunch')
 _staged_applaunch = os.path.abspath(os.path.join('build', 'static', 'APPLaunch'))
+_static_copy_ignore_patterns = ('__pycache__', '*.pyc', '*.pyo')
 if os.path.exists(_staged_applaunch):
     shutil.rmtree(_staged_applaunch)
-shutil.copytree(_static_source, _staged_applaunch)
+shutil.copytree(_static_source,
+                _staged_applaunch,
+                ignore=shutil.ignore_patterns(*_static_copy_ignore_patterns))
 _staged_font_dir = os.path.join(_staged_applaunch, 'share', 'font')
 os.makedirs(_staged_font_dir, exist_ok=True)
 shutil.copy2(os.path.join(_repo_root,
                           'SDK/github_source/lvgl/lvgl/scripts/built_in_font/DejaVuSans.ttf'),
              os.path.join(_staged_font_dir, 'DejaVuSans.ttf'))
+# _optional_font_sources = [
+#     (os.path.join('/usr/share/fonts/truetype/dejavu', 'DejaVuSerif.ttf'), 'DejaVuSerif.ttf'),
+#     (os.path.join('/usr/share/fonts/opentype/noto', 'NotoSansCJK-Regular.ttc'), 'NotoSansCJK-Regular.ttc'),
+#     (os.path.join('/usr/share/fonts/opentype/noto', 'NotoSerifCJK-Regular.ttc'), 'NotoSerifCJK-Regular.ttc'),
+# ]
+# for _font_source, _font_name in _optional_font_sources:
+#     if os.path.isfile(_font_source):
+#         shutil.copy2(_font_source, os.path.join(_staged_font_dir, _font_name))
 STATIC_FILES += [(_staged_applaunch, 'APPLaunch')]
 # register the component to the build system
 env['COMPONENTS'].append({'target':'M5CardputerZero-APPLaunch',

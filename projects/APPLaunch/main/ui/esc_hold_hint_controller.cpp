@@ -24,6 +24,7 @@ bool EscHoldHintController::handle(const key_item *item)
         return false;
 
     if (item->key_state == KBD_KEY_PRESSED) {
+        if (!return_home_enabled_) return true;
         if (!model_.press(lv_tick_get())) return true;
         if (!poll_timer_)
             poll_timer_ = lv_timer_create(poll_timer_cb, kPollPeriodMs, this);
@@ -45,6 +46,14 @@ bool EscHoldHintController::handle(const key_item *item)
 void EscHoldHintController::clear_hint_ownership()
 {
     model_.clear_hint_ownership();
+}
+
+void EscHoldHintController::set_return_home_enabled(bool enabled)
+{
+    return_home_enabled_ = enabled;
+    if (enabled) return;
+    if (poll_timer_) lv_timer_pause(poll_timer_);
+    if (model_.cancel()) launcher_toast().hide();
 }
 
 void EscHoldHintController::set_force_home_callback(ForceHomeCallback callback, void *user_data)
@@ -72,7 +81,8 @@ void EscHoldHintController::poll(lv_timer_t *timer)
 {
     if (!esc_hold_timer_is_current(timer, poll_timer_)) return;
     const EscHoldPollDecision decision = model_.poll(
-        lv_tick_get(), cp0_esc_state_read() != 0, force_home_callback_ != nullptr);
+        lv_tick_get(), cp0_esc_state_read() != 0, force_home_callback_ != nullptr,
+        return_home_enabled_);
     if (decision.hide_hint) launcher_toast().hide();
     if (decision.show_hint)
         launcher_toast().show_persistent("Hold ESC 3s to return home");

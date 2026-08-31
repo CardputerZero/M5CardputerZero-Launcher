@@ -109,8 +109,11 @@ bool test_wizard_model()
     expect(retry_policy.observe(0, 0) == WifiScanDecision::Empty,
            "persistent empty scan did not converge to Empty");
     retry_policy.reset();
+    for (int attempt = 1; attempt < kWifiMaxAutomaticScans; ++attempt)
+        expect(retry_policy.observe(-1, 0) == WifiScanDecision::Retry,
+               "transient scan error stopped before retry limit");
     expect(retry_policy.observe(-1, 0) == WifiScanDecision::Error,
-           "scan error incorrectly retried");
+           "persistent scan error did not converge to Error");
     retry_policy.reset();
     expect(retry_policy.attempts() == 0 &&
                retry_policy.observe(0, 0) == WifiScanDecision::Retry,

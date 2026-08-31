@@ -91,7 +91,6 @@ Core rules:
 | `lock_file` | `/tmp/M5CardputerZero-APPLaunch_fcntl.lock` |
 | `keyboard_device` | `/dev/input/by-path/platform-3f804000.i2c-event` |
 | `keyboard_map` | `/usr/share/keymaps/tca8418_keypad_m5stack_keymap.map` |
-| `store_sync_cmd` | `python /usr/share/APPLaunch/bin/store_cache_sync.py` |
 | `*.png` / `*.gif` / `*.jpg` / `*.jpeg` / `*.svg` | `share/images/<file>` |
 | `*.wav` / `*.mp3` / `*.ogg` | `/usr/share/APPLaunch/share/audio/<file>` |
 | `*.ttf` / `*.otf` | `/usr/share/APPLaunch/share/font/<file>` |

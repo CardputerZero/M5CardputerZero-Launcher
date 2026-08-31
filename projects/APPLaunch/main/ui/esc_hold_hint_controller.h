@@ -18,6 +18,7 @@ public:
 
     bool handle(const key_item *item);
     void clear_hint_ownership();
+    void set_return_home_enabled(bool enabled);
     void set_force_home_callback(ForceHomeCallback callback, void *user_data);
     void shutdown();
 
@@ -29,6 +30,7 @@ private:
     EscHoldLifecycleModel model_;
     ForceHomeCallback force_home_callback_ = nullptr;
     void *force_home_user_data_ = nullptr;
+    bool return_home_enabled_ = false;
 };
 
 EscHoldHintController &esc_hold_hint_controller();

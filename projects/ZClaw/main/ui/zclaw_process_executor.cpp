@@ -17,6 +17,8 @@
 namespace zclaw {
 namespace {
 
+constexpr const char *kSecretInputPromptSuffix = ".api_key: ";
+
 CommandResult cancelled_result()
 {
     return {-1, "command cancelled"};
@@ -189,12 +191,6 @@ CommandResult ProcessExecutor::run_with_secret_input(
             ::close(master);
             return {-1, "failed to configure secure command terminal"};
         }
-        settings.c_lflag &= static_cast<tcflag_t>(~(ECHO | ECHONL));
-        if (::tcsetattr(slave, TCSANOW, &settings) != 0) {
-            ::close(slave);
-            ::close(master);
-            return {-1, "failed to configure secure command terminal"};
-        }
         process = ::fork();
         if (process == 0) {
             ::setsid();
@@ -244,6 +240,8 @@ CommandResult ProcessExecutor::run_with_secret_input(
         bool timed_out = false;
         bool cancelled = false;
         bool eof = false;
+        bool prompt_received = false;
+        bool input_ready = false;
         constexpr std::size_t kOutputLimit = 64 * 1024;
         const auto deadline = std::chrono::steady_clock::now() +
                               std::chrono::milliseconds(timeout_ms);
@@ -257,8 +255,13 @@ CommandResult ProcessExecutor::run_with_secret_input(
             const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
                 deadline - std::chrono::steady_clock::now()).count();
             if (remaining <= 0) { timed_out = true; break; }
+            if (prompt_received && !input_ready) {
+                struct termios settings {};
+                input_ready = ::tcgetattr(master, &settings) == 0 &&
+                              (settings.c_lflag & ECHO) == 0;
+            }
             short events = POLLIN;
-            if (written < input.size()) events |= POLLOUT;
+            if (input_ready && written < input.size()) events |= POLLOUT;
             pollfd descriptor{master, events, 0};
             const int ready = ::poll(&descriptor, 1,
                                      static_cast<int>(std::min<int64_t>(remaining, 50)));
@@ -283,6 +286,9 @@ CommandResult ProcessExecutor::run_with_secret_input(
                         const std::size_t available = kOutputLimit - result.output.size();
                         result.output.append(buffer, std::min<std::size_t>(
                             static_cast<std::size_t>(bytes), available));
+                        prompt_received = prompt_received ||
+                            result.output.find(kSecretInputPromptSuffix) !=
+                                std::string::npos;
                         continue;
                     }
                     if (bytes == 0 || (bytes < 0 && errno == EIO)) eof = true;
@@ -294,8 +300,9 @@ CommandResult ProcessExecutor::run_with_secret_input(
             if (descriptor.revents & (POLLERR | POLLNVAL)) input_failed = true;
             if (input_failed) break;
         }
+        const bool input_incomplete = written < input.size();
         std::fill(input.begin(), input.end(), '\0');
-        if (timed_out || cancelled || input_failed || written < input.size()) {
+        if (timed_out || cancelled || input_failed || input_incomplete) {
             ::kill(-process, SIGTERM);
             ::kill(process, SIGTERM);
             for (int attempt = 0; attempt < 10; ++attempt) {
@@ -319,8 +326,12 @@ CommandResult ProcessExecutor::run_with_secret_input(
             reaped = true;
         }
         if (cancelled) result = cancelled_result();
-        else if (timed_out) result = {-1, "command timed out"};
-        else if (input_failed || written < input.size())
+        else if (timed_out)
+            result = {-1, prompt_received ? "command timed out"
+                                           : "secure input prompt timed out"};
+        else if (!prompt_received)
+            result = {-1, "secure input prompt not received"};
+        else if (input_failed || input_incomplete)
             result = {-1, "failed to provide secure input"};
         else result.status = status;
         result.output = trim_ascii_whitespace(result.output);

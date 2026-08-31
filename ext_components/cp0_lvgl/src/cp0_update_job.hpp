@@ -3,6 +3,7 @@
 #include "../include/cp0_bounded_task_registry.hpp"
 
 #include <atomic>
+#include <cerrno>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -88,7 +89,8 @@ public:
         else {
             std::string stage;
             { std::lock_guard<std::mutex> lock(job->mutex); stage = job->stage; }
-            if (job->result.load() == 0) value = "succeeded:" + stage;
+            if (job->result.load() == -ECANCELED) value = "cancelled";
+            else if (job->result.load() == 0) value = "succeeded:" + stage;
             else value = "failed:" + stage + ":" + std::to_string(job->result.load());
             std::lock_guard<std::mutex> lock(mutex_);
             jobs_.erase(id);

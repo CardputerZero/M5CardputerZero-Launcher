@@ -153,8 +153,18 @@ ln -f "$PACKAGE" "$OUTPUT_DIR/applaunch_arm64.deb"
     sha256sum -c applaunch_arm64.deb.sha256
 )
 printf '1\n' >"$OUTPUT_DIR/applaunch_arm64.deb.update-abi"
+PRODUCT_VERSION=${APPLAUNCH_VERSION:-${VERSION%%+*}}
+PACKAGE_VERSION=$(dpkg-deb -f "$PACKAGE" Version)
+COMMIT=$(git -C "$ROOT" rev-parse --short=12 HEAD)
+{
+    printf 'format=1\n'
+    printf 'version=%s\n' "$PRODUCT_VERSION"
+    printf 'package_version=%s\n' "$PACKAGE_VERSION"
+    printf 'commit=%s\n' "$COMMIT"
+} >"$OUTPUT_DIR/applaunch_arm64.deb.update-info"
 printf '%s\n' "$PACKAGE" >"$OUTPUT_DIR/applaunch-package.path"
 echo "Stable package: $OUTPUT_DIR/applaunch_arm64.deb"
 echo "Checksum: $OUTPUT_DIR/applaunch_arm64.deb.sha256"
 echo "Update ABI: $OUTPUT_DIR/applaunch_arm64.deb.update-abi"
+echo "Update info: $OUTPUT_DIR/applaunch_arm64.deb.update-info"
 echo "Result path: $OUTPUT_DIR/applaunch-package.path"

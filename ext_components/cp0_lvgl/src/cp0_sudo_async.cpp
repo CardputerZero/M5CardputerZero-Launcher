@@ -7,6 +7,7 @@
 #include "cp0_callback_contract.hpp"
 #include "cp0_sudo_request_factory.hpp"
 #include "cp0_sudo_command.hpp"
+#include "cp0_sudo_prompt_key_policy.hpp"
 #include "cp0_dispatch_testable.hpp"
 #include "cp0_pointer_lifecycle.hpp"
 #include "cp0_signal_registration.hpp"
@@ -110,6 +111,7 @@ lv_group_t *g_prompt_group = nullptr;
 lv_timer_t *g_timer = nullptr;
 std::shared_ptr<Request> g_prompt_request;
 std::string g_password;
+cp0_sudo::PromptConfirmKeyGate g_confirm_key_gate;
 std::mutex g_queued_password_mutex;
 std::string g_queued_password;
 int64_t g_queued_password_deadline_ms = 0;
@@ -239,6 +241,7 @@ void destroy_prompt()
     g_password_label = nullptr;
     g_hint_label = nullptr;
     g_prompt_request.reset();
+    g_confirm_key_gate.reset();
     secure_clear(g_password);
     clear_queued_password();
 }
@@ -272,6 +275,7 @@ void create_prompt(const std::shared_ptr<Request> &request)
 {
     if (g_prompt_request) return;
     g_prompt_request = request;
+    g_confirm_key_gate.reset();
     lv_obj_t *layer = lv_layer_top();
     if (!layer) {
         fail_prompt_creation();
@@ -674,24 +678,29 @@ bool schedule_apply_queued_password()
 void key_event_impl(lv_event_t *event)
 {
     auto *key = static_cast<key_item *>(lv_event_get_param(event));
-    if (!key || key->key_state != KBD_KEY_RELEASED) return;
+    if (!key || !g_prompt_request) return;
     lv_event_stop_processing(event);
-    if (!g_prompt_request) return;
-    if (key->key_code == KEY_ENTER && g_password.empty()) return;
     if (g_coordinator.state(g_prompt_request->id) == cp0_sudo::State::RUNNING) {
-        if (key->key_code == KEY_ESC) {
+        if (key->key_state == KBD_KEY_RELEASED && key->key_code == KEY_ESC) {
             std::vector<Action> actions;
             g_coordinator.cancel(g_prompt_request->id, actions, now_ms());
             execute_actions(std::move(actions));
         }
         return;
     }
+    if (key->key_code == KEY_ENTER) {
+        if (key->key_state == KBD_KEY_PRESSED)
+            g_confirm_key_gate.press();
+        else if (key->key_state == KBD_KEY_RELEASED && g_confirm_key_gate.release())
+            submit_password();
+        return;
+    }
+    if (key->key_state != KBD_KEY_RELEASED) return;
     if (key->key_code == KEY_ESC) {
         std::vector<Action> actions;
         g_coordinator.cancel(g_prompt_request->id, actions, now_ms());
         execute_actions(std::move(actions));
-    } else if (key->key_code == KEY_ENTER) submit_password();
-    else if (key->key_code == KEY_BACKSPACE) {
+    } else if (key->key_code == KEY_BACKSPACE) {
         if (!g_password.empty()) g_password.pop_back();
         update_password_label();
     } else if (key->utf8[0] && static_cast<unsigned char>(key->utf8[0]) >= 0x20 &&

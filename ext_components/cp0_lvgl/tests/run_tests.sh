@@ -25,7 +25,11 @@ trap 'rm -f "$binary" "$esc_state_object"' EXIT HUP INT TERM
 "$binary"
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
-    -I"$root/src" "$root/tests/test_audio_quiet_period_gate.cpp" -o "$binary"
+    -I"$root/include" -I"$root/src/cp0" \
+    -I"$root/../Miniaudio/include" \
+    -I"$root/../../SDK/github_source/eventpp/include" \
+    "$root/src/cp0/cp0_audio_system_sound_player.cpp" \
+    "$root/tests/test_audio_system_sound_player.cpp" -ldl -lm -o "$binary"
 "$binary"
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
@@ -404,6 +408,10 @@ trap 'rm -f "$binary" "$esc_state_object"' EXIT HUP INT TERM
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
     -I"$root/include" -I"$root/src" "$root/src/cp0_sudo_coordinator.cpp" \
     "$root/tests/test_sudo_coordinator.cpp" -o "$binary"
+"$binary"
+
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
+    -I"$root/src" "$root/tests/test_sudo_prompt_key_policy.cpp" -o "$binary"
 "$binary"
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \

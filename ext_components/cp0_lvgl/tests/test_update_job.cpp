@@ -63,7 +63,7 @@ int main()
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     assert(cancellation_observed.load());
     assert(jobs.status(abandoned, state));
-    assert(state == "failed:cancelled:" + std::to_string(-ECANCELED));
+    assert(state == "cancelled");
     assert(!jobs.status(abandoned, state));
     assert(!jobs.cancel(abandoned));
 

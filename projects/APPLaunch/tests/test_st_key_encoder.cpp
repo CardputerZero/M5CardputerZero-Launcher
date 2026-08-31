@@ -41,6 +41,7 @@ int main()
     assert(!st_page_renderer_ready(&container, &canvas, &cursor, nullptr));
 
     assert(STKeyEncoder::encode(KEY_ENTER, nullptr, false) == "\r");
+    assert(STKeyEncoder::encode(KEY_KPENTER, nullptr, false) == "\r");
     assert(STKeyEncoder::encode(KEY_BACKSPACE, nullptr, false) ==
            std::string(1, static_cast<char>(0x7f)));
     assert(STKeyEncoder::encode(KEY_ESC, nullptr, false) == "\x1b");
@@ -66,6 +67,16 @@ int main()
 
     // A recognized control key never falls through to the supplied text.
     assert(STKeyEncoder::encode(KEY_ENTER, "ignored", false) == "\r");
+
+    assert(STKeyEncoder::should_forward_event(KEY_ENTER, KBD_KEY_PRESSED));
+    assert(!STKeyEncoder::should_forward_event(KEY_ENTER, KBD_KEY_REPEATED));
+    assert(!STKeyEncoder::should_forward_event(KEY_ENTER, KBD_KEY_RELEASED));
+    assert(STKeyEncoder::should_forward_event(KEY_KPENTER, KBD_KEY_PRESSED));
+    assert(!STKeyEncoder::should_forward_event(KEY_KPENTER, KBD_KEY_REPEATED));
+    assert(STKeyEncoder::should_forward_event(KEY_A, KBD_KEY_PRESSED));
+    assert(STKeyEncoder::should_forward_event(KEY_A, KBD_KEY_REPEATED));
+    assert(!STKeyEncoder::should_forward_event(KEY_A, KBD_KEY_RELEASED));
+    assert(!STKeyEncoder::should_forward_event(KEY_A, 99));
 
     assert(STKeyEncoder::scrollback_direction(KEY_PAGEUP, 0, false) == 0);
     assert(STKeyEncoder::scrollback_direction(KEY_PAGEDOWN, KBD_MOD_CTRL, false) == 0);

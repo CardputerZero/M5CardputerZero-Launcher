@@ -9,6 +9,7 @@
 #include "../cp0_app_internal_utils.h"
 #include "hal_lvgl_bsp.h"
 
+#include <atomic>
 #include <cerrno>
 #include <cstdarg>
 #include <cstdint>
@@ -139,6 +140,12 @@ private:
 };
 
 static LoraRuntimeState g_lora;
+static std::atomic<bool> g_stop_requested{false};
+
+static bool lora_stop_requested()
+{
+    return g_stop_requested.load(std::memory_order_acquire);
+}
 
 // Forward declarations
 static uint64_t get_monotonic_ms(void);
@@ -181,6 +188,7 @@ static bool sx1262_wait_while_busy(unsigned int timeout_ms)
     const unsigned int sleep_us = 1000;
     unsigned int waited_ms      = 0;
     while (waited_ms < timeout_ms) {
+        if (lora_stop_requested()) return false;
         int busy = gpio_get_value_any(g_lora.busy_gpio, g_lora.busy_fd);
         if (busy < 0) return false;
         if (busy == 0) return true;
@@ -192,6 +200,7 @@ static bool sx1262_wait_while_busy(unsigned int timeout_ms)
 
 static bool sx1262_reset(void)
 {
+    if (lora_stop_requested()) return false;
     if (gpio_set_value_any(g_lora.rst_gpio, g_lora.rst_fd, 0) < 0) return false;
     usleep(20000);
     if (gpio_set_value_any(g_lora.rst_gpio, g_lora.rst_fd, 1) < 0) return false;
@@ -359,11 +368,19 @@ public:
     }
     void delay(RadioLibTime_t ms) override
     {
-        usleep((useconds_t)(ms * 1000));
+        while (ms > 0 && !lora_stop_requested()) {
+            const RadioLibTime_t slice = ms > 10 ? 10 : ms;
+            usleep((useconds_t)(slice * 1000));
+            ms -= slice;
+        }
     }
     void delayMicroseconds(RadioLibTime_t us) override
     {
-        usleep((useconds_t)us);
+        while (us > 0 && !lora_stop_requested()) {
+            const RadioLibTime_t slice = us > 10000 ? 10000 : us;
+            usleep((useconds_t)slice);
+            us -= slice;
+        }
     }
     RadioLibTime_t millis() override
     {
@@ -396,6 +413,10 @@ public:
     }
     void spiTransfer(uint8_t *out, size_t len, uint8_t *in) override
     {
+        if (lora_stop_requested()) {
+            if (in) memset(in, 0, len);
+            return;
+        }
         uint8_t dummy[512] = {0};
         uint8_t *tx        = out ? out : dummy;
         uint8_t *rx        = in ? in : dummy;
@@ -723,6 +744,7 @@ static void lora_poll_hardware(void)
 
 static void lora_init_hardware(void)
 {
+    if (lora_stop_requested()) return;
     // A failed probe can leave SPI/GPIO handles allocated. Release all of
     // them before retrying so entering the page again is deterministic.
     lora_release_hardware();
@@ -740,6 +762,10 @@ static void lora_init_hardware(void)
         lora_set_diag_step("power_enable", 1, "GPIO5 low set failed");
     }
     usleep(100000);
+    if (lora_stop_requested()) {
+        lora_release_hardware();
+        return;
+    }
 
     lora_set_diag_step("reset_gpio_init", 0, "prepare rst pin");
     if (gpio_init_output_any("LORA_RST_CHIP", "LORA_RST_OFFSET", g_lora.rst_gpio, 1, &g_lora.rst_fd, "RST") < 0) {
@@ -830,6 +856,11 @@ static void lora_init_hardware(void)
                                         3.0f,    // TCXO voltage
                                         false);
 
+    if (lora_stop_requested()) {
+        lora_release_hardware();
+        return;
+    }
+
     if (state != RADIOLIB_ERR_NONE) {
         g_lora.initialized = false;
         g_lora.hw_ready    = false;
@@ -856,6 +887,10 @@ static void lora_init_hardware(void)
 
     lora_set_diag_step("ready", 0, "LoRa init finished");
     SLOGI("LoRa: init done, auto enter RX");
+    if (lora_stop_requested()) {
+        lora_release_hardware();
+        return;
+    }
     lora_start_receive_mode();
 }
 
@@ -891,6 +926,16 @@ bool initialize()
     return g_lora.hw_ready;
 }
 
+void request_stop() noexcept
+{
+    g_stop_requested.store(true, std::memory_order_release);
+}
+
+void clear_stop() noexcept
+{
+    g_stop_requested.store(false, std::memory_order_release);
+}
+
 void poll()
 {
     lora_poll_hardware();
@@ -903,6 +948,7 @@ bool send_text(const char *payload)
 
 void start_receive()
 {
+    if (lora_stop_requested()) return;
     lora_start_receive_mode();
 }
 

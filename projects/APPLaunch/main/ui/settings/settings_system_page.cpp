@@ -1,8 +1,11 @@
 #include "settings_system_page.hpp"
 
+#include "cp0_lvgl_app.h"
 #include "cp0_font_service.hpp"
-#include "settings_system_api.hpp"
+#include "hal_lvgl_bsp.h"
+#include "settings_about_info_model.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -15,10 +18,9 @@
 
 namespace {
 
-constexpr int kScreenWidth = 320;
-constexpr int kScreenHeight = 150;
-constexpr int kTextWidth = 304;
-constexpr int kUpdatePollMs = 500;
+enum class TimerInterval : uint32_t {
+    UpdatePollMs = 500,
+};
 constexpr std::chrono::seconds kUpdateTimeout{20 * 60};
 
 #define SETTINGS_SYSTEM_STRINGIFY_IMPL(value) #value
@@ -68,21 +70,26 @@ const char *launcher_commit()
 #endif
 }
 
+std::string lvgl_version()
+{
+    return std::to_string(LVGL_VERSION_MAJOR) + "." +
+           std::to_string(LVGL_VERSION_MINOR) + "." +
+           std::to_string(LVGL_VERSION_PATCH);
+}
+
 const lv_font_t *title_font()
 {
-    const lv_font_t *font = cp0_fonts().get("Montserrat-Bold.ttf", 14, LV_FREETYPE_FONT_STYLE_BOLD);
-    return font ? font : &lv_font_montserrat_14;
+    return settings_fonts::sans(14, LV_FREETYPE_FONT_STYLE_BOLD);
 }
 
 const lv_font_t *body_font()
 {
-    return &lv_font_montserrat_12;
+    return settings_fonts::sans(12);
 }
 
 const lv_font_t *hint_font()
 {
-    const lv_font_t *font = cp0_fonts().get("Montserrat-Bold.ttf", 12, LV_FREETYPE_FONT_STYLE_BOLD);
-    return font ? font : &lv_font_montserrat_12;
+    return settings_fonts::sans(12, LV_FREETYPE_FONT_STYLE_BOLD);
 }
 
 lv_obj_t *create_label(lv_obj_t *parent,
@@ -106,10 +113,10 @@ lv_obj_t *create_label(lv_obj_t *parent,
     return label;
 }
 
-void configure_page(lv_obj_t *object)
+void configure_page(lv_obj_t *object, int width, int height)
 {
     if (!object) return;
-    lv_obj_set_size(object, kScreenWidth, kScreenHeight);
+    lv_obj_set_size(object, width, height);
     lv_obj_set_pos(object, 0, 0);
     lv_obj_set_style_bg_color(object, lv_color_black(), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(object, LV_OPA_COVER, LV_PART_MAIN);
@@ -130,6 +137,7 @@ SettingsSystemPageKind resolve_kind(const NodeIter &page_node, SettingsSystemPag
     if (requested != SettingsSystemPageKind::Auto) return requested;
     if (page_node.node && !page_node->label.empty()) {
         if (page_node->label == "Password") return SettingsSystemPageKind::Password;
+        if (page_node->label == "OS") return SettingsSystemPageKind::OS;
         if (page_node->label == "Username" || page_node->label == "Hostname" ||
             page_node->label == "Account")
             return SettingsSystemPageKind::Account;
@@ -147,6 +155,32 @@ bool is_update_page_label(const NodeIter &page_node)
     if (!page_node.node) return false;
     return page_node->label == "Update" || page_node->label == "Update Launcher" ||
            page_node->label == "System update" || page_node->label == "Check system";
+}
+
+// Keep the OS-info transport private to this page.  The page is the only
+// consumer, so exposing a separate API surface only added an unnecessary
+// coupling between settings modules.
+void request_osinfo(std::list<std::string> arguments,
+                    std::function<void(int, std::string)> callback) noexcept
+{
+    if (!callback) return;
+
+    auto delivered = std::make_shared<std::atomic_bool>(false);
+    auto safe_callback = [callback = std::move(callback), delivered](int code,
+                                                                       std::string data) mutable {
+        bool expected = false;
+        if (!delivered->compare_exchange_strong(expected, true)) return;
+        try {
+            callback(code, std::move(data));
+        } catch (...) {
+        }
+    };
+
+    try {
+        cp0_signal_osinfo_api(std::move(arguments), safe_callback);
+    } catch (...) {
+        safe_callback(-1, "osinfo service unavailable");
+    }
 }
 
 template <typename Owner>
@@ -189,7 +223,7 @@ bool start_osinfo_request(Owner *owner,
     return owner->async_tasks().start(
         [arguments = std::move(arguments), callback = std::move(callback)](auto stop) mutable {
             if (stop && stop->load(std::memory_order_acquire)) return;
-            settings_system::request(std::move(arguments), std::move(callback));
+            request_osinfo(std::move(arguments), std::move(callback));
         });
 }
 
@@ -212,6 +246,7 @@ struct LvSettingSystemInfoPage3::State
     lv_timer_t *request_timer = nullptr;
     settings_system::NetworkInfo network{"--", "--", "--"};
     settings_system::AccountInfo account{"--", "--"};
+    SettingsAboutOsInfo os_info;
     std::string status;
     lv_obj_t *title = nullptr;
     lv_obj_t *line_one = nullptr;
@@ -227,7 +262,8 @@ constexpr std::chrono::seconds kInfoRequestTimeout{15};
 
 void render_system_info(LvSettingSystemInfoPage3 *page);
 
-void stop_system_request_timer(LvSettingSystemInfoPage3::State *state)
+template <typename StateT>
+void stop_system_request_timer(StateT *state)
 {
     if (!state) return;
     stop_timer(state->request_timer);
@@ -291,6 +327,12 @@ void render_system_info(LvSettingSystemInfoPage3 *page)
         set_label(state->line_two, "The backend exposes read-only account information.");
         set_label(state->line_three, "No password is changed or stored by Settings.");
         break;
+    case SettingsSystemPageKind::OS:
+        set_label(state->title, "OS");
+        set_label(state->line_one, "Build date: " + state->os_info.build_date);
+        set_label(state->line_two, "Commit: " + state->os_info.commit);
+        set_label(state->line_three, "");
+        break;
     case SettingsSystemPageKind::Version:
         set_label(state->title, "Version");
         set_label(state->line_one, settings_system::version_label(launcher_version()));
@@ -307,6 +349,18 @@ void render_system_info(LvSettingSystemInfoPage3 *page)
         break;
     case SettingsSystemPageKind::Auto:
         break;
+    }
+
+    // Keep machine-readable values (addresses, versions and commits) in a
+    // fixed-width face while account and explanatory text retain CJK coverage.
+    const bool machine_values = state->kind == SettingsSystemPageKind::Network ||
+                                state->kind == SettingsSystemPageKind::Ethernet ||
+                                state->kind == SettingsSystemPageKind::OS ||
+                                state->kind == SettingsSystemPageKind::Version ||
+                                state->kind == SettingsSystemPageKind::Build;
+    const lv_font_t *line_font = machine_values ? settings_fonts::mono(11) : settings_fonts::cjk_sans(12);
+    for (lv_obj_t *line : {state->line_one, state->line_two, state->line_three}) {
+        if (line) lv_obj_set_style_text_font(line, line_font, LV_PART_MAIN);
     }
 
     set_label(state->status_label, state->status);
@@ -462,6 +516,18 @@ void refresh_system_info(LvSettingSystemInfoPage3 *page)
         page->state_->status = "Read-only account information";
         render_system_info(page);
         break;
+    case SettingsSystemPageKind::OS:
+        page->state_->os_info = SettingsAboutInfoModel::read_os_issue_file();
+        if (page->state_->os_info.build_date == "unknown" &&
+            page->state_->os_info.commit == "unknown")
+            page->state_->status = "OS build information unavailable";
+        else if (page->state_->os_info.build_date == "unknown" ||
+                 page->state_->os_info.commit == "unknown")
+            page->state_->status = "OS build information is incomplete";
+        else
+            page->state_->status = "OS build information loaded";
+        render_system_info(page);
+        break;
     case SettingsSystemPageKind::Version:
     case SettingsSystemPageKind::Build:
         page->state_->status = "Build information loaded";
@@ -546,21 +612,48 @@ void LvSettingSystemInfoPage3::LeaveNextPage()
 void LvSettingSystemInfoPage3::create_ui(lv_obj_t *parent)
 {
     if (!parent || !state_) return;
+    using LayoutMetric = LvSettingSystemInfoPage3::LayoutMetric;
     ComponensObj = lv_obj_create(parent);
     if (!ComponensObj) return;
-    configure_page(ComponensObj);
+    configure_page(ComponensObj,
+                   LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::ScreenW),
+                   LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::ScreenH));
     DComponens::lvgl_bind_event(
         ComponensObj,
         LV_EVENT_KEY,
         nullptr,
         std::bind(&system_info_key_event, this, std::placeholders::_1));
 
-    state_->title = create_label(ComponensObj, 8, 3, kTextWidth, "System", 0x58A6FF, title_font());
-    state_->line_one = create_label(ComponensObj, 8, 31, kTextWidth, "", 0xECECEC, body_font());
-    state_->line_two = create_label(ComponensObj, 8, 53, kTextWidth, "", 0xCCCCCC, body_font());
-    state_->line_three = create_label(ComponensObj, 8, 75, kTextWidth, "", 0xAAAAAA, body_font());
-    state_->status_label = create_label(ComponensObj, 8, 99, kTextWidth, "", 0xF0C850, body_font(), true);
-    state_->hint = create_label(ComponensObj, 8, 133, kTextWidth, "", 0x46DC87, hint_font());
+    state_->title = create_label(ComponensObj,
+                                 LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                 LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TitleY),
+                                 LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                 "System", 0x58A6FF, title_font());
+    state_->line_one = create_label(ComponensObj,
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::LineOneY),
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                    "", 0xECECEC, body_font());
+    state_->line_two = create_label(ComponensObj,
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::LineTwoY),
+                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                    "", 0xCCCCCC, body_font());
+    state_->line_three = create_label(ComponensObj,
+                                      LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                      LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::LineThreeY),
+                                      LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                      "", 0xAAAAAA, body_font());
+    state_->status_label = create_label(ComponensObj,
+                                        LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                        LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::StatusY),
+                                        LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                        "", 0xF0C850, body_font(), true);
+    state_->hint = create_label(ComponensObj,
+                                LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
+                                LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::HintY),
+                                LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
+                                "", 0x46DC87, hint_font());
     refresh_system_info(this);
 }
 
@@ -569,29 +662,44 @@ struct LvSettingUpdatePage3::State
     settings_system::UpdateAction action = settings_system::UpdateAction::UpdateLauncher;
     uint64_t generation = 1;
     bool request_pending = false;
-    bool state_query_pending = false;
     bool poll_pending = false;
     bool update_pending = false;
+    bool checking = false;
+    bool cancelling = false;
+    bool confirming = false;
+    bool update_selected = true;
     bool leaving = false;
     std::string job_id;
     std::string backend_state;
-    std::string status = "Ready to update";
+    std::string candidate_version;
+    std::string candidate_commit;
+    std::string status = "Press ENTER to check for updates";
+    int progress = static_cast<int>(settings_system::UpdateStatusInfo::Progress::Unknown);
     settings_system::UpdatePhase phase = settings_system::UpdatePhase::Idle;
     std::chrono::steady_clock::time_point deadline;
     lv_timer_t *poll_timer = nullptr;
     lv_obj_t *title = nullptr;
+    lv_obj_t *device = nullptr;
+    lv_obj_t *lvgl = nullptr;
     lv_obj_t *version = nullptr;
     lv_obj_t *build = nullptr;
+    lv_obj_t *commit = nullptr;
     lv_obj_t *status_label = nullptr;
     lv_obj_t *hint = nullptr;
+    lv_obj_t *dialog = nullptr;
+    lv_obj_t *dialog_message = nullptr;
+    lv_obj_t *update_button = nullptr;
+    lv_obj_t *skip_button = nullptr;
+    lv_obj_t *progress_bar = nullptr;
+    lv_obj_t *progress_label = nullptr;
 };
 
 namespace {
 
 bool is_update_job_state(const std::string &state)
 {
-    return state == "running" || state == "downloading" || state == "repairing" ||
-           state == "installing" || state == "restarting" ||
+    const auto info = settings_system::parse_update_status(state);
+    return state == "running" || !info.stage.empty() ||
            state.rfind("recovering:", 0) == 0 ||
            state == "cancelled" || state == "canceled" ||
            state == "timeout" || state == "timed-out" ||
@@ -600,9 +708,154 @@ bool is_update_job_state(const std::string &state)
 
 bool is_update_progress_state(const std::string &state)
 {
-    return state == "running" || state == "downloading" || state == "repairing" ||
-           state == "installing" || state == "restarting" ||
-           state.rfind("recovering:", 0) == 0;
+    const auto info = settings_system::parse_update_status(state);
+    return !info.terminal && (info.stage == "running" || info.stage == "checking" ||
+           info.stage == "downloading" || info.stage == "verifying" ||
+           info.stage == "repairing" || info.stage == "installing" ||
+           info.stage == "restarting" || info.stage == "recovering");
+}
+
+int stage_progress(const settings_system::UpdateStatusInfo &info)
+{
+    if (info.progress != static_cast<int>(settings_system::UpdateStatusInfo::Progress::Unknown))
+        return info.progress;
+    if (info.stage == "checking") return 10;
+    if (info.stage == "downloading") return 25;
+    if (info.stage == "verifying") return 45;
+    if (info.stage == "repairing") return 55;
+    if (info.stage == "installing") return 75;
+    if (info.stage == "recovering") return 85;
+    if (info.stage == "restarting") return 95;
+    return 0;
+}
+
+std::string progress_status(const settings_system::UpdateStatusInfo &info)
+{
+    if (info.stage == "checking") return "Checking for updates...";
+    if (info.stage == "downloading") return "Downloading APPLaunch update...";
+    if (info.stage == "verifying") return "Verifying APPLaunch update...";
+    if (info.stage == "repairing") return "Repairing package state...";
+    if (info.stage == "installing") return "Installing APPLaunch update...";
+    if (info.stage == "restarting") return "Restarting APPLaunch...";
+    if (info.stage == "recovering") return "Restoring previous APPLaunch...";
+    return "Working...";
+}
+
+template <typename StateT>
+void clear_dialog_state(StateT *state)
+{
+    if (!state) return;
+    state->dialog = nullptr;
+    state->dialog_message = nullptr;
+    state->update_button = nullptr;
+    state->skip_button = nullptr;
+    state->progress_bar = nullptr;
+    state->progress_label = nullptr;
+}
+
+void close_update_dialog(LvSettingUpdatePage3 *page)
+{
+    if (!page || !page->state_) return;
+    lv_obj_t *dialog = page->state_->dialog;
+    clear_dialog_state(page->state_.get());
+    if (dialog) lv_obj_delete(dialog);
+}
+
+void style_dialog(lv_obj_t *dialog)
+{
+    if (!dialog) return;
+    lv_obj_set_size(dialog,
+                    LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::DialogW),
+                    LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::DialogH));
+    lv_obj_center(dialog);
+    lv_obj_set_style_radius(
+        dialog, LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::DialogRadius), LV_PART_MAIN);
+    lv_obj_set_style_border_width(
+        dialog, LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::DialogBorderWidth), LV_PART_MAIN);
+    lv_obj_set_style_border_color(dialog, lv_color_hex(0x58A6FF), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(dialog, lv_color_hex(0x171717), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(dialog, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+template <typename StateT>
+void render_dialog_selection(StateT *state)
+{
+    if (!state || !state->update_button || !state->skip_button) return;
+    const auto style_button = [](lv_obj_t *button, bool selected) {
+        lv_obj_set_style_bg_color(
+            button, lv_color_hex(selected ? 0x2878C8 : 0x333333), LV_PART_MAIN);
+        lv_obj_set_style_border_width(button, selected ? 2 : 0, LV_PART_MAIN);
+        lv_obj_set_style_border_color(button, lv_color_hex(0x8FCBFF), LV_PART_MAIN);
+    };
+    style_button(state->update_button, state->update_selected);
+    style_button(state->skip_button, !state->update_selected);
+}
+
+void show_update_confirmation(LvSettingUpdatePage3 *page)
+{
+    if (!page || !page->state_ || !page->Get()) return;
+    auto *state = page->state_.get();
+    close_update_dialog(page);
+    state->confirming = true;
+    state->update_selected = true;
+    state->dialog = lv_msgbox_create(page->Get());
+    if (!state->dialog) {
+        state->confirming = false;
+        state->status = "Unable to show update confirmation";
+        return;
+    }
+    style_dialog(state->dialog);
+    lv_obj_t *title = lv_msgbox_add_title(state->dialog, "New APPLaunch version");
+    if (title) lv_obj_set_style_text_color(title, lv_color_hex(0x58A6FF), LV_PART_MAIN);
+    const std::string message = "Version: " +
+        (state->candidate_version.empty() ? std::string("unknown") : state->candidate_version) +
+        "\nCommit: " +
+        (state->candidate_commit.empty() ? std::string("unknown") : state->candidate_commit);
+    state->dialog_message = lv_msgbox_add_text(state->dialog, message.c_str());
+    if (state->dialog_message) {
+        lv_label_set_long_mode(state->dialog_message, LV_LABEL_LONG_DOT);
+        lv_obj_set_style_text_font(state->dialog_message, settings_fonts::sans(12), LV_PART_MAIN);
+    }
+    state->update_button = lv_msgbox_add_footer_button(state->dialog, "Update");
+    state->skip_button = lv_msgbox_add_footer_button(state->dialog, "Not now");
+    if (state->update_button) lv_obj_set_flex_grow(state->update_button, 1);
+    if (state->skip_button) lv_obj_set_flex_grow(state->skip_button, 1);
+    render_dialog_selection(state);
+}
+
+void show_update_progress(LvSettingUpdatePage3 *page)
+{
+    if (!page || !page->state_ || !page->Get()) return;
+    auto *state = page->state_.get();
+    close_update_dialog(page);
+    state->dialog = lv_msgbox_create(page->Get());
+    if (!state->dialog) return;
+    style_dialog(state->dialog);
+    lv_obj_t *title = lv_msgbox_add_title(state->dialog, "Updating APPLaunch");
+    if (title) lv_obj_set_style_text_color(title, lv_color_hex(0x58A6FF), LV_PART_MAIN);
+    lv_obj_t *content = lv_msgbox_get_content(state->dialog);
+    if (!content) return;
+    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(
+        content, LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::ContentPadRow), LV_PART_MAIN);
+    state->progress_label = lv_label_create(content);
+    if (state->progress_label) {
+        lv_obj_set_width(state->progress_label, lv_pct(100));
+        lv_label_set_long_mode(state->progress_label, LV_LABEL_LONG_DOT);
+        lv_label_set_text(state->progress_label, state->status.c_str());
+    }
+    state->progress_bar = lv_bar_create(content);
+    if (state->progress_bar) {
+        lv_obj_set_size(
+            state->progress_bar,
+            lv_pct(100),
+            LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::ProgressBarH));
+        lv_bar_set_range(state->progress_bar, 0, 100);
+        lv_bar_set_value(state->progress_bar, std::max(0, state->progress), LV_ANIM_OFF);
+        lv_obj_set_style_bg_color(
+            state->progress_bar, lv_color_hex(0x2878C8), LV_PART_INDICATOR);
+    }
 }
 
 std::string update_failure_status(settings_system::UpdateAction action,
@@ -618,28 +871,36 @@ void render_update_page(LvSettingUpdatePage3 *page)
 {
     if (!page || !page->Get() || !page->state_) return;
     auto *state = page->state_.get();
-    set_label(state->title, state->action == settings_system::UpdateAction::CheckSystem
-        ? "System update" : "Launcher update");
-    set_label(state->version, settings_system::version_label(launcher_version()));
-    set_label(state->build, settings_system::build_label(
-                                launcher_build_date(), launcher_channel(), launcher_commit()));
+    set_label(state->title, "APPLaunch");
+    set_label(state->device, "Device: M5CardputerZero");
+    set_label(state->lvgl, "LVGL: " + lvgl_version());
+    set_label(state->version, "APPLaunch: " + std::string(launcher_version()));
+    set_label(state->build, "Build date: " + std::string(launcher_build_date()));
+    set_label(state->commit, "Commit: " + std::string(launcher_commit()));
     set_label(state->status_label, state->status);
+    if (state->progress_label) set_label(state->progress_label, state->status);
+    if (state->progress_bar)
+        lv_bar_set_value(state->progress_bar, std::max(0, state->progress), LV_ANIM_ON);
 
-    const char *hint = "ENTER: update   ESC: back";
+    const char *hint = "ENTER: check   ESC: back";
     if (state->request_pending || state->update_pending)
-        hint = "ENTER: cancel   ESC: cancel/back";
+        hint = "ESC: cancel";
+    else if (state->confirming)
+        hint = "";
     else if (state->phase != settings_system::UpdatePhase::Idle)
-        hint = "ENTER: retry   ESC: back";
+        hint = "ENTER: check again   ESC: back";
     if (state->hint) lv_label_set_text(state->hint, hint);
 }
 
-void schedule_job_cancel(LvSettingUpdatePage3 *page, std::string job_id)
+void schedule_job_cancel(std::string job_id)
 {
-    if (!page || job_id.empty()) return;
-    start_osinfo_request(page, {"UpdateJobCancel", std::move(job_id)}, [](int, std::string) {});
+    if (job_id.empty()) return;
+    request_osinfo(
+        {"UpdateJobCancel", std::move(job_id)}, [](int, std::string) {});
 }
 
-void stop_update_poll(LvSettingUpdatePage3::State *state)
+template <typename StateT>
+void stop_update_poll(StateT *state)
 {
     if (!state) return;
     stop_timer(state->poll_timer);
@@ -658,8 +919,10 @@ void finish_update(LvSettingUpdatePage3 *page,
     state->job_id.clear();
     stop_update_poll(state);
     state->request_pending = false;
-    state->state_query_pending = false;
     state->update_pending = false;
+    state->checking = false;
+    state->cancelling = false;
+    state->confirming = false;
     ++state->generation;
     if (state->generation == 0) state->generation = 1;
     page->advance_async_generation();
@@ -673,11 +936,49 @@ void finish_update(LvSettingUpdatePage3 *page,
         state->status = settings_system::update_phase_label(
             state->action, phase, code, state->backend_state);
     }
+    if (phase != settings_system::UpdatePhase::Running) close_update_dialog(page);
     render_update_page(page);
-    if (cancel_backend && !job_id.empty()) schedule_job_cancel(page, job_id);
+    if (cancel_backend && !job_id.empty()) schedule_job_cancel(job_id);
 }
 
 void poll_update(LvSettingUpdatePage3 *page);
+
+void finish_check(LvSettingUpdatePage3 *page,
+                  int code,
+                  std::string payload,
+                  const settings_system::UpdateStatusInfo &info)
+{
+    if (!page || !page->state_) return;
+    if (code != 0 || !info.terminal || !info.availability_known) {
+        finish_update(page, settings_system::UpdatePhase::Failed,
+                      code == 0 ? -1 : code, std::move(payload), false);
+        if (page->state_) {
+            page->state_->status = "Unable to determine whether an update is available";
+            render_update_page(page);
+        }
+        return;
+    }
+
+    const std::string version = info.version;
+    const std::string commit = info.commit;
+    finish_update(page, settings_system::UpdatePhase::Succeeded, code, payload, false);
+    if (!page->state_) return;
+    auto *state = page->state_.get();
+    state->candidate_version = version;
+    state->candidate_commit = commit;
+    if (!info.available) {
+        state->status = version.empty()
+            ? "APPLaunch is up to date"
+            : "APPLaunch " + version + " is up to date";
+        render_update_page(page);
+        return;
+    }
+    state->status = version.empty()
+        ? "A new APPLaunch version is available"
+        : "APPLaunch " + version + " is available";
+    show_update_confirmation(page);
+    render_update_page(page);
+}
 
 void update_poll_timer_cb(lv_timer_t *timer) noexcept
 {
@@ -708,20 +1009,30 @@ void poll_update(LvSettingUpdatePage3 *page)
                 if (!state || request_generation != state->generation || !page->Get()) return;
                 state->poll_pending = false;
                 if (!state->update_pending) return;
+                const auto info = settings_system::parse_update_status(payload);
                 if (code == 0 && is_update_progress_state(payload)) {
                     state->phase = settings_system::UpdatePhase::Running;
-                    state->status = settings_system::update_job_label(
-                        state->action, code, payload);
+                    state->progress = stage_progress(info);
+                    state->status = state->cancelling
+                        ? "Cancelling update..."
+                        : progress_status(info);
                     render_update_page(page);
                     return;
                 }
-                if (code == 0 && payload.rfind("succeeded:", 0) == 0) {
-                    finish_update(page, settings_system::UpdatePhase::Succeeded, code,
+                if (payload == "cancelled" || payload == "canceled" ||
+                    payload.rfind("failed:cancelled:", 0) == 0 ||
+                    payload.rfind("failed:canceled:", 0) == 0) {
+                    finish_update(page, settings_system::UpdatePhase::Cancelled, code,
                                   std::move(payload), false);
                     return;
                 }
-                if (payload == "cancelled" || payload == "canceled") {
-                    finish_update(page, settings_system::UpdatePhase::Cancelled, code,
+                if (state->checking) {
+                    finish_check(page, code, std::move(payload), info);
+                    return;
+                }
+                if (code == 0 && payload.rfind("succeeded:", 0) == 0) {
+                    state->progress = 100;
+                    finish_update(page, settings_system::UpdatePhase::Succeeded, code,
                                   std::move(payload), false);
                     return;
                 }
@@ -734,7 +1045,7 @@ void poll_update(LvSettingUpdatePage3 *page)
     }
 }
 
-void start_update(LvSettingUpdatePage3 *page)
+void start_update(LvSettingUpdatePage3 *page, bool check_only = false)
 {
     if (!page || !page->state_) return;
     auto *state = page->state_.get();
@@ -745,21 +1056,29 @@ void start_update(LvSettingUpdatePage3 *page)
     if (state->generation == 0) state->generation = 1;
     const uint64_t request_generation = state->generation;
     state->request_pending = true;
+    state->checking = check_only;
+    state->confirming = false;
+    state->progress = 0;
     state->phase = settings_system::UpdatePhase::Starting;
-    state->status = settings_system::update_phase_label(state->action, state->phase);
+    state->status = check_only ? "Starting update check..." : "Starting APPLaunch update...";
     state->deadline = std::chrono::steady_clock::now() + kUpdateTimeout;
-    state->poll_timer = lv_timer_create(update_poll_timer_cb, kUpdatePollMs, page);
+    state->poll_timer = lv_timer_create(
+        update_poll_timer_cb, static_cast<uint32_t>(TimerInterval::UpdatePollMs), page);
     if (!state->poll_timer) {
         state->request_pending = false;
         finish_update(page, settings_system::UpdatePhase::Failed, -1,
                       "status timer unavailable", false);
         return;
     }
+    if (!check_only) show_update_progress(page);
     render_update_page(page);
 
+    const char *command = check_only
+        ? "UpdateLauncherCheckStart"
+        : settings_system::update_request(state->action);
     if (!start_osinfo_request(
             page,
-            {settings_system::update_request(state->action)},
+            {command},
             [page, request_generation](int code, std::string payload) {
                 auto *state = page ? page->state_.get() : nullptr;
                 if (!state || request_generation != state->generation || !page->Get()) return;
@@ -775,14 +1094,20 @@ void start_update(LvSettingUpdatePage3 *page)
                 state->job_id = std::move(payload);
                 state->update_pending = true;
                 state->phase = settings_system::UpdatePhase::Running;
-                state->status = settings_system::update_phase_label(
-                    state->action, state->phase);
+                if (state->cancelling) {
+                    schedule_job_cancel(state->job_id);
+                    state->status = "Cancellation requested...";
+                } else {
+                    state->status = state->checking
+                        ? "Checking for updates..."
+                        : "Updating APPLaunch...";
+                }
                 render_update_page(page);
                 lv_timer_ready(state->poll_timer);
             },
             [](int code, std::string payload) {
                 if (code != 0 || payload.empty()) return;
-                settings_system::request(
+                request_osinfo(
                     {"UpdateJobCancel", std::move(payload)},
                     [](int, std::string) {});
             })) {
@@ -792,50 +1117,46 @@ void start_update(LvSettingUpdatePage3 *page)
     }
 }
 
-void refresh_update_state(LvSettingUpdatePage3 *page)
-{
-    if (!page || !page->state_ || page->state_->state_query_pending) return;
-    auto *state = page->state_.get();
-    page->advance_async_generation();
-    ++state->generation;
-    if (state->generation == 0) state->generation = 1;
-    const uint64_t request_generation = state->generation;
-    state->state_query_pending = true;
-    state->status = "Reading current update state...";
-    render_update_page(page);
-
-    if (!start_osinfo_request(
-            page,
-            {"UpdateLauncherState"},
-            [page, request_generation](int code, std::string payload) {
-                auto *state = page ? page->state_.get() : nullptr;
-                if (!state || request_generation != state->generation || !page->Get()) return;
-                state->state_query_pending = false;
-                if (code == 0 && !payload.empty()) {
-                    state->backend_state = payload;
-                    state->status = settings_system::launcher_state_label(payload);
-                    if (state->status.empty()) state->status = "Ready to update";
-                } else {
-                    state->status = "Current update state unavailable";
-                }
-                render_update_page(page);
-            })) {
-        state->state_query_pending = false;
-        state->status = "Current update state unavailable";
-        render_update_page(page);
-    }
-}
-
 void cancel_update(LvSettingUpdatePage3 *page, bool leave_page)
 {
     if (!page || !page->state_ || page->state_->leaving) return;
     auto *state = page->state_.get();
     const bool active = state->request_pending || state->update_pending;
     if (active) {
-        finish_update(page, settings_system::UpdatePhase::Cancelled, -ECANCELED,
-                      "cancelled", true);
+        if (leave_page) {
+            if (!state->job_id.empty()) schedule_job_cancel(state->job_id);
+        } else if (!state->cancelling) {
+            if (state->job_id.empty()) {
+                state->cancelling = true;
+                state->status = "Waiting for update job before cancelling...";
+            } else {
+                state->cancelling = true;
+                state->status = "Cancelling update...";
+                const uint64_t request_generation = state->generation;
+                const std::string job_id = state->job_id;
+                if (!start_osinfo_request(
+                        page,
+                        {"UpdateJobCancel", job_id},
+                        [page, request_generation](int code, std::string) {
+                            auto *cancel_state = page ? page->state_.get() : nullptr;
+                            if (!cancel_state || request_generation != cancel_state->generation ||
+                                !page->Get())
+                                return;
+                            if (code != 0) {
+                                cancel_state->cancelling = false;
+                                cancel_state->status = "Unable to cancel; update is still running";
+                            } else {
+                                cancel_state->status = "Cancellation requested...";
+                            }
+                            render_update_page(page);
+                        })) {
+                    state->cancelling = false;
+                    state->status = "Unable to send cancellation request";
+                }
+            }
+            render_update_page(page);
+        }
     } else {
-        state->state_query_pending = false;
         ++state->generation;
         if (state->generation == 0) state->generation = 1;
         page->advance_async_generation();
@@ -850,16 +1171,34 @@ void update_key_event(LvSettingUpdatePage3 *page, lv_event_t *event)
 {
     if (!page || !event || lv_event_get_code(event) != LV_EVENT_KEY) return;
     const uint32_t key = lv_event_get_key(event);
-    if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
-        if (page->state_ && (page->state_->request_pending || page->state_->update_pending))
-            cancel_update(page, true);
-        else if (page->LeaveSelfPage)
-            page->LeaveSelfPage();
-    } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
-        if (page->state_ && (page->state_->request_pending || page->state_->update_pending))
-            cancel_update(page, false);
-        else
-            start_update(page);
+    auto *state = page->state_.get();
+    if (!state) return;
+
+    if (state->confirming) {
+        if (key == LV_KEY_LEFT || key == LV_KEY_RIGHT) {
+            state->update_selected = key == LV_KEY_LEFT;
+            render_dialog_selection(state);
+        } else if (key == LV_KEY_ENTER) {
+            const bool update = state->update_selected;
+            state->confirming = false;
+            close_update_dialog(page);
+            if (update) start_update(page, false);
+            else {
+                state->status = "Update skipped";
+                render_update_page(page);
+            }
+        } else if (key == LV_KEY_ESC) {
+            state->confirming = false;
+            close_update_dialog(page);
+            state->status = "Update skipped";
+            render_update_page(page);
+        }
+    } else if (state->request_pending || state->update_pending) {
+        if (key == LV_KEY_ESC) cancel_update(page, false);
+    } else if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
+        if (page->LeaveSelfPage) page->LeaveSelfPage();
+    } else if (key == LV_KEY_ENTER) {
+        start_update(page, true);
     }
     lv_event_stop_processing(event);
 }
@@ -889,9 +1228,8 @@ LvSettingUpdatePage3::~LvSettingUpdatePage3()
         stop_update_poll(state_.get());
         ++state_->generation;
         state_->request_pending = false;
-        state_->state_query_pending = false;
         state_->update_pending = false;
-        if (!job_id.empty()) schedule_job_cancel(this, job_id);
+        if (!job_id.empty()) schedule_job_cancel(job_id);
     }
     cancel_async_tasks();
     if (ComponensObj) {
@@ -923,22 +1261,59 @@ void LvSettingUpdatePage3::LeaveNextPage()
 void LvSettingUpdatePage3::create_ui(lv_obj_t *parent)
 {
     if (!parent || !state_) return;
+    using LayoutMetric = LvSettingUpdatePage3::LayoutMetric;
     ComponensObj = lv_obj_create(parent);
     if (!ComponensObj) return;
-    configure_page(ComponensObj);
+    configure_page(ComponensObj,
+                   LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::ScreenW),
+                   LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::ScreenH));
     DComponens::lvgl_bind_event(
         ComponensObj,
         LV_EVENT_KEY,
         nullptr,
         std::bind(&update_key_event, this, std::placeholders::_1));
 
-    state_->title = create_label(ComponensObj, 8, 3, kTextWidth, "Update", 0x58A6FF, title_font());
-    state_->version = create_label(ComponensObj, 8, 28, kTextWidth, "", 0xECECEC, body_font());
-    state_->build = create_label(ComponensObj, 8, 49, kTextWidth, "", 0xCCCCCC, body_font());
-    state_->status_label = create_label(ComponensObj, 8, 73, kTextWidth, "", 0xF0C850, body_font(), true);
-    state_->hint = create_label(ComponensObj, 8, 133, kTextWidth, "", 0x46DC87, hint_font());
+    state_->title = create_label(ComponensObj,
+                                 LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                 LvSettingUpdatePage3::metric(LayoutMetric::TitleY),
+                                 LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                 "APPLaunch", 0x58A6FF, title_font());
+    state_->device = create_label(ComponensObj,
+                                  LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                  LvSettingUpdatePage3::metric(LayoutMetric::DeviceY),
+                                  LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                  "", 0xECECEC, body_font());
+    state_->lvgl = create_label(ComponensObj,
+                                LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                LvSettingUpdatePage3::metric(LayoutMetric::LvglY),
+                                LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                "", 0xDADADA, body_font());
+    state_->version = create_label(ComponensObj,
+                                   LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                   LvSettingUpdatePage3::metric(LayoutMetric::VersionY),
+                                   LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                   "", 0xCCCCCC, body_font());
+    state_->build = create_label(ComponensObj,
+                                 LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                 LvSettingUpdatePage3::metric(LayoutMetric::BuildY),
+                                 LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                 "", 0xBBBBBB, body_font());
+    state_->commit = create_label(ComponensObj,
+                                  LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                  LvSettingUpdatePage3::metric(LayoutMetric::CommitY),
+                                  LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                  "", 0xAAAAAA, body_font());
+    state_->status_label = create_label(ComponensObj,
+                                        LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                        LvSettingUpdatePage3::metric(LayoutMetric::StatusY),
+                                        LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                        "", 0xF0C850, body_font(), true);
+    state_->hint = create_label(ComponensObj,
+                                LvSettingUpdatePage3::metric(LayoutMetric::TextX),
+                                LvSettingUpdatePage3::metric(LayoutMetric::HintY),
+                                LvSettingUpdatePage3::metric(LayoutMetric::TextW),
+                                "", 0x46DC87, hint_font());
     render_update_page(this);
-    refresh_update_state(this);
 }
 
 std::unique_ptr<DComponens::LvglComponensBase> settings_system_page_factory(

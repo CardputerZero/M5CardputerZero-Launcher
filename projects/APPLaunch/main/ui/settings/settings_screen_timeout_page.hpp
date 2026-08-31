@@ -1,275 +1,99 @@
 #pragma once
 
 #include "hal_lvgl_bsp.h"
-#include "settings_screen_api.hpp"
 
+#include <chrono>
 #include <cstdint>
-#include <exception>
 #include <functional>
-#include <utility>
+#include <list>
+#include <string>
 
 #include "lvgl_components.hpp"
 
-namespace screen_settings = settings_screen;
-
 class LvSettingDarkTimePage3 : public LvSettingValuePage3Base {
 public:
-    LvSettingDarkTimePage3() = default;
+    using Arguments = std::list<std::string>;
+    using Callback = std::function<void(int, std::string)>;
+    using ConfigInvoker = std::function<void(Arguments, Callback)>;
+    enum class DefaultValue : int {
+        DarkTimeSeconds = 30,
+    };
 
-    LvSettingDarkTimePage3(lv_obj_t *parent, const NodeIter &parent_node)
-        : LvSettingValuePage3Base(parent_node, {})
+    enum class DarkTimeReadStatus : uint8_t { Ok, Defaulted, BackendError, InvalidPayload };
+    struct DarkTimeReadResult {
+        DarkTimeReadStatus status = DarkTimeReadStatus::BackendError;
+        int seconds = static_cast<int>(DefaultValue::DarkTimeSeconds);
+        int index = 2;
+        std::string message;
+        bool usable() const noexcept;
+        bool defaulted() const noexcept;
+    };
+    enum class DarkTimeWriteStatus : uint8_t {
+        Ok, InvalidTarget, ReadFailed, SetFailed, SaveFailed, RollbackFailed
+    };
+    struct DarkTimeWriteResult {
+        DarkTimeWriteStatus status = DarkTimeWriteStatus::ReadFailed;
+        int previous_seconds = static_cast<int>(DefaultValue::DarkTimeSeconds);
+        int previous_index = 2;
+        int applied_seconds = static_cast<int>(DefaultValue::DarkTimeSeconds);
+        bool rollback_attempted = false;
+        bool rollback_succeeded = false;
+        std::string message;
+        bool succeeded() const noexcept;
+    };
+
+    enum class LayoutMetric : int {
+        StatusLabelW = 104,
+        StatusLabelX = 4,
+        StatusLabelY = 4,
+    };
+
+    static constexpr int metric(LayoutMetric value)
     {
-        initialize_page(parent, {});
+        return static_cast<int>(value);
     }
+
+    LvSettingDarkTimePage3();
+
+    LvSettingDarkTimePage3(lv_obj_t *parent, const NodeIter &parent_node);
 
     LvSettingDarkTimePage3(lv_obj_t *parent,
                            const NodeIter &parent_node,
-                           std::function<void()> back_callback)
-        : LvSettingValuePage3Base(parent_node, {})
-    {
-        initialize_page(parent, std::move(back_callback));
-    }
+                           std::function<void()> back_callback);
 
-    ~LvSettingDarkTimePage3() override
-    {
-        destroying_ = true;
-        page_alive_ = false;
-        ++generation_;
-        pending_ = false;
-        LeaveSelfPage = nullptr;
-        cancel_async_tasks();
-        back_callback_ = nullptr;
-        status_label_ = nullptr;
-    }
+    ~LvSettingDarkTimePage3() override;
 
 protected:
-    int initial_selection() const override
-    {
-        return 2;
-    }
+    int initial_selection() const override;
 
-    SettingApiResult activate_selected() override
-    {
-        if (pending_) return SettingApiResult::Pending;
-        if (!loaded_) {
-            begin_load();
-            return SettingApiResult::Pending;
-        }
-        if (selected_index == saved_index_) {
-            request_back();
-            return SettingApiResult::Success;
-        }
-        return begin_write() ? SettingApiResult::Pending : SettingApiResult::Failure;
-    }
+    SettingApiResult activate_selected() override;
 
 private:
-    static screen_settings::ConfigInvoker config_invoker()
-    {
-        return [](screen_settings::Arguments arguments, screen_settings::Callback callback) {
-            cp0_signal_config_api(std::move(arguments), std::move(callback));
-        };
-    }
+    static ConfigInvoker config_invoker();
 
-    void initialize_page(lv_obj_t *parent, std::function<void()> back_callback)
-    {
-        back_callback_ = std::move(back_callback);
-        LeaveSelfPage = [this] { request_back(); };
-        initialize(parent);
-        create_status_label();
-        begin_load();
-    }
+    void initialize_page(lv_obj_t *parent, std::function<void()> back_callback);
 
-    void request_back()
-    {
-        if (destroying_ || back_requested_) return;
-        back_requested_ = true;
-        pending_ = false;
-        ++generation_;
-        cancel_async_tasks();
-        if (back_callback_) back_callback_();
-    }
+    void request_back();
 
-    void restore_focus()
-    {
-        if (!ComponensObj) return;
-        if (lv_obj_get_group(ComponensObj)) lv_group_focus_obj(ComponensObj);
-    }
+    void restore_focus();
 
-    bool request_is_current(std::uint64_t generation) const
-    {
-        return page_alive_ && generation_ == generation;
-    }
+    bool request_is_current(std::uint64_t generation) const;
 
-    void create_status_label()
-    {
-        if (!ComponensObj) return;
+    void create_status_label();
 
-        status_label_ = lv_label_create(ComponensObj);
-        if (!status_label_) return;
-        lv_obj_set_width(status_label_, 104);
-        lv_label_set_long_mode(status_label_, LV_LABEL_LONG_CLIP);
-        lv_obj_set_style_text_font(
-            status_label_, cp0_fonts().get("Montserrat-Bold.ttf", 10, LV_FREETYPE_FONT_STYLE_BOLD), LV_PART_MAIN);
-        lv_obj_set_style_text_color(status_label_, lv_color_hex(0xFFCC66), LV_PART_MAIN);
-        lv_obj_set_pos(status_label_, 4, 4);
-        lv_label_set_text(status_label_, "");
-    }
+    void set_status(const std::string &text, bool error);
 
-    void set_status(const std::string &text, bool error)
-    {
-        if (!status_label_) return;
-        lv_label_set_text(status_label_, text.c_str());
-        lv_obj_set_style_text_color(status_label_, lv_color_hex(error ? 0xFF6666 : 0x66CC88), LV_PART_MAIN);
-    }
+    void finish_load(const DarkTimeReadResult &result);
 
-    void finish_load(const screen_settings::DarkTimeReadResult &result)
-    {
-        if (!result.usable()) {
-            loaded_ = false;
-            saved_index_ = 2;
-            select(saved_index_);
-            restore_focus();
-            set_status(result.message.empty() ? "Dark time read failed" : result.message, true);
-            return;
-        }
+    void finish_load_failure();
 
-        loaded_ = true;
-        saved_seconds_ = result.seconds;
-        saved_index_ = result.index;
-        select(saved_index_);
-        restore_focus();
-        if (result.defaulted())
-            set_status(result.message.empty() ? "Using 30S" : result.message, true);
-        else
-            set_status("", false);
-    }
+    void begin_load();
 
-    void finish_load_failure()
-    {
-        loaded_ = false;
-        saved_seconds_ = screen_settings::kDefaultDarkTime;
-        saved_index_ = 2;
-        select(saved_index_);
-        restore_focus();
-        set_status("Dark time read failed", true);
-    }
+    void finish_write(const DarkTimeWriteResult &result);
 
-    void begin_load()
-    {
-        if (!ComponensObj || pending_) return;
+    void finish_write_failure();
 
-        pending_ = true;
-        loaded_ = false;
-        const std::uint64_t request_generation = ++generation_;
-        set_status("Loading dark time", false);
-
-        DComponens::LvglComponensBase::AsyncTaskCallbacks<screen_settings::DarkTimeReadResult> callbacks;
-        const screen_settings::ConfigInvoker config = config_invoker();
-        callbacks.execute = [config]() { return screen_settings::read_dark_time(config); };
-        callbacks.on_complete = [this, request_generation](
-                                    DComponens::LvglComponensBase::AsyncTaskContext &,
-                                    const screen_settings::DarkTimeReadResult &result) {
-            if (!request_is_current(request_generation)) return;
-            pending_ = false;
-            finish_load(result);
-        };
-        callbacks.on_exception = [this, request_generation](
-                                     DComponens::LvglComponensBase::AsyncTaskContext &,
-                                     std::exception_ptr) {
-            if (!request_is_current(request_generation)) return;
-            pending_ = false;
-            finish_load_failure();
-        };
-        callbacks.on_timeout = [this, request_generation](
-                                   DComponens::LvglComponensBase::AsyncTaskContext &) {
-            if (!request_is_current(request_generation)) return;
-            pending_ = false;
-            finish_load_failure();
-        };
-        callbacks.on_schedule_failed = [this, request_generation](
-                                           DComponens::LvglComponensBase::AsyncTaskContext &) {
-            if (!request_is_current(request_generation)) return;
-            pending_ = false;
-            finish_load_failure();
-        };
-
-        if (!run_async_task(std::move(callbacks)) && pending_ && request_is_current(request_generation)) {
-            pending_ = false;
-            finish_load_failure();
-        }
-    }
-
-    void finish_write(const screen_settings::DarkTimeWriteResult &result)
-    {
-        pending_ = false;
-        if (result.succeeded()) {
-            saved_seconds_ = result.applied_seconds;
-            saved_index_ = screen_settings::dark_time_index(result.applied_seconds);
-            select(saved_index_);
-            set_status("", false);
-            request_back();
-            return;
-        }
-
-        select(saved_index_);
-        restore_focus();
-        set_status(result.message.empty() ? "Dark time save failed" : result.message, true);
-    }
-
-    void finish_write_failure()
-    {
-        pending_ = false;
-        select(saved_index_);
-        restore_focus();
-        set_status("Dark time save failed", true);
-    }
-
-    bool begin_write()
-    {
-        if (!screen_settings::dark_time_index_valid(selected_index)) {
-            select(saved_index_);
-            restore_focus();
-            set_status("Invalid dark time target", true);
-            return false;
-        }
-
-        pending_ = true;
-        const std::uint64_t request_generation = ++generation_;
-        set_status("Saving dark time", false);
-
-        DComponens::LvglComponensBase::AsyncTaskCallbacks<screen_settings::DarkTimeWriteResult> callbacks;
-        const screen_settings::ConfigInvoker config = config_invoker();
-        const int target_index = selected_index;
-        callbacks.execute = [config, target_index]() {
-            return screen_settings::write_dark_time(config, target_index);
-        };
-        callbacks.on_complete = [this, request_generation](
-                                    DComponens::LvglComponensBase::AsyncTaskContext &,
-                                    const screen_settings::DarkTimeWriteResult &result) {
-            if (!request_is_current(request_generation)) return;
-            finish_write(result);
-        };
-        callbacks.on_exception = [this, request_generation](
-                                     DComponens::LvglComponensBase::AsyncTaskContext &,
-                                     std::exception_ptr) {
-            if (!request_is_current(request_generation)) return;
-            finish_write_failure();
-        };
-        callbacks.on_timeout = [this, request_generation](
-                                   DComponens::LvglComponensBase::AsyncTaskContext &) {
-            if (!request_is_current(request_generation)) return;
-            finish_write_failure();
-        };
-        callbacks.on_schedule_failed = [this, request_generation](
-                                           DComponens::LvglComponensBase::AsyncTaskContext &) {
-            if (!request_is_current(request_generation)) return;
-            finish_write_failure();
-        };
-
-        if (!run_async_task(std::move(callbacks)) && pending_ && request_is_current(request_generation))
-            finish_write_failure();
-        return true;
-    }
+    bool begin_write();
 
     bool destroying_ = false;
     bool back_requested_ = false;
@@ -277,7 +101,7 @@ private:
     bool pending_ = false;
     bool loaded_ = false;
     std::uint64_t generation_ = 0;
-    int saved_seconds_ = screen_settings::kDefaultDarkTime;
+    int saved_seconds_ = static_cast<int>(DefaultValue::DarkTimeSeconds);
     int saved_index_ = 2;
     lv_obj_t *status_label_ = nullptr;
     std::function<void()> back_callback_;

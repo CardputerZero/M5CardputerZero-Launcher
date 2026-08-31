@@ -42,6 +42,8 @@ int main()
               "printf '%s\\n' \"$*\" >>\"$ZCLAW_TEST_ARGV_LOG\"\n"
               "if [ \"$1 $2\" = 'config set' ]; then\n"
               "  case \"$*\" in *.api_key*) "
+              "stty -echo; "
+              "printf 'Enter value for %s: ' \"$3\"; "
               "IFS= read -r secret; printf '%s' \"$secret\" "
               ">\"$ZCLAW_TEST_SECRET_LOG\";; esac\n"
               "elif [ \"$1 $2\" = 'agents list' ]; then\n"

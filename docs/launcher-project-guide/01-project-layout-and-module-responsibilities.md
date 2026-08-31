@@ -79,11 +79,10 @@ projects/
 | `HelloWorld` | Minimal example project for learning the build flow |
 | `UserDemo` | User demo project |
 
-### 1.4 `docs/`, `scripts/`, and Runtime Helpers
+### 1.4 `docs/` and `scripts/`
 
 - `docs/`: developer-facing documentation and standalone packaging docs, including `APPLaunch-App-打包指南.md`.
 - `scripts/`: repository-level helper tools, such as `firmware_manager.py` and `debian_packager.py`.
-- `projects/APPLaunch/APPLaunch/bin/`: APPLaunch runtime helper scripts copied into `/usr/share/APPLaunch/bin/`, including `store_cache_sync.py`.
 
 ## 2. APPLaunch Top-Level Structure
 
@@ -119,8 +118,6 @@ projects/APPLaunch/
 projects/APPLaunch/APPLaunch/
 ├── applications/
 │   └── vim.desktop.temple
-├── bin/
-│   └── store_cache_sync.py
 ├── lib/
 │   └── nihao.so
 └── share/

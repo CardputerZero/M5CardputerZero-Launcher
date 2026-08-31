@@ -92,7 +92,7 @@ void UISTPage::create_ui()
     }
 
     lv_font_t *primary = launcher_fonts().get_mono(
-        "LiberationMono-Regular.ttf", 11, LV_FREETYPE_FONT_STYLE_NORMAL);
+        "JetBrainsMono-Regular.ttf", 11, LV_FREETYPE_FONT_STYLE_NORMAL);
     lv_font_t *cjk = launcher_fonts().get(
         "AlibabaPuHuiTi-3-55-Regular.ttf", 11, LV_FREETYPE_FONT_STYLE_NORMAL);
     lv_font_t *symbols = launcher_fonts().get(
@@ -292,7 +292,8 @@ void UISTPage::event_cb(lv_event_t *event)
         render_all();
         return;
     }
-    if (terminal_active_ && !pty_handle_.empty() && key->key_state) {
+    if (terminal_active_ && !pty_handle_.empty() &&
+        STKeyEncoder::should_forward_event(key->key_code, key->key_state)) {
         leave_scrollback();
         follow_cursor_in_big_mode();
         write_key(key->key_code, key->utf8);
