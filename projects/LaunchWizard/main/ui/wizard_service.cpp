@@ -720,8 +720,7 @@ std::string configure_desktop_startup(const std::string &user)
         return warning;
     }
     if (!command_ok({"chmod", "0644",
-                     "/etc/lightdm/lightdm.conf.d/50-launchwizard-autologin.conf"}, warning) ||
-        !command_ok({"systemctl", "disable", "lightdm.service"}, warning))
+                     "/etc/lightdm/lightdm.conf.d/50-launchwizard-autologin.conf"}, warning))
         return warning;
 
     return warning;
