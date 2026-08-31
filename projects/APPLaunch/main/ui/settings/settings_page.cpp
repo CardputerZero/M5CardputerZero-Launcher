@@ -405,9 +405,15 @@ void UISettingTreePage::create_page_detail()
         {
             NodeIter brightness = mode_tree.append_child(screen, SettingEntry{"Brightness", brightness_page3_factory});
             mode_tree.append_child(brightness, SettingEntry{"100%"});
-            mode_tree.append_child(brightness, SettingEntry{"75%"});
+            mode_tree.append_child(brightness, SettingEntry{"90%"});
+            mode_tree.append_child(brightness, SettingEntry{"80%"});
+            mode_tree.append_child(brightness, SettingEntry{"70%"});
+            mode_tree.append_child(brightness, SettingEntry{"60%"});
             mode_tree.append_child(brightness, SettingEntry{"50%"});
-            mode_tree.append_child(brightness, SettingEntry{"25%"});
+            mode_tree.append_child(brightness, SettingEntry{"40%"});
+            mode_tree.append_child(brightness, SettingEntry{"30%"});
+            mode_tree.append_child(brightness, SettingEntry{"20%"});
+            mode_tree.append_child(brightness, SettingEntry{"10%"});                        
         }
         {
             NodeIter dark_time = mode_tree.append_child(screen, SettingEntry{"DarkTime", dark_time_page3_factory});

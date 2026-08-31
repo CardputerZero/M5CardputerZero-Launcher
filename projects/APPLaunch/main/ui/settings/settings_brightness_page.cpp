@@ -89,19 +89,24 @@ class settings_brightness_com {
         return response.succeeded() && parse_nonnegative(response.data, value) && value >= minimum && value <= maximum;
     }
     static bool response_is_ok(const Response &response) { return response.succeeded() && response.data == "ok"; }
-    static int normalized_option_count(int count) { return count >= 5 ? 5 : 4; }
+    static int normalized_option_count(int count) { return count >= 10 ? 10 : (count >= 5 ? 5 : 4); }
     static int brightness_percent(int index, int count)
     {
         static constexpr std::array<int, 4> legacy{{100, 75, 50, 25}};
         static constexpr std::array<int, 5> zero{{100, 75, 50, 25, 0}};
+        static constexpr std::array<int, 10> ten{{100, 90, 80, 70, 60, 50, 40, 30, 20, 10}};
+        if (normalized_option_count(count) == 10)
+            return ten[static_cast<std::size_t>(std::clamp(index, 0, 9))];
         if (normalized_option_count(count) == 5) return zero[static_cast<std::size_t>(std::clamp(index, 0, 4))];
         return legacy[static_cast<std::size_t>(std::clamp(index, 0, 3))];
     }
     static int brightness_index(int value, int maximum, int count)
     {
-        if (normalized_option_count(count) == 4) return setup_values::brightness_index(value, maximum);
+        const int option_count = normalized_option_count(count);
+        if (option_count == 4) return setup_values::brightness_index(value, maximum);
         if (maximum <= 0) return 0;
         const int percent = static_cast<int>(static_cast<std::int64_t>(value) * 100 / maximum);
+        if (option_count == 10) return std::clamp((100 - percent + 4) / 10, 0, 9);
         if (percent >= 88) return 0;
         if (percent >= 63) return 1;
         if (percent >= 38) return 2;
@@ -111,8 +116,10 @@ class settings_brightness_com {
     static int brightness_value(int index, int maximum, int count)
     {
         const int safe_maximum = std::max(1, maximum);
-        if (normalized_option_count(count) == 4) return setup_values::brightness_value(index, safe_maximum);
-        return static_cast<int>(static_cast<std::int64_t>(safe_maximum) * brightness_percent(index, 5) / 100);
+        const int option_count = normalized_option_count(count);
+        if (option_count == 4) return setup_values::brightness_value(index, safe_maximum);
+        return static_cast<int>(static_cast<std::int64_t>(safe_maximum) *
+                                brightness_percent(index, option_count) / 100);
     }
     static bool valid_value(int value, int maximum) { return maximum > 0 && value >= 0 && value <= maximum; }
     static bool valid_index(int index, int count) { const int n = normalized_option_count(count); return index >= 0 && index < n; }
@@ -329,7 +336,7 @@ void LvSettingBrightnessPage3::create_status_label()
 
     status_label_ = lv_label_create(ComponensObj);
     if (!status_label_) return;
-    lv_obj_set_width(status_label_, metric(LayoutMetric::StatusLabelW));
+    lv_obj_set_width(status_label_, 300);
     lv_label_set_long_mode(status_label_, LV_LABEL_LONG_CLIP);
     lv_obj_set_style_text_font(
         status_label_, settings_fonts::sans(10, LV_FREETYPE_FONT_STYLE_BOLD), LV_PART_MAIN);
@@ -456,7 +463,8 @@ void LvSettingBrightnessPage3::finish_write_failure()
 bool LvSettingBrightnessPage3::begin_write()
 {
     const int page_option_count = option_count();
-    if (selected_index < 0 || selected_index >= (page_option_count >= 5 ? 5 : 4)) {
+    const int valid_option_count = page_option_count >= 10 ? 10 : (page_option_count >= 5 ? 5 : 4);
+    if (selected_index < 0 || selected_index >= valid_option_count) {
         select(saved_index_);
         restore_focus();
         set_status("Invalid brightness target", true);
