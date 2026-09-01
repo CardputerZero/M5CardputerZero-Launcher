@@ -37,8 +37,18 @@
 // ============================================================
 class UISTPage : public AppPage
 {
+    enum class FontSize : uint8_t {
+        Terminal = 12,
+    };
+
+    static constexpr int font_size(FontSize size)
+    {
+        return static_cast<int>(size);
+    }
+
     static constexpr int TERM_W = 320;
     static constexpr int TERM_H = 150;
+    // JetBrains Mono Bold at 12px resolves to a 7px advance and 15px line height in LVGL.
     static constexpr int CHAR_W = 7;
     static constexpr int CHAR_H = 15;
     static constexpr int TEXT_Y_PAD = 2;

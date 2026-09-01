@@ -24,18 +24,6 @@ STATIC_FILES = []
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.getcwd(), ".."))
 ZCLAW_STATIC_ROOT = os.path.join(PROJECT_ROOT, "APPLaunch")
-LVGL_DEJAVU_FONT = os.path.abspath(os.path.join(
-    PROJECT_ROOT, "..", "..", "SDK", "github_source", "lvgl", "lvgl", "scripts",
-    "built_in_font", "DejaVuSans.ttf"))
-SYSTEM_FONT_ROOT = "/usr/share/fonts"
-OPTIONAL_FONT_SOURCES = [
-    (os.path.join(SYSTEM_FONT_ROOT, "truetype", "dejavu", "DejaVuSerif.ttf"),
-     "DejaVuSerif.ttf"),
-    (os.path.join(SYSTEM_FONT_ROOT, "opentype", "noto", "NotoSansCJK-Regular.ttc"),
-     "NotoSansCJK-Regular.ttc"),
-    (os.path.join(SYSTEM_FONT_ROOT, "opentype", "noto", "NotoSerifCJK-Regular.ttc"),
-     "NotoSerifCJK-Regular.ttc"),
-]
 STAGED_STATIC_ROOT = os.path.abspath(os.path.join("build", "static"))
 STAGED_APPLAUNCH = os.path.join(STAGED_STATIC_ROOT, "APPLaunch")
 
@@ -44,12 +32,6 @@ def stage_zclaw_static_files():
     if os.path.exists(STAGED_APPLAUNCH):
         shutil.rmtree(STAGED_APPLAUNCH)
     shutil.copytree(ZCLAW_STATIC_ROOT, STAGED_APPLAUNCH)
-    dst_fonts = os.path.join(STAGED_APPLAUNCH, "share", "font")
-    os.makedirs(dst_fonts, exist_ok=True)
-    shutil.copy2(LVGL_DEJAVU_FONT, os.path.join(dst_fonts, "DejaVuSans.ttf"))
-    for source, filename in OPTIONAL_FONT_SOURCES:
-        if os.path.isfile(source):
-            shutil.copy2(source, os.path.join(dst_fonts, filename))
 
 
 stage_zclaw_static_files()
