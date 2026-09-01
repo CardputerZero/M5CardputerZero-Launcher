@@ -17,6 +17,19 @@ int main()
     assert(setup_values::brightness_index(INT_MAX, INT_MAX) == 0);
     assert(setup_values::brightness_value(2, INT_MAX) == INT_MAX / 2);
 
+    assert(setup_values::kBrightnessStepCount == 10);
+    assert(setup_values::brightness_step_percent(0) == 100);
+    assert(setup_values::brightness_step_percent(9) == 10);
+    assert(setup_values::brightness_step_index(100) == 0);
+    assert(setup_values::brightness_step_index(95) == 0);
+    assert(setup_values::brightness_step_index(94) == 1);
+    assert(setup_values::brightness_step_index(0) == 9);
+    assert(setup_values::brightness_step_value(9, 100) == 10);
+    assert(setup_values::brightness_step_percent_from_raw(64, 255) == 30);
+    assert(setup_values::brightness_step_percent_after(100, 1) == 100);
+    assert(setup_values::brightness_step_percent_after(100, -1) == 90);
+    assert(setup_values::brightness_step_percent_after(10, -1) == 10);
+
     int parsed = -1;
     assert(setup_values::parse_nonnegative_int("0", parsed) && parsed == 0);
     assert(setup_values::parse_nonnegative_int("2147483647", parsed) && parsed == INT_MAX);
