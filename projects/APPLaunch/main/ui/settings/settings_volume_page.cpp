@@ -2,7 +2,6 @@
 
 #include "hal_lvgl_bsp.h"
 
-#include <algorithm>
 #include <charconv>
 #include <chrono>
 #include <condition_variable>
@@ -74,6 +73,16 @@ private:
                       timeout);
     }
 
+    static LvSettingVolumePage3::Response invoke_config_default(
+        const std::list<std::string> &args, std::chrono::milliseconds timeout)
+    {
+        return invoke(args,
+                      [](std::list<std::string> command, ResponseCallback callback) {
+                          cp0_signal_config_api(std::move(command), std::move(callback));
+                      },
+                      timeout);
+    }
+
     static LvSettingVolumePage3::Response invoke(
         const std::list<std::string> &args,
         const std::function<void(std::list<std::string>, ResponseCallback)> &invoker,
@@ -119,29 +128,46 @@ private:
 public:
     static bool volume_value_valid(int value)
     {
-        return value >= LvSettingVolumePage3::metric(LvSettingVolumePage3::LayoutMetric::MinVolume) &&
-               value <= LvSettingVolumePage3::metric(LvSettingVolumePage3::LayoutMetric::MaxVolume);
+        return setup_values::volume_value_valid(value);
     }
 
     static int volume_index(int value)
     {
-        const int clamped = std::clamp(value,
-                                       LvSettingVolumePage3::metric(LvSettingVolumePage3::LayoutMetric::MinVolume),
-                                       LvSettingVolumePage3::metric(LvSettingVolumePage3::LayoutMetric::MaxVolume));
-        const int rounded = std::min(
-            LvSettingVolumePage3::metric(LvSettingVolumePage3::LayoutMetric::MaxVolume), ((clamped + 5) / 10) * 10);
-        return (LvSettingVolumePage3::metric(LvSettingVolumePage3::LayoutMetric::MaxVolume) - rounded) / 10;
+        return setup_values::volume_index(value);
     }
 
     static int volume_percent(int index)
     {
-        const int clamped_index = std::clamp(index, 0, 10);
-        return LvSettingVolumePage3::metric(LvSettingVolumePage3::LayoutMetric::MaxVolume) - clamped_index * 10;
+        return setup_values::volume_percent(index);
     }
 
     static LvSettingVolumePage3::VolumeResponse read_volume()
     {
-        return decode_volume(invoke_default({"VolumeRead"}, std::chrono::milliseconds(3000)));
+        const auto backend = decode_volume(invoke_default({"VolumeRead"}, std::chrono::milliseconds(3000)));
+        if (backend.code == 0) return backend;
+
+        // Use the same persisted value as the shortcut path when the mixer is unavailable.
+        const auto saved = decode_volume(
+            invoke_config_default({"GetInt", "volume", "50"}, std::chrono::milliseconds(3000)));
+        return saved.code == 0 ? saved : backend;
+    }
+
+    static bool save_volume_config(int value)
+    {
+        const auto previous = decode_volume(
+            invoke_config_default({"GetInt", "volume", std::to_string(value)}, std::chrono::milliseconds(3000)));
+        if (previous.code != 0) return false;
+        const auto set = invoke_config_default(
+            {"SetInt", "volume", std::to_string(value)}, std::chrono::milliseconds(3000));
+        if (set.code != 0) return false;
+        const auto save = invoke_config_default({"Save"}, std::chrono::milliseconds(3000));
+        if (save.code == 0) return true;
+
+        // Keep the in-memory config aligned when persistence fails.
+        (void)invoke_config_default(
+            {"SetInt", "volume", std::to_string(previous.value)}, std::chrono::milliseconds(3000));
+        (void)invoke_config_default({"Save"}, std::chrono::milliseconds(3000));
+        return false;
     }
 
     static LvSettingVolumePage3::VolumeResponse write_volume(int value)
@@ -526,6 +552,12 @@ void LvSettingVolumePage3::handle_volume_result(const ActiveRequest &request,
         return;
     }
 
+    if (!settings_audio_com::save_volume_config(result.value)) {
+        last_error_ = "volume config save failed";
+        handle_write_failure();
+        return;
+    }
+
     if (back_requested_) {
         start_restore_if_needed();
         return;
@@ -605,6 +637,8 @@ void LvSettingVolumePage3::accept_commit_without_write()
     last_preview_requested_  = backend_volume_;
     last_preview_actual_     = backend_volume_;
     commit_requested_        = false;
+    if (!settings_audio_com::save_volume_config(backend_volume_))
+        last_error_ = "volume config save failed";
     select_volume(selection_for_volume(backend_volume_));
     start_commit_sound();
 }
