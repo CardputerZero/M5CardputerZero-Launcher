@@ -7,6 +7,7 @@
 #include "launcher_media_controls.h"
 
 #include "hal_lvgl_bsp.h"
+#include "model/brightness_policy.hpp"
 #include "model/launcher_media_model.hpp"
 #include "model/setup_value_policy.hpp"
 
@@ -109,8 +110,10 @@ int read_brightness()
             raw = parsed;
     });
     if (raw < 0) {
+        constexpr int default_percent = brightness_policy::brightness_metric(
+            brightness_policy::BrightnessMetric::MaxPercent);
         const int fallback = LauncherMediaControlsModel::raw_from_percent(
-            model.brightness_or(100), maximum);
+            default_percent, maximum);
         raw = read_config_int("brightness", fallback);
     }
     return LauncherMediaControlsModel::percent_from_raw(raw, maximum);
@@ -134,8 +137,7 @@ int write_brightness(int previous_percent, int percent)
         cp0_signal_settings_api({"BacklightWrite", std::to_string(previous_raw)}, nullptr);
         return previous_percent;
     }
-    model.set_brightness_from_raw(written, maximum);
-    return model.brightness_or(100);
+    return LauncherMediaControlsModel::percent_from_raw(written, maximum);
 }
 
 } // namespace
@@ -155,7 +157,7 @@ int adjust_volume(int delta_percent)
 
 int adjust_brightness(int delta_percent)
 {
-    const int current = model.has_brightness() ? model.brightness_or(0) : read_brightness();
+    const int current = read_brightness();
     return write_brightness(current, current + delta_percent);
 }
 

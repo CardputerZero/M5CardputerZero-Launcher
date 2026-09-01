@@ -13,18 +13,14 @@ public:
     static int raw_from_percent(int percent, int maximum);
 
     int volume_or(int fallback) const;
-    int brightness_or(int fallback) const;
     bool has_volume() const { return volume_ >= 0; }
-    bool has_brightness() const { return brightness_ >= 0; }
     bool muted() const { return muted_; }
     void set_volume(int percent);
-    void set_brightness_from_raw(int raw, int maximum);
     bool toggle_mute();
     void set_mute(bool muted);
 
 private:
     int volume_ = -1;
-    int brightness_ = -1;
     bool muted_ = false;
 };
 

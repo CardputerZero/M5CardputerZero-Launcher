@@ -2,6 +2,7 @@
 #include "settings_fonts.hpp"
 
 #include "hal_lvgl_bsp.h"
+#include "../model/brightness_policy.hpp"
 
 #if __has_include("model/setup_value_policy.hpp")
 #include "model/setup_value_policy.hpp"
@@ -10,7 +11,6 @@
 #endif
 
 #include <algorithm>
-#include <array>
 #include <climits>
 #include <condition_variable>
 #include <exception>
@@ -92,10 +92,8 @@ class settings_brightness_com {
     static int normalized_option_count(int count) { return count >= 5 ? 5 : 4; }
     static int brightness_percent(int index, int count)
     {
-        static constexpr std::array<int, 4> legacy{{100, 75, 50, 25}};
-        static constexpr std::array<int, 5> zero{{100, 75, 50, 25, 0}};
-        if (normalized_option_count(count) == 5) return zero[static_cast<std::size_t>(std::clamp(index, 0, 4))];
-        return legacy[static_cast<std::size_t>(std::clamp(index, 0, 3))];
+        (void)count;
+        return brightness_policy::percent_for_index(index);
     }
     static int brightness_index(int value, int maximum, int count)
     {

@@ -23,6 +23,7 @@
 #include "settings_wifi_page.hpp"
 #include "settings_tree_types.hpp"
 #include "settings_extport.hpp"
+#include "../model/brightness_policy.hpp"
 
 #include <atomic>
 #include <cstring>
@@ -404,10 +405,13 @@ void UISettingTreePage::create_page_detail()
         NodeIter screen = mode_tree.append_child(root, SettingEntry{"Screen", roller_page_factory});
         {
             NodeIter brightness = mode_tree.append_child(screen, SettingEntry{"Brightness", brightness_page3_factory});
-            mode_tree.append_child(brightness, SettingEntry{"100%"});
-            mode_tree.append_child(brightness, SettingEntry{"75%"});
-            mode_tree.append_child(brightness, SettingEntry{"50%"});
-            mode_tree.append_child(brightness, SettingEntry{"25%"});
+            constexpr int option_count = brightness_policy::brightness_metric(
+                brightness_policy::BrightnessMetric::OptionCount);
+            for (int index = 0; index < option_count; ++index) {
+                mode_tree.append_child(
+                    brightness,
+                    SettingEntry{std::to_string(brightness_policy::percent_for_index(index)) + "%"});
+            }
         }
         {
             NodeIter dark_time = mode_tree.append_child(screen, SettingEntry{"DarkTime", dark_time_page3_factory});

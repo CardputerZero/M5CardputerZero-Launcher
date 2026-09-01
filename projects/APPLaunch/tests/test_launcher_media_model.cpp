@@ -34,7 +34,6 @@ int main()
 
     LauncherMediaControlsModel controls;
     assert(!controls.has_volume());
-    assert(!controls.has_brightness());
     assert(controls.volume_or(50) == 50);
     controls.set_volume(110);
     assert(controls.has_volume());
@@ -49,9 +48,6 @@ int main()
     assert(LauncherMediaControlsModel::raw_from_percent(1, 40) == 1);
     assert(LauncherMediaControlsModel::raw_from_percent(50, 255) == 127);
     assert(LauncherMediaControlsModel::raw_from_percent(100, INT_MAX) == INT_MAX);
-    controls.set_brightness_from_raw(64, 255);
-    assert(controls.has_brightness());
-    assert(controls.brightness_or(0) == 25);
     assert(controls.toggle_mute());
     assert(controls.muted());
     assert(!controls.toggle_mute());
