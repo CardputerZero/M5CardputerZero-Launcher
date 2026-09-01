@@ -1139,15 +1139,6 @@ void launch_wizard::WizardService::run_keyboard_guide()
         return;
     }
 
-    // Consume before starting the interactive process. A power cycle or crash
-    // must not trap the device in the guide on every subsequent boot.
-    if (remove(kKeyboardGuideMarker) != 0) {
-        fprintf(stderr, "LaunchWizard: failed to consume keyboard guide marker: %s\n",
-                strerror(errno));
-        return;
-    }
-    sync();
-
     // The guide's key sounds use miniaudio's PulseAudio backend, which needs
     // the UID 1000 user's pipewire-pulse socket. Spawned as root (the wizard's
     // own identity) it has no XDG_RUNTIME_DIR, initialises no backend and runs
@@ -1240,6 +1231,21 @@ void launch_wizard::WizardService::run_keyboard_guide()
     else if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
         fprintf(stderr, "LaunchWizard: keyboard guide exited with %d\n",
                 WEXITSTATUS(status));
+
+    // Consume the one-shot marker only after the guide has exited normally.
+    // If shutdown, a power cycle, or a failed launch interrupts the guide,
+    // keeping the marker forces the tutorial to be shown on the next boot
+    // instead of silently falling through to the OOBE.
+    const bool exited_normally = WIFEXITED(status);
+    const int exit_code = exited_normally ? WEXITSTATUS(status) : -1;
+    if (!should_consume_keyboard_guide_marker(exited_normally, exit_code))
+        return;
+    if (remove(kKeyboardGuideMarker) != 0 && errno != ENOENT) {
+        fprintf(stderr, "LaunchWizard: failed to consume keyboard guide marker: %s\n",
+                strerror(errno));
+        return;
+    }
+    sync();
 #endif
 }
 

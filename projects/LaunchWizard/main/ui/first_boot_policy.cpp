@@ -17,4 +17,9 @@ bool should_run_keyboard_guide(bool marker_present, bool binary_present)
     return marker_present && binary_present;
 }
 
+bool should_consume_keyboard_guide_marker(bool exited_normally, int exit_code)
+{
+    return exited_normally && exit_code == 0;
+}
+
 }  // namespace launch_wizard

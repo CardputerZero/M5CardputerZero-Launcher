@@ -68,6 +68,12 @@ bool test_first_boot_policy()
     passed &= !launch_wizard::should_run_keyboard_guide(false, true);
     passed &= !launch_wizard::should_run_keyboard_guide(false, false);
 
+    // An interrupted guide must remain armed for the next boot; only a normal
+    // zero exit consumes the one-shot marker.
+    passed &= launch_wizard::should_consume_keyboard_guide_marker(true, 0);
+    passed &= !launch_wizard::should_consume_keyboard_guide_marker(true, 1);
+    passed &= !launch_wizard::should_consume_keyboard_guide_marker(false, 0);
+
     if (!passed)
         std::cerr << "first boot policy tests failed\n";
     return passed;
