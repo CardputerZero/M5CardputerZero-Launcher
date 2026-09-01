@@ -360,7 +360,12 @@ void render_system_info(LvSettingSystemInfoPage3 *page)
                                 state->kind == SettingsSystemPageKind::Build;
     const lv_font_t *line_font = machine_values ? settings_fonts::mono(11) : settings_fonts::cjk_sans(12);
     for (lv_obj_t *line : {state->line_one, state->line_two, state->line_three}) {
-        if (line) lv_obj_set_style_text_font(line, line_font, LV_PART_MAIN);
+        if (!line) continue;
+        lv_obj_set_style_text_font(line, line_font, LV_PART_MAIN);
+        // Hashes and other machine values can be wider than the fixed text box.
+        // Scroll them in place so the complete value remains readable.
+        lv_label_set_long_mode(line, machine_values ? LV_LABEL_LONG_SCROLL_CIRCULAR
+                                                    : LV_LABEL_LONG_CLIP);
     }
 
     set_label(state->status_label, state->status);

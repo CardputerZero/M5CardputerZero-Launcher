@@ -6,13 +6,14 @@
 #include <string>
 
 #include "lvgl_components.hpp"
+#include "../model/setup_value_policy.hpp"
 
 class LvSettingVolumePage3 : public LvSettingValuePage3Base {
 public:
     enum class LayoutMetric : int {
-        MinVolume = 0,
-        MaxVolume = 100,
-        VolumeOptionCount = MaxVolume / 10 + 1,
+        MinVolume = setup_values::volume_metric(setup_values::VolumeMetric::MinPercent),
+        MaxVolume = setup_values::volume_metric(setup_values::VolumeMetric::MaxPercent),
+        VolumeOptionCount = setup_values::volume_metric(setup_values::VolumeMetric::OptionCount),
         SystemSoundSwitchIndex = 1,
     };
 

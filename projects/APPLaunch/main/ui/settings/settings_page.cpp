@@ -23,6 +23,7 @@
 #include "settings_wifi_page.hpp"
 #include "settings_tree_types.hpp"
 #include "settings_extport.hpp"
+#include "../model/setup_value_policy.hpp"
 
 #include <atomic>
 #include <cstring>
@@ -384,6 +385,14 @@ static void append_numeric_options(Tree &tree, const NodeIter &parent, int first
     for (int value = first; value <= last; ++value) tree.append_child(parent, SettingEntry{std::to_string(value)});
 }
 
+static void append_brightness_options(Tree &tree, const NodeIter &parent)
+{
+    for (int index = 0; index < setup_values::kBrightnessStepCount; ++index) {
+        tree.append_child(parent, SettingEntry{
+            std::to_string(setup_values::brightness_step_percent(index)) + "%"});
+    }
+}
+
 }  // namespace
 
 void UISettingTreePage::create_page_detail()
@@ -404,10 +413,7 @@ void UISettingTreePage::create_page_detail()
         NodeIter screen = mode_tree.append_child(root, SettingEntry{"Screen", roller_page_factory});
         {
             NodeIter brightness = mode_tree.append_child(screen, SettingEntry{"Brightness", brightness_page3_factory});
-            mode_tree.append_child(brightness, SettingEntry{"100%"});
-            mode_tree.append_child(brightness, SettingEntry{"75%"});
-            mode_tree.append_child(brightness, SettingEntry{"50%"});
-            mode_tree.append_child(brightness, SettingEntry{"25%"});
+            append_brightness_options(mode_tree, brightness);
         }
         {
             NodeIter dark_time = mode_tree.append_child(screen, SettingEntry{"DarkTime", dark_time_page3_factory});
@@ -430,17 +436,10 @@ void UISettingTreePage::create_page_detail()
     {
         NodeIter speaker = mode_tree.append_child(root, SettingEntry{"Speaker", roller_page_factory});
         NodeIter volume  = mode_tree.append_child(speaker, SettingEntry{"Volume", volume_page3_factory});
-        mode_tree.append_child(volume, SettingEntry{"100%"});
-        mode_tree.append_child(volume, SettingEntry{"90%"});
-        mode_tree.append_child(volume, SettingEntry{"80%"});
-        mode_tree.append_child(volume, SettingEntry{"70%"});
-        mode_tree.append_child(volume, SettingEntry{"60%"});
-        mode_tree.append_child(volume, SettingEntry{"50%"});
-        mode_tree.append_child(volume, SettingEntry{"40%"});
-        mode_tree.append_child(volume, SettingEntry{"30%"});
-        mode_tree.append_child(volume, SettingEntry{"20%"});
-        mode_tree.append_child(volume, SettingEntry{"10%"});
-        mode_tree.append_child(volume, SettingEntry{"0%"});
+        for (int index = 0; index < setup_values::volume_metric(setup_values::VolumeMetric::OptionCount); ++index) {
+            mode_tree.append_child(
+                volume, SettingEntry{std::to_string(setup_values::volume_percent(index)) + "%"});
+        }
     }
     {
         NodeIter info = mode_tree.append_child(root, SettingEntry{"Battery", roller_page_factory});

@@ -37,6 +37,7 @@
 #include "launcher_media_osd.h"
 #include "launcher_toast.h"
 #include "esc_hold_hint_controller.h"
+#include "model/setup_value_policy.hpp"
 #include "model/global_hint_policy.hpp"
 
 #include <atomic>
@@ -45,8 +46,6 @@
 
 #include <string>
 #include <utility>
-
-#define BRIGHTNESS_OSD_STEP 5
 
 static void show_hint(const char *text)
 {
@@ -110,8 +109,9 @@ void on_key(const struct key_item *elm) noexcept
     switch (action) {
         case GlobalHintAction::BRIGHTNESS_UP:
         case GlobalHintAction::BRIGHTNESS_DOWN: {
-            const int delta = action == GlobalHintAction::BRIGHTNESS_UP ? BRIGHTNESS_OSD_STEP
-                                                                       : -BRIGHTNESS_OSD_STEP;
+            const int delta = action == GlobalHintAction::BRIGHTNESS_UP
+                                  ? setup_values::kBrightnessStepPercent
+                                  : -setup_values::kBrightnessStepPercent;
             const int pct = launcher_media_controls::adjust_brightness(delta);
             launcher_media_osd().show_level("Brightness", LV_SYMBOL_TINT, pct);
             return;
