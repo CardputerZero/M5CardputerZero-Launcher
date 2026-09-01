@@ -164,6 +164,7 @@ const app *Launch::carousel_slot_app(size_t slot) const
 void Launch::applications_load()
 {
     launcher_append_desktop_apps(app_list);
+    launcher_sort_app_display_order(app_list);
 }
 
 void Launch::refresh_home_carousel()

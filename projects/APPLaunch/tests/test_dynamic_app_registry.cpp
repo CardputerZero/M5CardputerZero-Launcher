@@ -71,4 +71,7 @@ int main(int argc, char **argv)
     assert(cancel_refresh != std::string::npos);
     assert(list_failure < begin_refresh);
     assert(begin_refresh < commit_refresh);
+    assert(loader.find("std::filesystem::last_write_time") != std::string::npos);
+    assert(loader.find("sort_desktop_candidates(candidates);") != std::string::npos);
+    assert(loader.find("desktop_config_key(candidate.filename)") != std::string::npos);
 }
