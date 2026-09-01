@@ -768,9 +768,7 @@ std::string configure_desktop_startup(const std::string &user)
         return warning;
     }
     if (!command_ok({"chmod", "0644",
-                     "/etc/lightdm/lightdm.conf.d/50-launchwizard-autologin.conf"}, warning) ||
-        !command_ok({"systemctl", "disable", "lightdm.service"}, warning) ||
-        !command_ok({"systemctl", "disable", "getty@tty1.service"}, warning))
+                     "/etc/lightdm/lightdm.conf.d/50-launchwizard-autologin.conf"}, warning))
         return warning;
 
     return warning;
@@ -1164,10 +1162,10 @@ void launch_wizard::WizardService::run_keyboard_guide()
             "/run/user/" + std::to_string(kDefaultUserUid);
         const std::string pulse_socket = runtime_dir + "/pulse/native";
         // A factory image ships without linger (pi-gen strips it; the wizard
-        // only enables it after the OOBE) and lightdm is disabled, so on true
-        // first boot no user session exists and pipewire-pulse would never
-        // come up. Start the session explicitly; when linger already started
-        // it this is a no-op join.
+        // only enables it after the OOBE), so on true first boot no user
+        // session exists and pipewire-pulse would never come up. Start the
+        // session explicitly; when linger already started it this is a no-op
+        // join.
         const CommandResult session_start =
             run_command({"systemctl", "start", "--no-block",
                          "user@" + std::to_string(kDefaultUserUid) + ".service"});
