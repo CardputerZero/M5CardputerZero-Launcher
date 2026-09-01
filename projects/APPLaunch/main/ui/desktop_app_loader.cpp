@@ -7,23 +7,56 @@
 #include "launch.h"
 #include "launcher_platform.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cctype>
 #include <cstdint>
+#include <filesystem>
 #include <iomanip>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace {
 
+struct DesktopAppCandidate
+{
+    std::string filename;
+    DesktopEntry entry;
+    std::string icon_path;
+    std::filesystem::file_time_type::rep modified_time{};
+    bool has_modified_time = false;
+    std::size_t directory_sequence = 0;
+};
+
 bool contains_exec(const std::list<app> &apps, const std::string &exec)
 {
-    for (const auto &item : apps) {
+    for (const auto &item : apps)
         if (item.Exec == exec) return true;
-    }
     return false;
+}
+
+void sort_desktop_candidates(std::vector<DesktopAppCandidate> &candidates)
+{
+    std::stable_sort(candidates.begin(), candidates.end(), [](const auto &left, const auto &right) {
+        if (left.has_modified_time != right.has_modified_time)
+            return left.has_modified_time;
+        if (left.has_modified_time && left.modified_time != right.modified_time)
+            return left.modified_time < right.modified_time;
+        return left.directory_sequence < right.directory_sequence;
+    });
+}
+
+bool read_modified_time(const std::string &path,
+                        std::filesystem::file_time_type::rep &modified_time)
+{
+    std::error_code error;
+    const auto timestamp = std::filesystem::last_write_time(path, error);
+    if (error) return false;
+    modified_time = timestamp.time_since_epoch().count();
+    return true;
 }
 
 std::string desktop_config_key(const std::string &filename)
@@ -67,9 +100,9 @@ void launcher_append_desktop_apps(std::list<app> &apps)
 
         std::istringstream lines(listing);
         std::string line;
-        std::size_t appended = 0;
+        std::size_t directory_sequence = 0;
+        std::vector<DesktopAppCandidate> candidates;
         while (std::getline(lines, line)) {
-            if (appended >= LAUNCHER_MAX_DESKTOP_APPS) break;
             if (line.size() < 3 || line[0] != 'F' || line[1] != '\t') continue;
 
             std::string name;
@@ -121,8 +154,30 @@ void launcher_append_desktop_apps(std::list<app> &apps)
                 continue;
             }
 
+            DesktopAppCandidate candidate;
+            candidate.filename = std::move(name);
+            candidate.entry = std::move(*entry);
+            candidate.icon_path = icon_path;
+            // AppStore rewrites the desktop file after installation, so its
+            // last-write time is the install/update order for custom apps.
+            candidate.has_modified_time = read_modified_time(path, candidate.modified_time);
+            candidate.directory_sequence = directory_sequence++;
+            candidates.push_back(std::move(candidate));
+        }
+
+        sort_desktop_candidates(candidates);
+        std::size_t appended = 0;
+        for (auto &candidate : candidates) {
+            if (appended >= LAUNCHER_MAX_DESKTOP_APPS) break;
+            if (contains_exec(apps, candidate.entry.exec)) {
+                std::fprintf(stderr, "applications_load: skip duplicate Exec %s\n",
+                             candidate.entry.exec.c_str());
+                continue;
+            }
+
             const AppDescriptor *descriptor = launcher_app_registry_register_dynamic(
-                entry->name, icon_path, desktop_config_key(name));
+                candidate.entry.name, candidate.icon_path,
+                desktop_config_key(candidate.filename));
             if (!descriptor) continue;
             bool enabled = true;
             try {
@@ -132,8 +187,8 @@ void launcher_append_desktop_apps(std::list<app> &apps)
             }
             if (!enabled) continue;
 
-            apps.emplace_back(entry->name, icon_path, entry->exec,
-                              entry->terminal, entry->sysplause);
+            apps.emplace_back(candidate.entry.name, candidate.icon_path, candidate.entry.exec,
+                              candidate.entry.terminal, candidate.entry.sysplause);
             ++appended;
         }
         launcher_app_registry_commit_dynamic_refresh();

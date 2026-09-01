@@ -39,6 +39,12 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -o "$build_dir/test_desktop_entry"
 "$build_dir/test_desktop_entry"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$test_root/../main/ui" \
+    "$test_root/test_app_display_order.cpp" \
+    "$test_root/../main/ui/app_display_order.cpp" \
+    -o "$build_dir/test_app_display_order"
+"$build_dir/test_app_display_order"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$test_root/test_snake_game_model.cpp" \
     "$test_root/../main/ui/model/snake_game_model.cpp" \
     -o "$build_dir/test_snake_game_model"
