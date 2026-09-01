@@ -85,42 +85,57 @@ void BluetoothUiSession::build_list(UISetupPage &page)
         lv_obj_set_style_text_font(empty, &lv_font_montserrat_12, LV_PART_MAIN);
     }
 
-    constexpr int list_y = 22;
-    constexpr int row_step = 20;
+    // Keep the scan view readable on the 150px settings canvas.  A device
+    // needs two text lines (name and address), so the viewport intentionally
+    // shows at most four devices instead of packing rows into every pixel.
+    constexpr int max_visible_devices = 3;
+    constexpr int list_header_y = 17;
+    constexpr int list_y = 29;
+    constexpr int row_step = 31;
+    constexpr int row_height = 30;
     const int hint_y = layout.content_height - 14;
-    constexpr int list_bottom_gap = 8;
-    int visible_count = (hint_y - list_bottom_gap - list_y) / row_step;
-    if (visible_count < 1) visible_count = 1;
-    int offset = model_.list_selection() - visible_count / 2;
-    if (offset < 0) offset = 0;
-    if (offset > static_cast<int>(rows.size()) - visible_count)
-        offset = static_cast<int>(rows.size()) - visible_count;
-    if (offset < 0) offset = 0;
-
-    for (int visible_index = 0;
-         visible_index < visible_count && visible_index + offset < static_cast<int>(rows.size());
-         ++visible_index) {
-        const int row_index = visible_index + offset;
-        const BluetoothListRow &row = rows[row_index];
-        const int y = list_y + visible_index * row_step;
-
-        if (row.is_header) {
+    std::vector<int> device_rows;
+    device_rows.reserve(rows.size());
+    for (int row_index = 0; row_index < static_cast<int>(rows.size()); ++row_index) {
+        if (rows[row_index].is_header) {
             lv_obj_t *header = lv_label_create(container);
-            lv_label_set_text(header, row.title);
-            lv_obj_set_pos(header, 8, y + 3);
+            lv_label_set_text(header, rows[row_index].title);
+            lv_obj_set_pos(header, 8, list_header_y);
             lv_obj_set_style_text_color(header, lv_color_hex(0x888888), LV_PART_MAIN);
             lv_obj_set_style_text_font(
                 header,
                 launcher_fonts().get("Montserrat-Bold.ttf", 10, LV_FREETYPE_FONT_STYLE_BOLD),
                 LV_PART_MAIN);
-            continue;
+        } else {
+            device_rows.push_back(row_index);
         }
+    }
+
+    int selected_device_position = 0;
+    for (int index = 0; index < static_cast<int>(device_rows.size()); ++index) {
+        if (device_rows[index] == model_.list_selection()) {
+            selected_device_position = index;
+            break;
+        }
+    }
+    int offset = selected_device_position - max_visible_devices / 2;
+    if (offset < 0) offset = 0;
+    const int max_offset = static_cast<int>(device_rows.size()) - max_visible_devices;
+    if (offset > max_offset) offset = max_offset;
+    if (offset < 0) offset = 0;
+
+    for (int visible_index = 0;
+         visible_index < max_visible_devices && visible_index + offset < static_cast<int>(device_rows.size());
+         ++visible_index) {
+        const int row_index = device_rows[visible_index + offset];
+        const BluetoothListRow &row = rows[row_index];
+        const int y = list_y + visible_index * row_step;
 
         const bool selected = row_index == model_.list_selection();
         const cp0_bt_device_t &device = devices_[row.device_index];
         if (selected) {
             lv_obj_t *background = lv_obj_create(container);
-            lv_obj_set_size(background, layout.screen_width - 8, 20);
+            lv_obj_set_size(background, layout.screen_width - 8, row_height);
             lv_obj_set_pos(background, 4, y);
             lv_obj_set_style_radius(background, 2, LV_PART_MAIN);
             lv_obj_set_style_bg_color(background, lv_color_hex(0x1F3A5F), LV_PART_MAIN);
@@ -134,15 +149,15 @@ void BluetoothUiSession::build_list(UISetupPage &page)
         lv_obj_t *name = lv_label_create(container);
         lv_label_set_text(name, device.name[0] ? device.name : device.address);
         lv_obj_set_pos(name, 8, y + 1);
-        lv_obj_set_width(name, 150);
+        lv_obj_set_width(name, 208);
         lv_label_set_long_mode(name, LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_color(name, lv_color_hex(text_color), LV_PART_MAIN);
         lv_obj_set_style_text_font(name, &lv_font_montserrat_12, LV_PART_MAIN);
 
         lv_obj_t *address = lv_label_create(container);
         lv_label_set_text(address, device.address);
-        lv_obj_set_pos(address, 8, y + 12);
-        lv_obj_set_width(address, 190);
+        lv_obj_set_pos(address, 8, y + 16);
+        lv_obj_set_width(address, 208);
         lv_label_set_long_mode(address, LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_color(address, lv_color_hex(selected ? 0xBBBBBB : 0x777777),
                                     LV_PART_MAIN);
@@ -157,8 +172,8 @@ void BluetoothUiSession::build_list(UISetupPage &page)
             snprintf(state_text, sizeof(state_text), "%d", device.rssi);
         lv_obj_t *state = lv_label_create(container);
         lv_label_set_text(state, state_text);
-        lv_obj_set_pos(state, 226, y + 4);
-        lv_obj_set_width(state, 88);
+        lv_obj_set_pos(state, 242, y + 4);
+        lv_obj_set_width(state, 70);
         lv_label_set_long_mode(state, LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(state, LV_TEXT_ALIGN_RIGHT, LV_PART_MAIN);
         lv_obj_set_style_text_color(state, lv_color_hex(text_color), LV_PART_MAIN);

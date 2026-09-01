@@ -1132,14 +1132,14 @@ void LvSettingBluetoothAliasPage3::enqueue_api_result(
                              y + 1,
                              208,
                              color,
-                             settings_fonts::cjk_sans(10));
+                             settings_fonts::cjk_sans(11));
                 create_label(ComponensObj,
                              address.c_str(),
                              8,
-                             y + 10,
+                             y + 16,
                              214,
                              selected ? 0xBBBBBB : 0x777777,
-                             settings_fonts::mono(8));
+                             settings_fonts::mono(9));
 
                 std::string state;
                 if (device.connected)
@@ -1149,8 +1149,8 @@ void LvSettingBluetoothAliasPage3::enqueue_api_result(
                 else
                     state = std::to_string(device.rssi);
                 const lv_font_t *state_font = (device.connected || device.paired)
-                    ? settings_fonts::sans(8)
-                    : settings_fonts::mono(8);
+                    ? settings_fonts::sans(9)
+                    : settings_fonts::mono(9);
                 lv_obj_t *state_label = create_label(
                     ComponensObj,
                     state.c_str(),
