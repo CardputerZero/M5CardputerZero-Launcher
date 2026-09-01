@@ -4,6 +4,18 @@
 
 namespace setup_values {
 
+enum class VolumeMetric : int {
+    MinPercent = 0,
+    MaxPercent = 100,
+    StepPercent = 10,
+    OptionCount = (MaxPercent - MinPercent) / StepPercent + 1,
+};
+
+constexpr int volume_metric(VolumeMetric metric)
+{
+    return static_cast<int>(metric);
+}
+
 struct CameraResolution {
     int width;
     int height;

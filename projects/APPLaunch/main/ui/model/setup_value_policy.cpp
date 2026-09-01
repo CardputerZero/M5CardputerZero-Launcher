@@ -9,7 +9,6 @@ namespace {
 
 constexpr int kBrightnessPercentages[] = {100, 75, 50, 25};
 constexpr int kDarkTimes[] = {0, 10, 30, 60, 300};
-constexpr int kVolumePercentages[] = {100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 0};
 constexpr CameraResolution kCameraResolutions[] = {{1280, 720}, {640, 480}};
 
 template <typename T, int N>
@@ -72,8 +71,13 @@ int dark_time_seconds(int index)
 
 int round_volume_percent(int percent)
 {
-    const int clamped = std::clamp(percent, 0, 100);
-    return std::min(100, ((clamped + 5) / 10) * 10);
+    constexpr int min_percent = volume_metric(VolumeMetric::MinPercent);
+    constexpr int max_percent = volume_metric(VolumeMetric::MaxPercent);
+    constexpr int step_percent = volume_metric(VolumeMetric::StepPercent);
+    const int clamped = std::clamp(percent, min_percent, max_percent);
+    const int rounded = ((clamped - min_percent + step_percent / 2) /
+                         step_percent) * step_percent + min_percent;
+    return std::min(max_percent, rounded);
 }
 
 int volume_index(int percent)
@@ -83,12 +87,16 @@ int volume_index(int percent)
 
 int volume_percent(int index)
 {
-    return kVolumePercentages[clamp_index(index, array_size(kVolumePercentages))];
+    constexpr int max_percent = volume_metric(VolumeMetric::MaxPercent);
+    constexpr int step_percent = volume_metric(VolumeMetric::StepPercent);
+    const int clamped = clamp_index(index, volume_metric(VolumeMetric::OptionCount));
+    return max_percent - clamped * step_percent;
 }
 
 bool volume_value_valid(int percent)
 {
-    return percent >= 0 && percent <= 100;
+    return percent >= volume_metric(VolumeMetric::MinPercent) &&
+           percent <= volume_metric(VolumeMetric::MaxPercent);
 }
 
 int camera_resolution_index(int width, int height)

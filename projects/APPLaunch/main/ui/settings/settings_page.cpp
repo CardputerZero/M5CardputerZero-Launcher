@@ -430,17 +430,10 @@ void UISettingTreePage::create_page_detail()
     {
         NodeIter speaker = mode_tree.append_child(root, SettingEntry{"Speaker", roller_page_factory});
         NodeIter volume  = mode_tree.append_child(speaker, SettingEntry{"Volume", volume_page3_factory});
-        mode_tree.append_child(volume, SettingEntry{"100%"});
-        mode_tree.append_child(volume, SettingEntry{"90%"});
-        mode_tree.append_child(volume, SettingEntry{"80%"});
-        mode_tree.append_child(volume, SettingEntry{"70%"});
-        mode_tree.append_child(volume, SettingEntry{"60%"});
-        mode_tree.append_child(volume, SettingEntry{"50%"});
-        mode_tree.append_child(volume, SettingEntry{"40%"});
-        mode_tree.append_child(volume, SettingEntry{"30%"});
-        mode_tree.append_child(volume, SettingEntry{"20%"});
-        mode_tree.append_child(volume, SettingEntry{"10%"});
-        mode_tree.append_child(volume, SettingEntry{"0%"});
+        for (int index = 0; index < setup_values::volume_metric(setup_values::VolumeMetric::OptionCount); ++index) {
+            mode_tree.append_child(
+                volume, SettingEntry{std::to_string(setup_values::volume_percent(index)) + "%"});
+        }
     }
     {
         NodeIter info = mode_tree.append_child(root, SettingEntry{"Battery", roller_page_factory});
