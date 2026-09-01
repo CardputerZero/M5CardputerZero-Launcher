@@ -51,7 +51,8 @@ class UISTPage : public AppPage
     // JetBrains Mono Bold at 12px resolves to a 7px advance and 15px line height in LVGL.
     static constexpr int CHAR_W = 7;
     static constexpr int CHAR_H = 15;
-    static constexpr int TEXT_Y_PAD = 2;
+    // Descenders in the 12px Bold face need the full 15px cell height.
+    static constexpr int TEXT_Y_PAD = 0;
     static constexpr int NORMAL_COLS = TERM_W / CHAR_W;
     static constexpr int NORMAL_ROWS = TERM_H / CHAR_H;
     static constexpr int BIG_COLS = 80;
