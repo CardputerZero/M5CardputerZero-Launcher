@@ -35,12 +35,12 @@ public:
     enum class LayoutMetric : int {
         ScreenW     = 320,
         ScreenH     = 150,
-        RowH        = 17,
+        RowH        = 31,
         RowY        = 22,
         ConnectedRowY = 22,
         ScanSectionY = 23,
         ScanRowY    = 38,
-        VisibleRows = 5,
+        VisibleRows = 3,
         HintY       = ScreenH - 14,
     };
 
