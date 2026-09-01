@@ -18,6 +18,7 @@ public:
     bool has_brightness() const { return brightness_ >= 0; }
     bool muted() const { return muted_; }
     void set_volume(int percent);
+    void set_brightness(int percent);
     void set_brightness_from_raw(int raw, int maximum);
     bool toggle_mute();
     void set_mute(bool muted);
