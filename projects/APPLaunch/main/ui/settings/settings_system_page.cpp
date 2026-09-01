@@ -953,16 +953,16 @@ void finish_check(LvSettingUpdatePage3 *page,
                   std::string payload,
                   const settings_system::UpdateStatusInfo &info)
 {
-    if (!page || !page->state_) return;
-    if (code != 0 || !info.terminal || !info.availability_known) {
-        finish_update(page, settings_system::UpdatePhase::Failed,
-                      code == 0 ? -1 : code, std::move(payload), false);
-        if (page->state_) {
-            page->state_->status = "Unable to determine whether an update is available";
-            render_update_page(page);
-        }
-        return;
-    }
+    // if (!page || !page->state_) return;
+    // if (code != 0 || !info.terminal || !info.availability_known) {
+    //     finish_update(page, settings_system::UpdatePhase::Failed,
+    //                   code == 0 ? -1 : code, std::move(payload), false);
+    //     if (page->state_) {
+    //         page->state_->status = "Unable to determine whether an update is available";
+    //         render_update_page(page);
+    //     }
+    //     return;
+    // }
 
     const std::string version = info.version;
     const std::string commit = info.commit;
