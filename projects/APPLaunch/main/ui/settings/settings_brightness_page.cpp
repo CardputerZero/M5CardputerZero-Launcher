@@ -1,13 +1,9 @@
 #include "settings_brightness_page.hpp"
 #include "settings_fonts.hpp"
+#include "../model/brightness_operation.hpp"
+#include "../model/setup_value_policy.hpp"
 
 #include "hal_lvgl_bsp.h"
-
-#if __has_include("model/setup_value_policy.hpp")
-#include "model/setup_value_policy.hpp"
-#elif __has_include("../../../APPLaunch/main/ui/model/setup_value_policy.hpp")
-#include "../../../APPLaunch/main/ui/model/setup_value_policy.hpp"
-#endif
 
 #include <algorithm>
 #include <array>
@@ -22,6 +18,13 @@
 #include <utility>
 
 namespace {
+
+int normalized_brightness_option_count(int count)
+{
+    return count >= setup_values::kBrightnessStepCount
+               ? setup_values::kBrightnessStepCount
+               : count >= 5 ? 5 : 4;
+}
 
 class settings_brightness_com {
     using Page = LvSettingBrightnessPage3;
@@ -41,7 +44,6 @@ class settings_brightness_com {
         int code = -1;
         std::string data;
     };
-    static constexpr const char *kBrightnessKey = "brightness";
     static constexpr std::chrono::milliseconds kTimeout{3000};
 
     static Response invoke(const Arguments &arguments, const std::function<void(Arguments, Callback)> &invoker)
@@ -70,11 +72,13 @@ class settings_brightness_com {
     }
     static Response get_int(const ConfigInvoker &invoker, int fallback)
     {
-        return invoke({"GetInt", kBrightnessKey, std::to_string(fallback)}, invoker);
+        return invoke({"GetInt", setup_values::kBrightnessConfigKey,
+                       std::to_string(fallback)}, invoker);
     }
     static Response set_int(const ConfigInvoker &invoker, int value)
     {
-        return invoke({"SetInt", kBrightnessKey, std::to_string(value)}, invoker);
+        return invoke({"SetInt", setup_values::kBrightnessConfigKey,
+                       std::to_string(value)}, invoker);
     }
     static Response save(const ConfigInvoker &invoker)
     {
@@ -89,17 +93,23 @@ class settings_brightness_com {
         return response.succeeded() && parse_nonnegative(response.data, value) && value >= minimum && value <= maximum;
     }
     static bool response_is_ok(const Response &response) { return response.succeeded() && response.data == "ok"; }
-    static int normalized_option_count(int count) { return count >= 5 ? 5 : 4; }
     static int brightness_percent(int index, int count)
     {
         static constexpr std::array<int, 4> legacy{{100, 75, 50, 25}};
         static constexpr std::array<int, 5> zero{{100, 75, 50, 25, 0}};
-        if (normalized_option_count(count) == 5) return zero[static_cast<std::size_t>(std::clamp(index, 0, 4))];
+        const int option_count = normalized_brightness_option_count(count);
+        if (option_count == setup_values::kBrightnessStepCount)
+            return setup_values::brightness_step_percent(index);
+        if (option_count == 5)
+            return zero[static_cast<std::size_t>(std::clamp(index, 0, 4))];
         return legacy[static_cast<std::size_t>(std::clamp(index, 0, 3))];
     }
     static int brightness_index(int value, int maximum, int count)
     {
-        if (normalized_option_count(count) == 4) return setup_values::brightness_index(value, maximum);
+        const int option_count = normalized_brightness_option_count(count);
+        if (option_count == 4) return setup_values::brightness_index(value, maximum);
+        if (option_count == setup_values::kBrightnessStepCount)
+            return setup_values::brightness_step_index_from_raw(value, maximum);
         if (maximum <= 0) return 0;
         const int percent = static_cast<int>(static_cast<std::int64_t>(value) * 100 / maximum);
         if (percent >= 88) return 0;
@@ -111,11 +121,19 @@ class settings_brightness_com {
     static int brightness_value(int index, int maximum, int count)
     {
         const int safe_maximum = std::max(1, maximum);
-        if (normalized_option_count(count) == 4) return setup_values::brightness_value(index, safe_maximum);
-        return static_cast<int>(static_cast<std::int64_t>(safe_maximum) * brightness_percent(index, 5) / 100);
+        const int option_count = normalized_brightness_option_count(count);
+        if (option_count == 4)
+            return setup_values::brightness_value(index, safe_maximum);
+        if (option_count == setup_values::kBrightnessStepCount)
+            return setup_values::brightness_step_value(index, safe_maximum);
+        return static_cast<int>(static_cast<std::int64_t>(safe_maximum) *
+                                brightness_percent(index, option_count) / 100);
     }
     static bool valid_value(int value, int maximum) { return maximum > 0 && value >= 0 && value <= maximum; }
-    static bool valid_index(int index, int count) { const int n = normalized_option_count(count); return index >= 0 && index < n; }
+    static bool valid_index(int index, int count)
+    {
+        return index >= 0 && index < normalized_brightness_option_count(count);
+    }
     static bool restore(const SettingsInvoker &settings, const ConfigInvoker &config, int value, int maximum, int config_value)
     {
         int restored = -1;
@@ -129,6 +147,8 @@ class settings_brightness_com {
 public:
     static Page::BrightnessReadResult read(const SettingsInvoker &settings, const ConfigInvoker &config, int count)
     {
+        std::lock_guard<std::mutex> operation_lock(
+            brightness_control::operation_mutex());
         const Response max_response = invoke({"BacklightMax"}, settings);
         int maximum = 0;
         if (!parse_bounded(max_response, 1, INT_MAX, maximum))
@@ -149,6 +169,8 @@ public:
     static Page::BrightnessWriteResult write(const SettingsInvoker &settings, const ConfigInvoker &config,
                                              int index, int maximum, int previous, int count)
     {
+        std::lock_guard<std::mutex> operation_lock(
+            brightness_control::operation_mutex());
         Page::BrightnessWriteResult result;
         result.previous_value = previous;
         result.previous_config = previous;
@@ -456,7 +478,8 @@ void LvSettingBrightnessPage3::finish_write_failure()
 bool LvSettingBrightnessPage3::begin_write()
 {
     const int page_option_count = option_count();
-    if (selected_index < 0 || selected_index >= (page_option_count >= 5 ? 5 : 4)) {
+    if (selected_index < 0 ||
+        selected_index >= normalized_brightness_option_count(page_option_count)) {
         select(saved_index_);
         restore_focus();
         set_status("Invalid brightness target", true);

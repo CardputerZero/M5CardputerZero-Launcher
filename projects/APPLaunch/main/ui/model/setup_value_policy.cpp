@@ -44,6 +44,51 @@ int brightness_value(int index, int maximum)
                            static_cast<std::int64_t>(safe_maximum) * percentage / 100));
 }
 
+int brightness_step_percent(int index)
+{
+    const int safe_index = clamp_index(index, kBrightnessStepCount);
+    return kBrightnessMaxPercent - safe_index * kBrightnessStepPercent;
+}
+
+int brightness_step_index(int percent)
+{
+    const int normalized = std::clamp(percent, kBrightnessMinPercent,
+                                      kBrightnessMaxPercent);
+    const int offset = kBrightnessMaxPercent - normalized;
+    const int rounded_offset = offset + kBrightnessStepPercent / 2 - 1;
+    return clamp_index(rounded_offset / kBrightnessStepPercent,
+                       kBrightnessStepCount);
+}
+
+int brightness_step_value(int index, int maximum)
+{
+    const int safe_maximum = std::max(1, maximum);
+    const int percentage = brightness_step_percent(index);
+    return std::max(1, static_cast<int>(
+                           static_cast<std::int64_t>(safe_maximum) * percentage /
+                           kBrightnessMaxPercent));
+}
+
+int brightness_step_index_from_raw(int value, int maximum)
+{
+    if (maximum <= 0) return 0;
+    const std::int64_t bounded = std::clamp<std::int64_t>(value, 0, maximum);
+    const int percent = static_cast<int>(bounded * kBrightnessMaxPercent / maximum);
+    return brightness_step_index(percent);
+}
+
+int brightness_step_percent_from_raw(int value, int maximum)
+{
+    return brightness_step_percent(brightness_step_index_from_raw(value, maximum));
+}
+
+int brightness_step_percent_after(int current_percent, int direction)
+{
+    const int current_index = brightness_step_index(current_percent);
+    const int index_delta = direction > 0 ? -1 : direction < 0 ? 1 : 0;
+    return brightness_step_percent(current_index + index_delta);
+}
+
 bool parse_nonnegative_int(std::string_view text, int &value)
 {
     if (text.empty()) return false;
