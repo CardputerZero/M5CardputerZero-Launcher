@@ -54,6 +54,8 @@ int main()
     assert(STKeyEncoder::encode(KEY_DOWN, nullptr, true) == "\x1bOB");
     assert(STKeyEncoder::encode(KEY_RIGHT, nullptr, true) == "\x1bOC");
     assert(STKeyEncoder::encode(KEY_LEFT, nullptr, true) == "\x1bOD");
+    // Insert is unsupported by UISTPage and must not write ESC[2~ to the PTY.
+    assert(STKeyEncoder::encode(KEY_INSERT, "\033[2~", false).empty());
 
     assert(STKeyEncoder::encode(KEY_A, "a", false) == "a");
     assert(STKeyEncoder::encode(KEY_A, "\xe4\xbd\xa0", false) == "\xe4\xbd\xa0");
@@ -73,6 +75,8 @@ int main()
     assert(!STKeyEncoder::should_forward_event(KEY_ENTER, KBD_KEY_RELEASED));
     assert(STKeyEncoder::should_forward_event(KEY_KPENTER, KBD_KEY_PRESSED));
     assert(!STKeyEncoder::should_forward_event(KEY_KPENTER, KBD_KEY_REPEATED));
+    assert(!STKeyEncoder::should_forward_event(KEY_INSERT, KBD_KEY_PRESSED));
+    assert(!STKeyEncoder::should_forward_event(KEY_INSERT, KBD_KEY_REPEATED));
     assert(STKeyEncoder::should_forward_event(KEY_A, KBD_KEY_PRESSED));
     assert(STKeyEncoder::should_forward_event(KEY_A, KBD_KEY_REPEATED));
     assert(!STKeyEncoder::should_forward_event(KEY_A, KBD_KEY_RELEASED));
