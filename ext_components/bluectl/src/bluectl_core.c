@@ -4,6 +4,7 @@
 #include "bluectl_internal.h"
 
 #include <ctype.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -101,8 +102,11 @@ DBusMessage *bctl_send(struct bluectl_ctx *c, DBusMessage *call, int timeout_ms)
 		dbus_message_unref(call);
 		return NULL;
 	}
-	if (timeout_ms < 0)
-		timeout_ms = c->timeout_ms;
+	if (timeout_ms < 0) {
+		/* 公共 setter 接受 unsigned，但 libdbus 超时参数是 int。 */
+		timeout_ms = c->timeout_ms > (unsigned int)INT_MAX ? INT_MAX :
+			(int)c->timeout_ms;
+	}
 
 	dbus_error_init(&err);
 	reply = dbus_connection_send_with_reply_and_block(c->conn, call,
@@ -175,6 +179,10 @@ DBusMessage *bctl_prop_get_all(struct bluectl_ctx *c, const char *path,
 	DBusMessage *call;
 	DBusMessageIter it;
 
+	if (!path || !path[0] || !iface || !iface[0]) {
+		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "invalid property args");
+		return NULL;
+	}
 	call = dbus_message_new_method_call(BLUEZ_NAME, path, IFACE_PROPS, "GetAll");
 	if (!call) {
 		bctl_set_err(c, BLUECTL_ERR_NO_MEM, "no memory for message");
@@ -312,6 +320,10 @@ int bctl_foreach_object(struct bluectl_ctx *c, bctl_object_cb cb, void *user)
 	DBusMessage *reply;
 	DBusMessageIter root, objs;
 
+	if (!cb) {
+		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "object callback is required");
+		return BLUECTL_ERR_INVALID_ARG;
+	}
 	reply = bctl_call(c, BLUEZ_ROOT_PATH, IFACE_OM, "GetManagedObjects", -1);
 	if (!reply) {
 		/* org.bluez 未运行时 D-Bus 报 UnknownMethod, 提示更友好一些 */
@@ -348,7 +360,7 @@ int bctl_foreach_object(struct bluectl_ctx *c, bctl_object_cb cb, void *user)
 			dbus_message_iter_recurse(&entry, &ifaces);
 			while (dbus_message_iter_get_arg_type(&ifaces) ==
 			       DBUS_TYPE_DICT_ENTRY) {
-				DBusMessageIter ientry, props;
+				DBusMessageIter ientry;
 				const char *iface = NULL;
 
 				dbus_message_iter_recurse(&ifaces, &ientry);
@@ -356,12 +368,15 @@ int bctl_foreach_object(struct bluectl_ctx *c, bctl_object_cb cb, void *user)
 					dbus_message_iter_get_basic(&ientry, &iface);
 				dbus_message_iter_next(&ientry);
 
-				if (iface &&
-				    dbus_message_iter_get_arg_type(&ientry) == DBUS_TYPE_ARRAY) {
-					dbus_message_iter_recurse(&ientry, &props);
-					if (path)
-						cb(path, iface, &props, user);
-				}
+				/*
+				 * ientry 此刻位于接口的 a{sv} 属性数组。
+				 * 注意: 必须把数组迭代器本身传给回调;
+				 * 若先 recurse, 得到的是数组首个 dict entry,
+				 * bctl_dict_lookup() 只认数组迭代器。
+				 */
+				if (iface && path &&
+				    dbus_message_iter_get_arg_type(&ientry) == DBUS_TYPE_ARRAY)
+					cb(path, iface, &ientry, user);
 				dbus_message_iter_next(&ifaces);
 			}
 		}
@@ -389,8 +404,19 @@ void bctl_mac_from_path(const char *path, char *out, size_t len)
 	if (strncmp(p, "dev_", 4))
 		return;
 	p += 4;
+	/* 设备对象路径必须严格为 dev_XX_XX_XX_XX_XX_XX。 */
+	if (strlen(p) != 17)
+		return;
+	for (i = 0; i < 17; i++) {
+		if ((i % 3) == 2) {
+			if (p[i] != '_')
+				return;
+		} else if (!isxdigit((unsigned char)p[i])) {
+			return;
+		}
+	}
 	/* "dev_AA_BB_CC_DD_EE_FF" -> "AA:BB:CC:DD:EE:FF" */
-	for (i = 0; p[i] && i < len - 1; i++)
+	for (i = 0; i < 17 && i < len - 1; i++)
 		out[i] = (p[i] == '_') ? ':' : toupper((unsigned char)p[i]);
 	out[i] = '\0';
 }
@@ -408,7 +434,10 @@ static void find_first_cb(const char *path, const char *iface,
 	struct bctl_find_first *f = user;
 
 	(void)props;
-	if (f->found || strcmp(iface, f->iface))
+	if (strcmp(iface, f->iface))
+		return;
+	/* ObjectManager 字典顺序未定义，默认适配器选择保持稳定。 */
+	if (f->found && strcmp(path, f->out) >= 0)
 		return;
 	bctl_strscpy(f->out, path, f->len);
 	f->found = 1;
@@ -420,8 +449,10 @@ int bctl_adapter_path(struct bluectl_ctx *c, const char *adapter,
 	struct bctl_find_first f = { IFACE_ADAPTER1, NULL, 0, 0 };
 	int rv;
 
-	if (!out || !len)
+	if (!out || !len) {
+		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "invalid adapter output buffer");
 		return BLUECTL_ERR_INVALID_ARG;
+	}
 	out[0] = '\0';
 
 	if (!adapter || !adapter[0]) {
@@ -438,10 +469,19 @@ int bctl_adapter_path(struct bluectl_ctx *c, const char *adapter,
 		return BLUECTL_OK;
 	}
 	if (adapter[0] == '/') {
+		if (strlen(adapter) >= len) {
+			bctl_set_err(c, BLUECTL_ERR_INVALID_ARG,
+				     "adapter path is too long");
+			return BLUECTL_ERR_INVALID_ARG;
+		}
 		bctl_strscpy(out, adapter, len);
 		return BLUECTL_OK;
 	}
-	snprintf(out, len, "%s/%s", BLUEZ_ROOT_PATH, adapter);
+	if (snprintf(out, len, "%s/%s", BLUEZ_ROOT_PATH, adapter) >= (int)len) {
+		out[0] = '\0';
+		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "adapter name is too long");
+		return BLUECTL_ERR_INVALID_ARG;
+	}
 	return BLUECTL_OK;
 }
 
@@ -482,14 +522,21 @@ int bctl_device_path(struct bluectl_ctx *c, const char *device,
 	struct bctl_find_device f = { NULL, NULL, 0, 0 };
 	int rv;
 
-	if (!out || !len)
+	if (!out || !len) {
+		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "invalid device output buffer");
 		return BLUECTL_ERR_INVALID_ARG;
+	}
 	out[0] = '\0';
 	if (!device || !device[0]) {
 		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "device is required");
 		return BLUECTL_ERR_INVALID_ARG;
 	}
 	if (device[0] == '/') {
+		if (strlen(device) >= len) {
+			bctl_set_err(c, BLUECTL_ERR_INVALID_ARG,
+				     "device path is too long");
+			return BLUECTL_ERR_INVALID_ARG;
+		}
 		bctl_strscpy(out, device, len);
 		return BLUECTL_OK;
 	}
@@ -868,7 +915,9 @@ int bluectl_init(void)
 		return rv;
 	}
 
-	c->timeout_ms = BLUECTL_DEFAULT_TIMEOUT_MS;
+	/* 保留 bluectl_init() 之前通过 bluectl_set_timeout() 设置的值。 */
+	if (!c->timeout_ms)
+		c->timeout_ms = BLUECTL_DEFAULT_TIMEOUT_MS;
 	c->err_code = BLUECTL_OK;
 	c->err[0] = '\0';
 	c->inited = 1;
@@ -918,6 +967,8 @@ void bluectl_set_timeout(unsigned int timeout_ms)
 {
 	if (!timeout_ms)
 		timeout_ms = BLUECTL_DEFAULT_TIMEOUT_MS;
+	else if (timeout_ms > (unsigned int)INT_MAX)
+		timeout_ms = INT_MAX;
 	g_bluectl.timeout_ms = timeout_ms;
 }
 
@@ -965,7 +1016,10 @@ int bluectl_process(unsigned int timeout_ms)
 
 	if (dispatched == 0) {
 		/* 队列空: 阻塞等待新消息到达(0 = 非阻塞轮询) */
-		dbus_connection_read_write(c->conn, (int)timeout_ms);
+		/* 超大 unsigned 值转换为 int 会变负并导致无限等待。 */
+		dbus_connection_read_write(c->conn,
+				timeout_ms > (unsigned int)INT_MAX ? INT_MAX :
+				(int)timeout_ms);
 		dispatched = bctl_drain(c);
 		if (dispatched < 0) {
 			bctl_set_err(c, BLUECTL_ERR_NO_MEM, "dispatch out of memory");

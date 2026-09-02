@@ -22,6 +22,10 @@ dependency), following the component structure used by
 bluectl/
 ├── Kconfig               Component configuration options
 ├── SConstruct            SCons component build script
+├── examples/
+│   └── bluectl_demo.c      Interactive command-line demo
+├── tests/
+│   └── run_func_test.sh    Private DBus + mock BlueZ functional test
 └── src/
     ├── bluectl.h         Public API (the only external header)
     ├── bluectl_internal.h
@@ -69,6 +73,7 @@ In code:
 
 ```c
 #include <stdio.h>
+#include <string.h>
 #include "bluectl.h"
 
 static void on_event(const bluectl_event_t *ev, void *user)
@@ -78,6 +83,7 @@ static void on_event(const bluectl_event_t *ev, void *user)
                ev->property ? ev->property : "-", ev->value ? ev->value : "-");
 }
 
+#ifdef CONFIG_BLUECTL_AGENT_ENABLED
 static void on_agent(const bluectl_agent_request_t *req, void *user)
 {
         if (!req->needs_reply) {
@@ -92,6 +98,7 @@ static void on_agent(const bluectl_agent_request_t *req, void *user)
          * collect user input before replying. */
         bluectl_agent_reply(req->id, 1, "1234");
 }
+#endif
 
 int main(void)
 {
@@ -103,9 +110,11 @@ int main(void)
                 return 1;
         }
         bluectl_set_event_callback(on_event, NULL);
+#ifdef CONFIG_BLUECTL_AGENT_ENABLED
         bluectl_agent_set_callback(on_agent, NULL);
         bluectl_agent_register(NULL);       /* KeyboardDisplay by default */
         bluectl_agent_request_default();
+#endif
 
         bluectl_set_power(NULL, 1);         /* power on */
         bluectl_set_discoverable(NULL, 1);
@@ -135,6 +144,29 @@ int main(void)
 > UI thread. Event and agent callbacks are driven by `bluectl_process()`, which
 > must continue running during pairing.
 
+### Interactive demo
+
+`examples/bluectl_demo.c` is a small command-line program covering adapter,
+device, agent, event, and (when enabled) AVRCP media APIs. It starts a dedicated
+event-pump thread so blocking `pair`/`connect` commands can still service agent
+requests. Build it directly against the component sources on a native system:
+
+```sh
+cd ext_components/bluectl/examples
+gcc -std=gnu99 -Wall -Wextra -Wno-unused-parameter \
+    -DCONFIG_BLUECTL_AGENT_ENABLED=1 \
+    -DCONFIG_BLUECTL_MEDIA_ENABLED=1 \
+    -I../src $(pkg-config --cflags dbus-1) \
+    bluectl_demo.c ../src/bluectl_core.c ../src/bluectl_adapter.c \
+    ../src/bluectl_device.c ../src/bluectl_agent.c ../src/bluectl_media.c \
+    -o bluectl_demo -lpthread $(pkg-config --libs dbus-1)
+./bluectl_demo
+```
+
+Compile without either optional source/macro to exercise a minimal build. At
+runtime, `bluetoothd` and a working system DBus are required. Type `help` in
+the demo for the available commands; `quit` exits cleanly.
+
 ## API Conventions
 
 - Return values: `BLUECTL_OK(0)` indicates success; negative values are
@@ -145,3 +177,19 @@ int main(void)
   object path.
 - Strings passed to event callbacks are valid only for the duration of the
   callback; copy them if they need to be retained.
+
+## Functional Tests
+
+The test harness starts an isolated `dbus-daemon` and the Python mock in
+`tests/mock_bluez.py`, so it does not touch the host BlueZ service. Install the
+native prerequisites (`gcc`, `pkg-config`, `libdbus-1-dev`, `dbus-daemon`,
+`python3-dbus`, and `python3-gi`), then run:
+
+```sh
+cd ext_components/bluectl/tests
+./run_func_test.sh
+```
+
+The script builds `func_test` on first run and removes the executable and
+private bus socket on exit. Its mock and bus logs are useful when diagnosing a
+failure; generated files are intentionally not part of the component.

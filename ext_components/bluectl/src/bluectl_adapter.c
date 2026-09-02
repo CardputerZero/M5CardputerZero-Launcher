@@ -21,8 +21,9 @@ static void list_adapters_cb(const char *path, const char *iface,
 		return;
 	if (l->count >= l->max)
 		return;
-	bctl_strscpy(l->out[l->count].path, path, BLUECTL_PATH_LEN);
+	/* fill 内部会 memset, 路径要在 fill 之后再写 */
 	bctl_adapter_fill(props, &l->out[l->count]);
+	bctl_strscpy(l->out[l->count].path, path, BLUECTL_PATH_LEN);
 	l->count++;
 }
 
@@ -54,8 +55,10 @@ int bluectl_get_adapter(const char *adapter, bluectl_adapter_t *out)
 	DBusMessageIter root;
 	int rv;
 
-	if (!out)
+	if (!out) {
+		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "output buffer is required");
 		return BLUECTL_ERR_INVALID_ARG;
+	}
 	rv = bctl_adapter_path(c, adapter, path, sizeof(path));
 	if (rv < 0)
 		return rv;
@@ -138,8 +141,10 @@ int bluectl_set_alias(const char *adapter, const char *alias)
 	char path[BLUECTL_PATH_LEN];
 	int rv;
 
-	if (!alias || !alias[0])
+	if (!alias || !alias[0]) {
+		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "alias is required");
 		return BLUECTL_ERR_INVALID_ARG;
+	}
 	rv = bctl_adapter_path(c, adapter, path, sizeof(path));
 	if (rv < 0)
 		return rv;

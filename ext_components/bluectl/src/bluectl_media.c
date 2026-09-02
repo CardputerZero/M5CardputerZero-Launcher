@@ -26,20 +26,23 @@ static void player_fill(DBusMessageIter *props, bluectl_media_player_t *out)
 		out->position = (unsigned int)bctl_read_num(&it, 0);
 	if (bctl_dict_lookup(props, "Track", &it) &&
 	    dbus_message_iter_get_arg_type(&it) == DBUS_TYPE_ARRAY) {
-		/* Track 是 a{sv}: Title/Artist/Album/Genre/Duration */
-		DBusMessageIter track;
+		/*
+		 * Track 是变体内容 a{sv}, it 即数组迭代器,
+		 * 直接用它查键(recurse 后会变成首个 dict entry,
+		 * dict_lookup 只认数组迭代器)。
+		 */
+		DBusMessageIter field;
 
-		dbus_message_iter_recurse(&it, &track);
-		if (bctl_dict_lookup(&track, "Title", &it))
-			bctl_read_str(&it, out->title, sizeof(out->title));
-		if (bctl_dict_lookup(&track, "Artist", &it))
-			bctl_read_str(&it, out->artist, sizeof(out->artist));
-		if (bctl_dict_lookup(&track, "Album", &it))
-			bctl_read_str(&it, out->album, sizeof(out->album));
-		if (bctl_dict_lookup(&track, "Genre", &it))
-			bctl_read_str(&it, out->genre, sizeof(out->genre));
-		if (bctl_dict_lookup(&track, "Duration", &it))
-			out->duration = (unsigned int)bctl_read_num(&it, 0);
+		if (bctl_dict_lookup(&it, "Title", &field))
+			bctl_read_str(&field, out->title, sizeof(out->title));
+		if (bctl_dict_lookup(&it, "Artist", &field))
+			bctl_read_str(&field, out->artist, sizeof(out->artist));
+		if (bctl_dict_lookup(&it, "Album", &field))
+			bctl_read_str(&field, out->album, sizeof(out->album));
+		if (bctl_dict_lookup(&it, "Genre", &field))
+			bctl_read_str(&field, out->genre, sizeof(out->genre));
+		if (bctl_dict_lookup(&it, "Duration", &field))
+			out->duration = (unsigned int)bctl_read_num(&field, 0);
 	}
 }
 
@@ -50,8 +53,14 @@ static void find_player_cb(const char *path, const char *iface,
 
 	if (f->found || strcmp(iface, IFACE_MEDIA_PLAYER1))
 		return;
-	if (f->prefix && strncmp(path, f->prefix, strlen(f->prefix)))
-		return;
+	if (f->prefix) {
+		size_t prefix_len = strlen(f->prefix);
+		size_t path_len = strlen(path);
+
+		if (path_len < prefix_len || strncmp(path, f->prefix, prefix_len) ||
+		    (path[prefix_len] != '/' && path[prefix_len] != '\0'))
+			return;
+	}
 	bctl_strscpy(f->path, path, sizeof(f->path));
 	player_fill(props, &f->player);
 	bctl_mac_from_path(path, f->player.device, sizeof(f->player.device));
@@ -68,6 +77,14 @@ static int resolve_player(struct bluectl_ctx *c, const char *device,
 
 	if (!device || !device[0]) {
 		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "device is required");
+		return BLUECTL_ERR_INVALID_ARG;
+	}
+	if (!out || !len) {
+		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "invalid output buffer");
+		return BLUECTL_ERR_INVALID_ARG;
+	}
+	if (device[0] == '/' && strlen(device) >= len) {
+		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "player path is too long");
 		return BLUECTL_ERR_INVALID_ARG;
 	}
 	if (device[0] != '/') {
@@ -102,8 +119,10 @@ int bluectl_media_player_get(const char *device, bluectl_media_player_t *out)
 	DBusMessageIter root;
 	int rv;
 
-	if (!out)
+	if (!out) {
+		bctl_set_err(c, BLUECTL_ERR_INVALID_ARG, "output buffer is required");
 		return BLUECTL_ERR_INVALID_ARG;
+	}
 	rv = resolve_player(c, device, path, sizeof(path));
 	if (rv < 0)
 		return rv;

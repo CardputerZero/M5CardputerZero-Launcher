@@ -50,7 +50,11 @@ extern "C" {
  */
 int bluectl_init(void);
 
-/* 释放资源(注销 agent/匹配规则/连接引用), 可重复调用 */
+/*
+ * 释放资源(注销 agent/匹配规则/连接引用), 可重复调用。
+ * 调用前必须停止 bluectl_process() 线程及其它阻塞式 API；生命周期操作
+ * 不与进行中的调用并发。
+ */
 void bluectl_deinit(void);
 
 /* 返回 1 表示 DBus 连接存活 */
@@ -63,7 +67,8 @@ const char *bluectl_version(void);
 
 /*
  * 设置普通方法调用超时(毫秒), pair/connect 仍有独立更长超时。
- * 默认 BLUECTL_DEFAULT_TIMEOUT_MS。
+ * 默认 BLUECTL_DEFAULT_TIMEOUT_MS；可在 bluectl_init() 前调用，配置会
+ * 保留到后续连接。
  */
 void bluectl_set_timeout(unsigned int timeout_ms);
 
@@ -234,7 +239,8 @@ int bluectl_set_device_alias(const char *device, const char *alias);
 /*
  * agent 请求(BlueZ 调用我们的 org.bluez.Agent1 方法)。
  * needs_reply 为 1 时应用稍后必须调用 bluectl_agent_reply(),
- * 否则配对流程会一直挂起直到 BlueZ 超时。
+ * 否则配对流程会一直挂起直到 BlueZ 超时。请求回调在
+ * bluectl_process() 线程执行；回复接口可从其它应用线程调用。
  */
 typedef struct {
 	unsigned long id;	/* 请求 id, 用于 bluectl_agent_reply() */
