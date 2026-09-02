@@ -31,10 +31,16 @@ def test_every_carousel_card_keeps_the_theme_border():
 
 def test_carousel_switch_uses_only_preloaded_images():
     assert "HomeIconBufferPool home_icon_pool_" in HEADER
-    assert "home_icon_pool_.find(src)" in SOURCE
+    assert "home_icon_pool_.find(src, image_size)" in SOURCE
     assert "lv_image_set_src(image, icon_src)" not in SOURCE
     assert "lv_image_decoder_open" not in SOURCE
     assert "lv_image_decoder_open" in POOL
+
+
+def test_icon_pool_can_prepare_exact_render_sizes():
+    assert "resized_icons_" in POOL
+    assert "decode_and_prepare(path, size)" in POOL
+    assert "lv_draw_buf_create(size, size" in POOL
 
 
 def test_icon_pool_rebuilds_with_the_app_list():
@@ -46,7 +52,33 @@ def test_icon_pool_rebuilds_with_the_app_list():
     assert "reload_home_icons();" in LAUNCH[reload_start:reload_end]
 
 
+def test_icons_are_clipped_by_their_card_content_geometry():
+    start = SOURCE.index("void UILaunchPage::set_panel_icon")
+    end = SOURCE.index("void UILaunchPage::update_carousel_slot", start)
+    setter = SOURCE[start:end]
+    assert "lv_obj_t *clip" in setter
+    assert "lv_obj_create(panel)" in setter
+    assert "lv_obj_set_style_radius(clip" in setter
+    assert "lv_obj_set_style_clip_corner(clip, true" in setter
+    assert "apply_rounded_corners" not in POOL
+    assert "lv_image_set_inner_align(image, LV_IMAGE_ALIGN_CENTER)" in setter
+    assert "compensate_image_scale(image)" in setter
+
+
+def test_icon_scale_rounds_up_during_carousel_animation():
+    animation = (
+        Path(__file__).resolve().parents[1]
+        / "main/ui/animation/ui_launcher_animation.cpp"
+    ).read_text(encoding="utf-8")
+    assert "lv_image_set_scale_x(image, scale_x)" in animation
+    assert "lv_image_set_scale_y(image, scale_y)" in animation
+    assert "compensate_image_scale(obj);" in animation
+
+
 if __name__ == "__main__":
     test_every_carousel_card_keeps_the_theme_border()
     test_carousel_switch_uses_only_preloaded_images()
+    test_icon_pool_can_prepare_exact_render_sizes()
     test_icon_pool_rebuilds_with_the_app_list()
+    test_icons_are_clipped_by_their_card_content_geometry()
+    test_icon_scale_rounds_up_during_carousel_animation()

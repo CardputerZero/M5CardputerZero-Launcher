@@ -11,6 +11,7 @@
 #include "launcher_platform.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <string>
 
 namespace {
@@ -27,6 +28,35 @@ enum class HomeSliderMetric : lv_coord_t {
 static_assert(UILaunchPage::kPageSlider == launcher_carousel_layout::kElementCount);
 static_assert(UILaunchPage::kLauncherCarouselElementCount ==
               launcher_carousel_layout::kElementCount + 1);
+
+// LVGL's software scaler limits the transformed image to
+// ((source_size - 1) * scale) >> 8.  The usual floor(source/target) scale
+// can therefore leave the final destination row/column untouched.  Round up
+// against the last source pixel; the clip object trims the resulting edge.
+void compensate_image_scale(lv_obj_t *image)
+{
+    if (!image) return;
+    lv_obj_update_layout(image);
+    const int32_t source_width = lv_image_get_src_width(image);
+    const int32_t source_height = lv_image_get_src_height(image);
+    const int32_t target_width = lv_obj_get_width(image);
+    const int32_t target_height = lv_obj_get_height(image);
+    if (source_width <= 1 || source_height <= 1 || target_width <= 1 || target_height <= 1)
+        return;
+
+    constexpr uint32_t scale_unit = LV_SCALE_NONE;
+    const uint32_t scale_x = static_cast<uint32_t>(
+        (static_cast<uint64_t>(target_width - 1) * scale_unit + source_width - 2) /
+        (source_width - 1));
+    const uint32_t scale_y = static_cast<uint32_t>(
+        (static_cast<uint64_t>(target_height - 1) * scale_unit + source_height - 2) /
+        (source_height - 1));
+    // Keep manual compensation centered when the image grows during a
+    // carousel transition by explicitly fixing the source pivot.
+    lv_image_set_pivot(image, source_width / 2, source_height / 2);
+    lv_image_set_scale_x(image, scale_x);
+    lv_image_set_scale_y(image, scale_y);
+}
 
 lv_obj_t *create_page_slider(lv_obj_t *parent, size_t page_count, size_t selected_page)
 {
@@ -179,7 +209,10 @@ void UILaunchPage::set_panel_icon(lv_obj_t *panel, const std::string &src)
         if (!image) return;
         lv_obj_set_size(image, LV_PCT(100), LV_PCT(100));
         lv_obj_set_align(image, LV_ALIGN_CENTER);
-        lv_image_set_inner_align(image, LV_IMAGE_ALIGN_STRETCH);
+        // The pool already provides a buffer sized for the card content. Use
+        // CENTER so the scale is supplied by compensate_image_scale rather
+        // than LVGL's floor-based STRETCH transform.
+        lv_image_set_inner_align(image, LV_IMAGE_ALIGN_CENTER);
     }
 
     // Clip the image in a child container. LVGL applies clip_corner to an
@@ -200,6 +233,7 @@ void UILaunchPage::set_panel_icon(lv_obj_t *panel, const std::string &src)
     const uint32_t image_size = static_cast<uint32_t>(std::max<lv_coord_t>(
         1, source_card_size - 2 * card_border));
     lv_image_set_src(image, home_icon_pool_.find(src, image_size));
+    compensate_image_scale(image);
 }
 
 void UILaunchPage::update_carousel_slot(size_t slot, const char *title, const std::string &icon)
