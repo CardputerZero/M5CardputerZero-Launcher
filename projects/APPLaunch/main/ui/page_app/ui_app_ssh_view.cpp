@@ -52,7 +52,7 @@ void UISSHPage::create_ui()
         rollback();
         return;
     }
-    lv_label_set_text(hint, "OK:Connect  Tab:Save  ESC:Back");
+    lv_label_set_text(hint, "KEY_HELP:Help");
     lv_obj_set_align(hint, LV_ALIGN_RIGHT_MID);
     lv_obj_set_x(hint, -4);
     lv_obj_set_style_text_color(hint, lv_color_hex(0x7EA8D8), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -62,6 +62,67 @@ void UISSHPage::create_ui()
         rollback();
         return;
     }
+}
+
+bool UISSHPage::build_help_view()
+{
+    if (!background_ || help_container_) return help_container_ != nullptr;
+
+    lv_obj_t *candidate = lv_obj_create(background_);
+    if (!candidate) return false;
+    lv_obj_set_size(candidate, 320, 150);
+    lv_obj_set_pos(candidate, 0, 0);
+    lv_obj_set_style_radius(candidate, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(candidate, lv_color_hex(0x0D1117), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(candidate, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(candidate, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(candidate, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_clear_flag(candidate, LV_OBJ_FLAG_SCROLLABLE);
+
+    auto add_label = [candidate](const char *text, int y, uint32_t color,
+                                 const lv_font_t *font, bool wrap = false) {
+        lv_obj_t *label = lv_label_create(candidate);
+        if (!label) return false;
+        lv_label_set_text(label, text);
+        lv_obj_set_pos(label, 8, y);
+        lv_obj_set_style_text_color(label, lv_color_hex(color),
+                                    LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_text_font(label, font, LV_PART_MAIN | LV_STATE_DEFAULT);
+        if (wrap) {
+            lv_obj_set_width(label, 304);
+            lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+        }
+        return true;
+    };
+
+    if (!add_label("Help", 6, 0x58A6FF, &lv_font_montserrat_16) ||
+        !add_label("Connect to other devices via SSH (Secure Shell).", 31,
+                   0xE6EDF3, &lv_font_montserrat_12, true) ||
+        !add_label("fn + F / X: move input field", 65, 0xE6EDF3, &lv_font_montserrat_12) ||
+        !add_label("OK: connect", 84, 0xE6EDF3, &lv_font_montserrat_12) ||
+        !add_label("TAB: save", 103, 0xE6EDF3, &lv_font_montserrat_12) ||
+        !add_label("ESC: back", 132, 0x46DC87, &lv_font_montserrat_10)) {
+        lv_obj_delete(candidate);
+        return false;
+    }
+
+    lv_obj_add_event_cb(candidate, static_owned_obj_delete_cb, LV_EVENT_DELETE, this);
+    help_container_ = candidate;
+    lv_obj_move_foreground(help_container_);
+    return true;
+}
+
+void UISSHPage::show_help()
+{
+    if (view_state_ != ViewState::INPUT) return;
+    if (build_help_view()) view_state_ = ViewState::HELP;
+}
+
+void UISSHPage::close_help()
+{
+    if (view_state_ != ViewState::HELP) return;
+    if (help_container_) lv_obj_delete(help_container_);
+    view_state_ = ViewState::INPUT;
 }
 
 bool UISSHPage::build_input_fields()

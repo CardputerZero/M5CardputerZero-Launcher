@@ -67,6 +67,7 @@
 #define KEY_F10             68
 #define KEY_F11             87
 #define KEY_F12             88
+#define KEY_HELP            138
 #define KEY_KPENTER         96
 #define KEY_HOME            102
 #define KEY_UP              103
