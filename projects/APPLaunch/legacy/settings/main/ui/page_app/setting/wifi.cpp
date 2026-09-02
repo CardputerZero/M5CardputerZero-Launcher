@@ -371,10 +371,13 @@ bool WiFi::start_connection(UISetupPage &page, std::string ssid,
                      password = std::move(password), origin]() mutable {
             const char *password_arg = password.empty() ? nullptr : password.c_str();
             const bool hidden = origin == ConnectionOrigin::HIDDEN_PASSWORD_ENTRY;
-            const int ret = hidden
-                ? cp0_wifi_connect_hidden(ssid.c_str(), password_arg)
-                : cp0_wifi_connect(ssid.c_str(), password_arg);
-            if (ret != 0 && (origin == ConnectionOrigin::PASSWORD_ENTRY || hidden))
+            const bool saved_hidden = hidden && cp0_wifi_profile_exists(ssid.c_str()) != 0;
+            const int ret = saved_hidden
+                ? cp0_wifi_connect(ssid.c_str(), nullptr)
+                : hidden
+                    ? cp0_wifi_connect_hidden(ssid.c_str(), password_arg)
+                    : cp0_wifi_connect(ssid.c_str(), password_arg);
+            if (ret != 0 && (origin == ConnectionOrigin::PASSWORD_ENTRY || (hidden && !saved_hidden)))
                 cp0_wifi_profile_forget(ssid.c_str());
 
             auto result = std::unique_ptr<ConnectionResult>(
