@@ -137,7 +137,8 @@ void add_chrome(uint32_t accent, int progress_fill, bool show_progress = true)
     // SETUP mode tag. (Figma shows a parallelogram, but the device's software
     // renderer does not draw skew-transformed rects, so use a rounded rect.)
     lv_obj_t *tag = add_rect(p, 12, 6, 82, 18, accent, 0, 0, 3);
-    add_label(tag, "SETUP", font_xs(), 0xffffff, 16, 4);
+    lv_obj_t *setup_label = add_label(tag, "SETUP", font_xs(), 0xffffff, 0, 0);
+    lv_obj_align(setup_label, LV_ALIGN_CENTER, 0, 0);
 
     add_label(p, "CardputerZero", font_sm(), kColorBrand, 120, 7);
     add_rect(p, 8, 33, 304, 1, kColorDivider, 0, 0, 0);
