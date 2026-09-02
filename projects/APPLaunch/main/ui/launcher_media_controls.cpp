@@ -7,6 +7,7 @@
 #include "launcher_media_controls.h"
 
 #include "hal_lvgl_bsp.h"
+#include "model/brightness_operation.hpp"
 #include "model/launcher_media_model.hpp"
 #include "model/setup_value_policy.hpp"
 
@@ -109,18 +110,21 @@ int read_brightness()
             raw = parsed;
     });
     if (raw < 0) {
-        const int fallback = LauncherMediaControlsModel::raw_from_percent(
-            model.brightness_or(100), maximum);
-        raw = read_config_int("brightness", fallback);
+        const int fallback_index = setup_values::brightness_step_index(
+            model.brightness_or(setup_values::kBrightnessMaxPercent));
+        const int fallback = setup_values::brightness_step_value(fallback_index, maximum);
+        raw = read_config_int(setup_values::kBrightnessConfigKey, fallback);
     }
-    return LauncherMediaControlsModel::percent_from_raw(raw, maximum);
+    const int percent = setup_values::brightness_step_percent_from_raw(raw, maximum);
+    model.set_brightness(percent);
+    return percent;
 }
 
 int write_brightness(int previous_percent, int percent)
 {
-    percent = LauncherMediaControlsModel::clamp_percent(percent);
+    const int target_index = setup_values::brightness_step_index(percent);
     const int maximum = backlight_max();
-    const int raw = LauncherMediaControlsModel::raw_from_percent(percent, maximum);
+    const int raw = setup_values::brightness_step_value(target_index, maximum);
 
     int written = -1;
     cp0_signal_settings_api({"BacklightWrite", std::to_string(raw)}, [&](int code, std::string data) {
@@ -129,13 +133,15 @@ int write_brightness(int previous_percent, int percent)
             written = parsed;
     });
     if (written < 0) return previous_percent;
-    const int previous_raw = LauncherMediaControlsModel::raw_from_percent(previous_percent, maximum);
-    if (!write_config_int("brightness", written, previous_raw)) {
+    const int previous_raw = setup_values::brightness_step_value(
+        setup_values::brightness_step_index(previous_percent), maximum);
+    if (!write_config_int(setup_values::kBrightnessConfigKey, written, previous_raw)) {
         cp0_signal_settings_api({"BacklightWrite", std::to_string(previous_raw)}, nullptr);
         return previous_percent;
     }
-    model.set_brightness_from_raw(written, maximum);
-    return model.brightness_or(100);
+    const int applied_percent = setup_values::brightness_step_percent_from_raw(written, maximum);
+    model.set_brightness(applied_percent);
+    return applied_percent;
 }
 
 } // namespace
@@ -155,8 +161,17 @@ int adjust_volume(int delta_percent)
 
 int adjust_brightness(int delta_percent)
 {
-    const int current = model.has_brightness() ? model.brightness_or(0) : read_brightness();
-    return write_brightness(current, current + delta_percent);
+    std::unique_lock<std::mutex> operation_lock(
+        brightness_control::operation_mutex(), std::try_to_lock);
+    if (!operation_lock.owns_lock()) {
+        return setup_values::brightness_step_percent(
+            setup_values::brightness_step_index(
+                model.brightness_or(setup_values::kBrightnessMaxPercent)));
+    }
+
+    const int current = read_brightness();
+    const int target = setup_values::brightness_step_percent_after(current, delta_percent);
+    return write_brightness(current, target);
 }
 
 bool toggle_mute()

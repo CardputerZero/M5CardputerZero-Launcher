@@ -23,6 +23,7 @@
 #include "settings_wifi_page.hpp"
 #include "settings_tree_types.hpp"
 #include "settings_extport.hpp"
+#include "../model/setup_value_policy.hpp"
 
 #include <atomic>
 #include <cstring>
@@ -404,6 +405,14 @@ static void append_numeric_options(Tree &tree, const NodeIter &parent, int first
     for (int value = first; value <= last; ++value) tree.append_child(parent, SettingEntry{std::to_string(value)});
 }
 
+static void append_brightness_options(Tree &tree, const NodeIter &parent)
+{
+    for (int index = 0; index < setup_values::kBrightnessStepCount; ++index) {
+        tree.append_child(parent, SettingEntry{
+            std::to_string(setup_values::brightness_step_percent(index)) + "%"});
+    }
+}
+
 }  // namespace
 
 void UISettingTreePage::create_page_detail()
@@ -424,10 +433,7 @@ void UISettingTreePage::create_page_detail()
         NodeIter screen = mode_tree.append_child(root, SettingEntry{"Screen", roller_page_factory});
         {
             NodeIter brightness = mode_tree.append_child(screen, SettingEntry{"Brightness", brightness_page3_factory});
-            mode_tree.append_child(brightness, SettingEntry{"100%"});
-            mode_tree.append_child(brightness, SettingEntry{"75%"});
-            mode_tree.append_child(brightness, SettingEntry{"50%"});
-            mode_tree.append_child(brightness, SettingEntry{"25%"});
+            append_brightness_options(mode_tree, brightness);
         }
         {
             NodeIter dark_time = mode_tree.append_child(screen, SettingEntry{"DarkTime", dark_time_page3_factory});
@@ -509,10 +515,10 @@ void UISettingTreePage::create_page_detail()
         mode_tree.append_child(root, SettingEntry{"Account", settings_account_page_factory, PageType::FullCustom});
     }
 
-    {
-        NodeIter sound_card = mode_tree.append_child(root, SettingEntry{"SoundCard", roller_page_factory});
-        mode_tree.append_child(sound_card, SettingEntry{"Open Mixer", soundcard_page4_factory, PageType::FullCustom});
-    }
+    // {
+    //     NodeIter sound_card = mode_tree.append_child(root, SettingEntry{"SoundCard", roller_page_factory});
+    //     mode_tree.append_child(sound_card, SettingEntry{"Open Mixer", soundcard_page4_factory, PageType::FullCustom});
+    // }
 }
 
 void UISettingTreePage::back_home(void *data)

@@ -20,6 +20,9 @@ namespace {
 
 int sink_volume = 63;
 int configured_volume = 80;
+int backlight_maximum = 255;
+int backlight_value = 102;
+int configured_brightness = 102;
 bool sink_muted = true;
 int mute_toggles = 0;
 std::vector<std::string> audio_commands;
@@ -65,13 +68,38 @@ int main()
             assert(!arguments.empty());
             const std::string command = arguments.front();
             if (command == "GetInt") {
-                reply(callback, 0, std::to_string(configured_volume));
+                const std::string key = *std::next(arguments.begin());
+                reply(callback, 0, std::to_string(
+                    key == "brightness" ? configured_brightness : configured_volume));
             } else if (command == "SetInt") {
                 assert(arguments.size() == 3);
-                configured_volume = std::stoi(*std::next(arguments.begin(), 2));
+                const std::string key = *std::next(arguments.begin());
+                const int value = std::stoi(*std::next(arguments.begin(), 2));
+                if (key == "brightness")
+                    configured_brightness = value;
+                else
+                    configured_volume = value;
                 reply(callback, 0, "");
             } else if (command == "Save") {
                 reply(callback, 0, "");
+            } else {
+                assert(false);
+            }
+        });
+
+    cp0_signal_settings_api.append(
+        [](std::list<std::string> arguments,
+           std::function<void(int, std::string)> callback) {
+            assert(!arguments.empty());
+            const std::string command = arguments.front();
+            if (command == "BacklightMax") {
+                reply(callback, 0, std::to_string(backlight_maximum));
+            } else if (command == "BacklightRead") {
+                reply(callback, 0, std::to_string(backlight_value));
+            } else if (command == "BacklightWrite") {
+                assert(arguments.size() == 2);
+                backlight_value = std::stoi(*std::next(arguments.begin()));
+                reply(callback, 0, std::to_string(backlight_value));
             } else {
                 assert(false);
             }
@@ -109,5 +137,29 @@ int main()
     assert(sink_volume == 70);
     assert(configured_volume == 70);
     assert(mute_toggles == 2);
+
+    assert(launcher_media_controls::adjust_brightness(-10) == 30);
+    assert(backlight_value == 76);
+    assert(configured_brightness == 76);
+
+    // Simulate Settings changing the shared hardware/config value after the shortcut cache exists.
+    backlight_value = 178;
+    configured_brightness = 178;
+    assert(launcher_media_controls::adjust_brightness(-10) == 60);
+    assert(backlight_value == 153);
+    assert(configured_brightness == 153);
+    assert(launcher_media_controls::adjust_brightness(10) == 70);
+    assert(backlight_value == 178);
+
+    backlight_value = 25;
+    configured_brightness = 25;
+    assert(launcher_media_controls::adjust_brightness(-10) == 10);
+    assert(backlight_value == 25);
+    assert(backlight_value > 0);
+
+    backlight_value = 255;
+    configured_brightness = 255;
+    assert(launcher_media_controls::adjust_brightness(10) == 100);
+    assert(backlight_value == 255);
     return 0;
 }
