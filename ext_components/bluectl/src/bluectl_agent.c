@@ -8,8 +8,23 @@
 #include "bluectl_internal.h"
 
 #include <stdio.h>
+#include <sched.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* bluectl_agent_reply() 可由应用工作线程调用，保护挂起请求链表。 */
+static volatile int g_pending_lock;
+
+static void pending_lock(void)
+{
+	while (__sync_lock_test_and_set(&g_pending_lock, 1))
+		sched_yield();
+}
+
+static void pending_unlock(void)
+{
+	__sync_lock_release(&g_pending_lock);
+}
 
 /* needs_reply=1 的方法集合 */
 static int method_needs_reply(const char *method)
@@ -73,7 +88,14 @@ static int send_reply(struct bluectl_ctx *c, DBusMessage *msg, int accept,
 		bctl_set_err(c, BLUECTL_ERR_NO_MEM, "send agent reply failed");
 		return BLUECTL_ERR_NO_MEM;
 	}
-	dbus_connection_flush(c->conn);
+	/*
+	 * 这里不能 dbus_connection_flush(): 本函数可能在
+	 * bluectl_process() 的消息分发(handler)上下文中被调用,
+	 * 若另一线程正阻塞在 send_with_reply_and_block(),
+	 * flush 会与 io 路径锁互等造成死锁。
+	 * send 只入队, 出站数据由下一次 bluectl_process() 的
+	 * read_write(DO_WRITING) 写出。
+	 */
 	dbus_message_unref(reply);
 	return BLUECTL_OK;
 }
@@ -83,8 +105,10 @@ static void agent_cancel_all(struct bluectl_ctx *c, const char *reason)
 {
 	struct bctl_pending_agent *p, *next;
 
+	pending_lock();
 	p = c->pending_agents;
 	c->pending_agents = NULL;
+	pending_unlock();
 	while (p) {
 		next = p->next;
 		if (p->msg && c->conn) {
@@ -92,8 +116,8 @@ static void agent_cancel_all(struct bluectl_ctx *c, const char *reason)
 				p->msg, "org.bluez.Error.Canceled", reason);
 
 			if (err) {
-				if (dbus_connection_send(c->conn, err, NULL))
-					dbus_connection_flush(c->conn);
+				/* 只入队不 flush(handler 上下文, 见 send_reply 注释) */
+				dbus_connection_send(c->conn, err, NULL);
 				dbus_message_unref(err);
 			}
 		}
@@ -157,8 +181,8 @@ static DBusHandlerResult handle_agent_call(struct bluectl_ctx *c,
 			"unknown agent method");
 
 		if (err) {
-			if (dbus_connection_send(c->conn, err, NULL))
-				dbus_connection_flush(c->conn);
+			/* 只入队不 flush(handler 上下文, 见 send_reply 注释) */
+			dbus_connection_send(c->conn, err, NULL);
 			dbus_message_unref(err);
 		}
 		return DBUS_HANDLER_RESULT_HANDLED;
@@ -192,12 +216,14 @@ static DBusHandlerResult handle_agent_call(struct bluectl_ctx *c,
 		p = calloc(1, sizeof(*p));
 		if (!p)
 			goto oom;
+		pending_lock();
 		req.id = c->agent_next_id++;
 		p->id = req.id;
 		bctl_strscpy(p->method, method, sizeof(p->method));
 		p->msg = dbus_message_ref(msg);
 		p->next = c->pending_agents;
 		c->pending_agents = p;
+		pending_unlock();
 
 		req.needs_reply = 1;
 		if (!c->agent_cb) {
@@ -214,8 +240,8 @@ reply_now:
 		DBusMessage *reply = dbus_message_new_method_return(msg);
 
 		if (reply) {
-			if (dbus_connection_send(c->conn, reply, NULL))
-				dbus_connection_flush(c->conn);
+			/* 只入队不 flush(handler 上下文, 见 send_reply 注释) */
+			dbus_connection_send(c->conn, reply, NULL);
 			dbus_message_unref(reply);
 		}
 	}
@@ -226,8 +252,7 @@ oom:
 			msg, "org.freedesktop.DBus.Error.NoReply", "out of memory");
 
 		if (err) {
-			if (dbus_connection_send(c->conn, err, NULL))
-				dbus_connection_flush(c->conn);
+			dbus_connection_send(c->conn, err, NULL);
 			dbus_message_unref(err);
 		}
 	}
@@ -404,16 +429,19 @@ int bluectl_agent_reply(unsigned long id, int accept, const char *code)
 	if (!bctl_check_conn(c))
 		return BLUECTL_ERR_NO_CONN;
 
+	pending_lock();
 	link = &c->pending_agents;
 	while (*link && (*link)->id != id)
 		link = &(*link)->next;
 	p = *link;
 	if (!p) {
+		pending_unlock();
 		bctl_set_err(c, BLUECTL_ERR_NOT_FOUND,
 			     "agent request %lu not pending", id);
 		return BLUECTL_ERR_NOT_FOUND;
 	}
 	*link = p->next;
+	pending_unlock();
 	{
 		int rv = send_reply(c, p->msg, accept, p->method, code);
 

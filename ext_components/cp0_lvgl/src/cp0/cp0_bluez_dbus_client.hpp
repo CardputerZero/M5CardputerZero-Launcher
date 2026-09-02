@@ -17,6 +17,8 @@ struct AgentRequest {
     std::string device;
     std::string passkey;
     std::string uuid;
+    bool paired = false;
+    bool trusted = false;
 };
 
 using AgentListener = std::function<void(const AgentRequest &)>;
@@ -36,6 +38,7 @@ void set_discoverable_async(int enabled, Completion completion);
 void start_discovery_async(Completion completion);
 void stop_discovery_async(Completion completion);
 void pair_async(const char *address, Completion completion);
+void cancel_pairing_async(const char *address, Completion completion);
 void connect_async(const char *address, Completion completion);
 void disconnect_async(const char *address, Completion completion);
 void remove_async(const char *address, Completion completion);

@@ -9,6 +9,7 @@
 #include "animation.hpp"
 #include "launcher_carousel_layout.h"
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -23,6 +24,53 @@ struct LauncherHomeAnimContext {
     launcher_home_animation::AliveCallback alive_cb;
 };
 
+lv_coord_t radius_for_slot(const launcher_carousel_layout::Slot &slot)
+{
+    return slot.width == 100 ? launcher_carousel_layout::kCenterCardRadius :
+        launcher_carousel_layout::kSideCardRadius;
+}
+
+void sync_panel_radius(lv_obj_t *panel, lv_coord_t radius)
+{
+    if (!panel) return;
+    const auto selector = LV_PART_MAIN | LV_STATE_DEFAULT;
+    lv_obj_set_style_radius(panel, radius, selector);
+    if (lv_obj_t *clip = lv_obj_get_child(panel, 0)) {
+        const lv_coord_t border = lv_obj_get_style_border_width(panel, LV_PART_MAIN);
+        lv_obj_set_style_radius(
+            clip, std::max<lv_coord_t>(0, radius - border), selector);
+    }
+}
+
+void compensate_image_scale(lv_obj_t *panel)
+{
+    if (!panel) return;
+    lv_obj_t *clip = lv_obj_get_child(panel, 0);
+    lv_obj_t *image = clip ? lv_obj_get_child(clip, 0) : nullptr;
+    if (!image || !lv_obj_check_type(image, &lv_image_class)) return;
+
+    // Percentage-sized children are resolved during layout.  Make sure the
+    // scale is computed from the current animation frame's content size.
+    lv_obj_update_layout(panel);
+    const int32_t source_width = lv_image_get_src_width(image);
+    const int32_t source_height = lv_image_get_src_height(image);
+    const int32_t target_width = lv_obj_get_width(image);
+    const int32_t target_height = lv_obj_get_height(image);
+    if (source_width <= 1 || source_height <= 1 || target_width <= 1 || target_height <= 1)
+        return;
+
+    constexpr uint32_t scale_unit = LV_SCALE_NONE;
+    const uint32_t scale_x = static_cast<uint32_t>(
+        (static_cast<uint64_t>(target_width - 1) * scale_unit + source_width - 2) /
+        (source_width - 1));
+    const uint32_t scale_y = static_cast<uint32_t>(
+        (static_cast<uint64_t>(target_height - 1) * scale_unit + source_height - 2) /
+        (source_height - 1));
+    lv_image_set_pivot(image, source_width / 2, source_height / 2);
+    lv_image_set_scale_x(image, scale_x);
+    lv_image_set_scale_y(image, scale_y);
+}
+
 void apply_panel_slot(lv_obj_t *obj, const launcher_carousel_layout::Slot &slot)
 {
     if (!obj) {
@@ -33,6 +81,7 @@ void apply_panel_slot(lv_obj_t *obj, const launcher_carousel_layout::Slot &slot)
     lv_obj_set_y(obj, slot.y);
     lv_obj_set_width(obj, slot.width);
     lv_obj_set_height(obj, slot.height);
+    compensate_image_scale(obj);
 }
 
 void apply_label_slot(lv_obj_t *obj, const launcher_carousel_layout::Slot &slot)
@@ -56,6 +105,8 @@ void animate_panel(lv_obj_t *obj, const launcher_carousel_layout::Slot &from,
     lv_obj_set_y(obj, anim->Animation_map(from.y, to.y));
     lv_obj_set_width(obj, anim->Animation_map(from.width, to.width));
     lv_obj_set_height(obj, anim->Animation_map(from.height, to.height));
+    sync_panel_radius(obj, anim->Animation_map(radius_for_slot(from), radius_for_slot(to)));
+    compensate_image_scale(obj);
 }
 
 void animate_label(lv_obj_t *obj, const launcher_carousel_layout::Slot &from,

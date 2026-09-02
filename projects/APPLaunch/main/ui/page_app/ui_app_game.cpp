@@ -193,7 +193,7 @@ void UIGamePage::handle_playing_key(GameInputAction action)
         if (game_area_) lv_obj_clean(game_area_);
         render_layer_ = nullptr;
         overlay_lbl_ = nullptr;
-        show_overlay("F/X/Z/C: Move\nOK: Start  ESC: Quit");
+        show_overlay("Classic Snake game.\n\nF / X / Z / C: move");
         model_.reset();
         update_score_label();
         break;

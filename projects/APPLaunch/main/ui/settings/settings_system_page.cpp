@@ -758,10 +758,30 @@ void clear_dialog_state(StateT *state)
     state->progress_label = nullptr;
 }
 
+void keep_update_page_focus(LvSettingUpdatePage3 *page)
+{
+    if (!page || !page->Get()) return;
+    lv_group_t *group = lv_obj_get_group(page->Get());
+    if (group) lv_group_focus_obj(page->Get());
+}
+
+void remove_dialog_controls_from_group(lv_obj_t *dialog)
+{
+    if (!dialog) return;
+    lv_obj_t *footer = lv_msgbox_get_footer(dialog);
+    if (!footer) return;
+    const uint32_t child_count = lv_obj_get_child_count(footer);
+    for (uint32_t index = 0; index < child_count; ++index) {
+        lv_obj_t *button = lv_obj_get_child(footer, index);
+        if (button && lv_obj_get_group(button)) lv_group_remove_obj(button);
+    }
+}
+
 void close_update_dialog(LvSettingUpdatePage3 *page)
 {
     if (!page || !page->state_) return;
     lv_obj_t *dialog = page->state_->dialog;
+    remove_dialog_controls_from_group(dialog);
     clear_dialog_state(page->state_.get());
     if (dialog) lv_obj_delete(dialog);
 }
@@ -780,7 +800,82 @@ void style_dialog(lv_obj_t *dialog)
     lv_obj_set_style_border_color(dialog, lv_color_hex(0x58A6FF), LV_PART_MAIN);
     lv_obj_set_style_bg_color(dialog, lv_color_hex(0x171717), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(dialog, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(dialog, 0, LV_PART_MAIN);
     lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+void style_dialog_layout(lv_obj_t *dialog)
+{
+    if (!dialog) return;
+
+    lv_obj_t *header = lv_msgbox_get_header(dialog);
+    if (header) {
+        lv_obj_set_height(header, 30);
+        lv_obj_set_style_bg_opa(header, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(header, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_left(header, 10, LV_PART_MAIN);
+        lv_obj_set_style_pad_right(header, 10, LV_PART_MAIN);
+        lv_obj_set_style_pad_top(header, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_bottom(header, 0, LV_PART_MAIN);
+        lv_obj_set_flex_align(header, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                              LV_FLEX_ALIGN_CENTER);
+    }
+
+    lv_obj_t *content = lv_msgbox_get_content(dialog);
+    if (content) {
+        lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(content, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_left(content, 10, LV_PART_MAIN);
+        lv_obj_set_style_pad_right(content, 10, LV_PART_MAIN);
+        lv_obj_set_style_pad_top(content, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_bottom(content, 0, LV_PART_MAIN);
+    }
+
+    lv_obj_t *footer = lv_msgbox_get_footer(dialog);
+    if (footer) {
+        lv_obj_set_height(footer, 30);
+        lv_obj_set_style_bg_opa(footer, LV_OPA_TRANSP, LV_PART_MAIN);
+        lv_obj_set_style_border_width(footer, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_left(footer, 10, LV_PART_MAIN);
+        lv_obj_set_style_pad_right(footer, 10, LV_PART_MAIN);
+        lv_obj_set_style_pad_top(footer, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_bottom(footer, 0, LV_PART_MAIN);
+        lv_obj_set_flex_align(footer, LV_FLEX_ALIGN_SPACE_EVENLY, LV_FLEX_ALIGN_CENTER,
+                              LV_FLEX_ALIGN_CENTER);
+    }
+
+    if (header) {
+        lv_obj_t *title = lv_msgbox_get_title(dialog);
+        if (title) {
+            lv_obj_set_style_text_font(title, settings_fonts::sans(13, LV_FREETYPE_FONT_STYLE_BOLD),
+                                       LV_PART_MAIN);
+            lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_LEFT, LV_PART_MAIN);
+        }
+    }
+    if (footer) {
+        const uint32_t child_count = lv_obj_get_child_count(footer);
+        for (uint32_t index = 0; index < child_count; ++index) {
+            lv_obj_t *button = lv_obj_get_child(footer, index);
+            if (!button) continue;
+            lv_obj_set_height(button, 26);
+            lv_obj_set_style_pad_all(button, 0, LV_PART_MAIN);
+            lv_obj_t *label = lv_obj_get_child(button, 0);
+            if (label)
+                lv_obj_set_style_text_font(label, settings_fonts::sans(12), LV_PART_MAIN);
+        }
+    }
+
+    // The footer buttons are group-capable LVGL objects.  This page owns the
+    // modal state machine, so keep navigation on the page root instead of
+    // allowing the default input group to focus a button directly.
+    remove_dialog_controls_from_group(dialog);
+}
+
+void configure_machine_label(lv_obj_t *label)
+{
+    if (!label) return;
+    lv_obj_set_style_text_font(label, settings_fonts::mono(11), LV_PART_MAIN);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_SCROLL_CIRCULAR);
 }
 
 template <typename StateT>
@@ -819,13 +914,16 @@ void show_update_confirmation(LvSettingUpdatePage3 *page)
         (state->candidate_commit.empty() ? std::string("unknown") : state->candidate_commit);
     state->dialog_message = lv_msgbox_add_text(state->dialog, message.c_str());
     if (state->dialog_message) {
-        lv_label_set_long_mode(state->dialog_message, LV_LABEL_LONG_DOT);
+        lv_label_set_long_mode(state->dialog_message, LV_LABEL_LONG_SCROLL_CIRCULAR);
         lv_obj_set_style_text_font(state->dialog_message, settings_fonts::sans(12), LV_PART_MAIN);
     }
     state->update_button = lv_msgbox_add_footer_button(state->dialog, "Update");
     state->skip_button = lv_msgbox_add_footer_button(state->dialog, "Not now");
     if (state->update_button) lv_obj_set_flex_grow(state->update_button, 1);
     if (state->skip_button) lv_obj_set_flex_grow(state->skip_button, 1);
+    style_dialog_layout(state->dialog);
+    lv_obj_update_layout(state->dialog);
+    keep_update_page_focus(page);
     render_dialog_selection(state);
 }
 
@@ -841,13 +939,14 @@ void show_update_progress(LvSettingUpdatePage3 *page)
     if (title) lv_obj_set_style_text_color(title, lv_color_hex(0x58A6FF), LV_PART_MAIN);
     lv_obj_t *content = lv_msgbox_get_content(state->dialog);
     if (!content) return;
+    style_dialog_layout(state->dialog);
     lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(
         content, LvSettingUpdatePage3::metric(LvSettingUpdatePage3::LayoutMetric::ContentPadRow), LV_PART_MAIN);
     state->progress_label = lv_label_create(content);
     if (state->progress_label) {
         lv_obj_set_width(state->progress_label, lv_pct(100));
-        lv_label_set_long_mode(state->progress_label, LV_LABEL_LONG_DOT);
+        lv_label_set_long_mode(state->progress_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
         lv_label_set_text(state->progress_label, state->status.c_str());
     }
     state->progress_bar = lv_bar_create(content);
@@ -861,6 +960,8 @@ void show_update_progress(LvSettingUpdatePage3 *page)
         lv_obj_set_style_bg_color(
             state->progress_bar, lv_color_hex(0x2878C8), LV_PART_INDICATOR);
     }
+    lv_obj_update_layout(state->dialog);
+    keep_update_page_focus(page);
 }
 
 std::string update_failure_status(settings_system::UpdateAction action,
@@ -1202,7 +1303,7 @@ void update_key_event(LvSettingUpdatePage3 *page, lv_event_t *event)
         if (key == LV_KEY_ESC) cancel_update(page, false);
     } else if (key == LV_KEY_ESC || key == LV_KEY_LEFT) {
         if (page->LeaveSelfPage) page->LeaveSelfPage();
-    } else if (key == LV_KEY_ENTER) {
+    } else if (key == LV_KEY_ENTER || key == LV_KEY_RIGHT) {
         start_update(page, true);
     }
     lv_event_stop_processing(event);
@@ -1308,11 +1409,17 @@ void LvSettingUpdatePage3::create_ui(lv_obj_t *parent)
                                   LvSettingUpdatePage3::metric(LayoutMetric::CommitY),
                                   LvSettingUpdatePage3::metric(LayoutMetric::TextW),
                                   "", 0xAAAAAA, body_font());
+    for (lv_obj_t *label : {state_->device, state_->lvgl, state_->version,
+                            state_->build, state_->commit})
+        configure_machine_label(label);
     state_->status_label = create_label(ComponensObj,
                                         LvSettingUpdatePage3::metric(LayoutMetric::TextX),
                                         LvSettingUpdatePage3::metric(LayoutMetric::StatusY),
                                         LvSettingUpdatePage3::metric(LayoutMetric::TextW),
-                                        "", 0xF0C850, body_font(), true);
+                                        "", 0xF0C850, body_font());
+    // Status text must stay on one line so it cannot cover the footer hint;
+    // scroll long backend errors instead of clipping them silently.
+    lv_label_set_long_mode(state_->status_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
     state_->hint = create_label(ComponensObj,
                                 LvSettingUpdatePage3::metric(LayoutMetric::TextX),
                                 LvSettingUpdatePage3::metric(LayoutMetric::HintY),

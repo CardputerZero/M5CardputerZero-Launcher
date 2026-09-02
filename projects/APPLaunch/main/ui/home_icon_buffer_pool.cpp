@@ -21,29 +21,15 @@ uint8_t rounded_byte(float value)
     return static_cast<uint8_t>(std::clamp(value + 0.5f, 0.0f, 255.0f));
 }
 
-float rounded_rect_coverage(uint32_t x, uint32_t y)
-{
-    constexpr float radius = HomeIconBufferPool::kCornerRadius;
-    constexpr float size = static_cast<float>(HomeIconBufferPool::kIconSize);
-    const float px = static_cast<float>(x) + 0.5f;
-    const float py = static_cast<float>(y) + 0.5f;
-    const float nearest_x = std::clamp(px, radius, size - radius);
-    const float nearest_y = std::clamp(py, radius, size - radius);
-    const float dx = px - nearest_x;
-    const float dy = py - nearest_y;
-    const float distance = std::sqrt(dx * dx + dy * dy);
-    return std::clamp(radius + 0.5f - distance, 0.0f, 1.0f);
-}
-
 lv_color32_t sample_bilinear(const lv_draw_buf_t &source, uint32_t output_x,
-                             uint32_t output_y)
+                             uint32_t output_y, uint32_t output_size)
 {
     const float source_x =
         (static_cast<float>(output_x) + 0.5f) * source.header.w /
-        HomeIconBufferPool::kIconSize - 0.5f;
+        output_size - 0.5f;
     const float source_y =
         (static_cast<float>(output_y) + 0.5f) * source.header.h /
-        HomeIconBufferPool::kIconSize - 0.5f;
+        output_size - 0.5f;
     const int32_t x0_unclamped = static_cast<int32_t>(std::floor(source_x));
     const int32_t y0_unclamped = static_cast<int32_t>(std::floor(source_y));
     const int32_t x0 = std::clamp<int32_t>(x0_unclamped, 0, source.header.w - 1);
@@ -83,15 +69,6 @@ lv_color32_t sample_bilinear(const lv_draw_buf_t &source, uint32_t output_x,
     return result;
 }
 
-void apply_rounded_corners(lv_draw_buf_t &buffer)
-{
-    for (uint32_t y = 0; y < buffer.header.h; ++y) {
-        auto *row = static_cast<lv_color32_t *>(lv_draw_buf_goto_xy(&buffer, 0, y));
-        for (uint32_t x = 0; x < buffer.header.w; ++x)
-            row[x].alpha = rounded_byte(row[x].alpha * rounded_rect_coverage(x, y));
-    }
-}
-
 } // namespace
 
 void HomeIconBufferPool::DrawBufferDeleter::operator()(lv_draw_buf_t *buffer) const noexcept
@@ -102,12 +79,13 @@ void HomeIconBufferPool::DrawBufferDeleter::operator()(lv_draw_buf_t *buffer) co
 void HomeIconBufferPool::rebuild(const std::vector<std::string> &icon_paths)
 {
     icons_.clear();
+    resized_icons_.clear();
     fallback_ = create_fallback();
     icons_.reserve(icon_paths.size());
 
     for (const std::string &path : icon_paths) {
         if (path.empty() || icons_.find(path) != icons_.end()) continue;
-        DrawBufferPtr icon = decode_and_prepare(path);
+        DrawBufferPtr icon = decode_and_prepare(path, kIconSize);
         if (!icon) {
             SLOGW("[HOME] failed to preload icon: %s", path.c_str());
             continue;
@@ -123,9 +101,32 @@ const lv_image_dsc_t *HomeIconBufferPool::find(const std::string &path) const
     return found == icons_.end() ? as_image(fallback_) : as_image(found->second);
 }
 
+const lv_image_dsc_t *HomeIconBufferPool::find(const std::string &path, uint32_t size)
+{
+    if (size == 0 || size == kIconSize)
+        return find(path);
+
+    const auto found = icons_.find(path);
+    if (found == icons_.end())
+        return as_image(fallback_);
+
+    const std::string key = path + "\n" + std::to_string(size);
+    const auto resized = resized_icons_.find(key);
+    if (resized != resized_icons_.end())
+        return as_image(resized->second);
+
+    DrawBufferPtr icon = decode_and_prepare(path, size);
+    if (!icon)
+        return as_image(found->second);
+    const lv_image_dsc_t *result = as_image(icon);
+    resized_icons_.emplace(key, std::move(icon));
+    return result;
+}
+
 void HomeIconBufferPool::swap(HomeIconBufferPool &other) noexcept
 {
     icons_.swap(other.icons_);
+    resized_icons_.swap(other.resized_icons_);
     fallback_.swap(other.fallback_);
 }
 
@@ -140,12 +141,11 @@ HomeIconBufferPool::DrawBufferPtr HomeIconBufferPool::create_fallback()
         for (uint32_t x = 0; x < kIconSize; ++x)
             row[x] = lv_color32_make(0x44, 0x44, 0x44, 0xFF);
     }
-    apply_rounded_corners(*buffer);
     return buffer;
 }
 
 HomeIconBufferPool::DrawBufferPtr
-HomeIconBufferPool::decode_and_prepare(const std::string &path)
+HomeIconBufferPool::decode_and_prepare(const std::string &path, uint32_t size)
 {
     lv_image_decoder_dsc_t decoder{};
     lv_image_decoder_args_t args{};
@@ -161,14 +161,13 @@ HomeIconBufferPool::decode_and_prepare(const std::string &path)
     }
 
     DrawBufferPtr output(
-        lv_draw_buf_create(kIconSize, kIconSize, LV_COLOR_FORMAT_ARGB8888, LV_STRIDE_AUTO));
+        lv_draw_buf_create(size, size, LV_COLOR_FORMAT_ARGB8888, LV_STRIDE_AUTO));
     if (output) {
-        for (uint32_t y = 0; y < kIconSize; ++y) {
+        for (uint32_t y = 0; y < size; ++y) {
             auto *row = static_cast<lv_color32_t *>(lv_draw_buf_goto_xy(output.get(), 0, y));
-            for (uint32_t x = 0; x < kIconSize; ++x)
-                row[x] = sample_bilinear(*source, x, y);
+            for (uint32_t x = 0; x < size; ++x)
+                row[x] = sample_bilinear(*source, x, y, size);
         }
-        apply_rounded_corners(*output);
     }
     lv_image_decoder_close(&decoder);
     return output;

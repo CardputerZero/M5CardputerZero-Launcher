@@ -137,7 +137,8 @@ void add_chrome(uint32_t accent, int progress_fill, bool show_progress = true)
     // SETUP mode tag. (Figma shows a parallelogram, but the device's software
     // renderer does not draw skew-transformed rects, so use a rounded rect.)
     lv_obj_t *tag = add_rect(p, 12, 6, 82, 18, accent, 0, 0, 3);
-    add_label(tag, "SETUP", font_xs(), 0xffffff, 16, 4);
+    lv_obj_t *setup_label = add_label(tag, "SETUP", font_xs(), 0xffffff, 0, 0);
+    lv_obj_align(setup_label, LV_ALIGN_CENTER, 0, 0);
 
     add_label(p, "CardputerZero", font_sm(), kColorBrand, 120, 7);
     add_rect(p, 8, 33, 304, 1, kColorDivider, 0, 0, 0);
@@ -406,10 +407,10 @@ void render_wifi_list()
         add_label(ui.screen_obj, "SELECT WI-FI", font_sm(), kAccentNetwork, 36, 40);
     }
 
-    // #94: while the first scan is still running show a loading state with a
-    // spinner so the user isn't staring at an empty network list.
-    if (g.wifi_scanning && g.wifi_list.empty() && !g.wifi_scan_retrying &&
-        g.wifi_scan_error.empty()) {
+    // Keep the loading state until a scan returns at least one network. The
+    // scan worker retries indefinitely, so transient radio/service failures
+    // must not turn the first-entry screen into a dead-end empty state.
+    if (g.wifi_scanning && g.wifi_list.empty()) {
         lv_obj_t *spinner = lv_spinner_create(ui.screen_obj);
         lv_obj_set_size(spinner, 28, 28);
         lv_spinner_set_anim_params(spinner, 1000, 60);
@@ -418,7 +419,10 @@ void render_wifi_list()
         lv_obj_set_style_arc_color(spinner, lv_color_hex(kAccentNetwork), LV_PART_INDICATOR);
         lv_obj_set_style_arc_width(spinner, 4, LV_PART_MAIN);
         lv_obj_set_style_arc_width(spinner, 4, LV_PART_INDICATOR);
-        add_label(ui.screen_obj, "Scanning for networks...", font_sm(), kColorMuted, 80, 86);
+        add_label(ui.screen_obj,
+                  g.wifi_scan_retrying ? "No networks yet. Retrying..."
+                                       : "Scanning for networks...",
+                  font_sm(), kColorMuted, 80, 86);
         add_key_hint(14, "ESC", 38, "BACK", kAccentNetwork);
         add_key_hint(112, "ALT", 136, "ADD HIDDEN WI-FI", kAccentNetwork);
         return;
@@ -793,8 +797,8 @@ void move_text_cursor(int delta)
 
 void enter_wifi_list()
 {
-    // #94: scan asynchronously so the list screen appears immediately with a
-    // loading spinner and refreshes as soon as results arrive (poll_worker_cb).
+    // Scan asynchronously; the Wi-Fi screen remains on its loading spinner
+    // until poll_worker_cb receives a non-empty result.
     g.wifi_list.clear();
     g.wifi_sel = 0;
     uint64_t scan_generation = 0;
@@ -812,17 +816,15 @@ void enter_wifi_list()
     go(Screen::WifiList);
 
     if (!ui.wifi_scan_tasks.start([scan_generation]() {
-        launch_wizard::WifiScanRetryPolicy retry_policy;
-        for (int scan_count = 0;
-             scan_count < launch_wizard::kWifiMaxAutomaticScans; ++scan_count) {
+        // A Wi-Fi list is only usable once at least one access point has been
+        // returned. Keep retrying forever so entering Wi-Fi cannot converge to
+        // an empty/error screen while the radio or service is still coming up.
+        for (;;) {
             launch_wizard::WifiScanResult scan =
                 launch_wizard::WizardService::scan_wifi();
             const WifiConnectionStatus connection =
                 launch_wizard::WizardService::read_wifi_status();
-            const launch_wizard::WifiScanDecision decision =
-                retry_policy.observe(scan.error, scan.networks.size());
-            const bool final_empty =
-                decision == launch_wizard::WifiScanDecision::Empty;
+            const bool has_networks = !scan.networks.empty();
             {
                 std::lock_guard<std::mutex> lock(g.mutex);
                 if (g.wifi_scan_generation != scan_generation)
@@ -830,17 +832,15 @@ void enter_wifi_list()
                 g.wifi_scan_result = scan.networks;
                 g.wifi_scan_result_error = scan.error;
                 g.wifi_scan_status = connection;
-                g.wifi_scan_final_empty = final_empty;
-                g.wifi_scan_retrying = decision == launch_wizard::WifiScanDecision::Retry;
-                g.wifi_scanning = g.wifi_scan_retrying;
+                g.wifi_scan_final_empty = false;
+                g.wifi_scan_retrying = !has_networks;
+                g.wifi_scanning = !has_networks;
                 g.wifi_scan_ready = true;
             }
             cp0_lvgl_wake();
-            if (decision != launch_wizard::WifiScanDecision::Retry)
+            if (has_networks)
                 return;
 
-            if (final_empty)
-                return;
             const auto deadline = std::chrono::steady_clock::now() +
                                   kWifiInitialRetryPeriod;
             while (std::chrono::steady_clock::now() < deadline) {

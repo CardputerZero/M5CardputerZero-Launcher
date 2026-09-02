@@ -25,6 +25,8 @@ struct Slot
 inline constexpr size_t kPanelCount = 5;
 inline constexpr size_t kTitleOffset = kPanelCount;
 inline constexpr size_t kElementCount = kPanelCount * 2;
+inline constexpr lv_coord_t kSideCardRadius = 17;
+inline constexpr lv_coord_t kCenterCardRadius = 22;
 
 inline constexpr std::array<Slot, kElementCount> kSlots = {{
     {-177, 4, 61, 61, true},

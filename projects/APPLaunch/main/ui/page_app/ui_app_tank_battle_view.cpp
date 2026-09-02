@@ -40,7 +40,7 @@ void UITankBattlePage::creat_UI()
 
     lv_obj_t *hint_label = lv_label_create(title);
     if (hint_label) {
-        lv_label_set_text(hint_label, "F/X/Z/C Move  Space Fire");
+        lv_label_set_text(hint_label, "Classic tank game inspired by Battle City.\n\nF / X / Z / C: move\nSpace: fire");
         lv_obj_set_align(hint_label, LV_ALIGN_RIGHT_MID);
         lv_obj_set_x(hint_label, -4);
         lv_obj_set_style_text_color(hint_label, lv_color_hex(0xB7D1E6), LV_PART_MAIN | LV_STATE_DEFAULT);

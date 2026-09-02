@@ -65,6 +65,12 @@ trap 'rm -f "$binary" "$esc_state_object"' EXIT HUP INT TERM
 "$binary"
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
+    -I"$root/src/cp0" \
+    "$root/src/cp0/cp0_bluetooth_error_policy.cpp" \
+    "$root/tests/test_bluetooth_error_policy.cpp" -o "$binary"
+"$binary"
+
+"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
     -I"$root/src" "$root/tests/test_pointer_lifecycle.cpp" -o "$binary"
 "$binary"
 

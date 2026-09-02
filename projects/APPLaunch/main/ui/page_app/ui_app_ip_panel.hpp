@@ -19,6 +19,8 @@
 
 class UIIpPanelPage : public AppPage
 {
+    enum class ViewState { MAIN, HELP };
+
 public:
     UIIpPanelPage();
     ~UIIpPanelPage() override;
@@ -28,6 +30,8 @@ private:
     IpPanelModel model_;
     lv_obj_t *background_ = nullptr;
     lv_obj_t *list_container_ = nullptr;
+    lv_obj_t *help_container_ = nullptr;
+    ViewState view_state_ = ViewState::MAIN;
 
     // Layout constants (content area 320x150, title bar 22px, remaining 128px)
     static constexpr int ITEM_H       = 32;   // row height
@@ -44,6 +48,9 @@ private:
 
     // ==================== UI construction ====================
     void create_ui();
+    bool build_help_view();
+    void show_help();
+    void close_help();
 
     // ==================== Build list rows ====================
     void build_list_rows();

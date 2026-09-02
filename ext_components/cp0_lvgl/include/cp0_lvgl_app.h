@@ -3,6 +3,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "cp0_enum_cast.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif

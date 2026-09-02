@@ -127,10 +127,21 @@ public:
         return cp0_wifi_connect(ssid.c_str(), password.empty() ? nullptr : password.c_str());
     }
 
+    static bool profile_exists(const std::string &ssid)
+    {
+        return valid_text(ssid, CP0_WIFI_SSID_MAX, false) && cp0_wifi_profile_exists(ssid.c_str()) != 0;
+    }
+
     static int connect_hidden(const std::string &ssid, const std::string &password)
     {
         const int validation = validate_credentials(ssid, password);
         if (validation != 0) return validation;
+
+        // Hidden networks that were configured previously must be activated
+        // from their saved profile. `nmcli dev wifi connect ... hidden yes`
+        // treats the request as a new connection and does not reliably reuse
+        // the existing credentials.
+        if (profile_exists(ssid)) return connect(ssid, {});
         return cp0_wifi_connect_hidden(ssid.c_str(), password.empty() ? nullptr : password.c_str());
     }
 

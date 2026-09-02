@@ -661,6 +661,15 @@ void LvSettingRollerPage2::finish_page3_transition(bool entering)
         lv_group_add_obj(group, ComponensObj);
         lv_group_focus_obj(ComponensObj);
     }
+    // Child pages can update their backing tree node asynchronously.  Rows
+    // are created from a label snapshot, so copy the current node labels back
+    // into the visible rows before restoring the submenu.
+    uint32_t row_index = 0;
+    for (auto node = parent_node_.begin(); node != parent_node_.end(); ++node, ++row_index) {
+        lv_obj_t *container = ComponensObj ? lv_obj_get_child(ComponensObj, row_index) : nullptr;
+        lv_obj_t *label = container ? lv_obj_get_child(container, 0) : nullptr;
+        if (label) lv_label_set_text(label, node->label.c_str());
+    }
     for (auto it = parent_node_.begin(); it != parent_node_.end(); ++it) {
         if (!it->icon_enabled) continue;
         const auto index = static_cast<uint32_t>(std::distance(parent_node_.begin(), it));

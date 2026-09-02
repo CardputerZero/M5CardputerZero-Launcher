@@ -3,6 +3,7 @@
 
 #include "cp0_lvgl_app.h"
 #include "input_keys.h"
+#include "../model/ip_panel_shortcut_action.hpp"
 
 #include <utility>
 
@@ -108,9 +109,30 @@ void UIIpPanelPage::event_handler(lv_event_t *event)
         lv_event_get_target(event) == lv_event_get_current_target(event)) {
         refresh_timer_.stop();
         list_container_ = nullptr;
+        help_container_ = nullptr;
+        return;
+    }
+
+    const struct key_item *item = launcher_ui::events::keyboard_item(event);
+    if (view_state_ == ViewState::MAIN && launcher_ui::events::is_key_pressed(event) &&
+        ip_panel_shortcut_action(item) == IpPanelShortcutAction::SHOW_HELP) {
+        show_help();
+        return;
+    }
+
+    if (lv_event_get_code(event) == static_cast<lv_event_code_t>(LV_EVENT_KEYBOARD)) {
+        // The matching LV_EVENT_KEY release below owns navigation and closes
+        // the help view without also returning home from the page.
         return;
     }
     if (lv_event_get_code(event) != LV_EVENT_KEY) return;
+
+    if (view_state_ == ViewState::HELP) {
+        if (fzxc_to_lv_arrow(lv_event_get_key(event)) == LV_KEY_ESC)
+            close_help();
+        return;
+    }
+
     switch (fzxc_to_lv_arrow(lv_event_get_key(event))) {
     case LV_KEY_UP:
         if (model_.select_previous()) build_list_rows();
@@ -140,12 +162,15 @@ void UIIpPanelPage::static_owned_obj_delete_cb(lv_event_t *event) noexcept
         if (deleted == self->background_) {
             self->background_ = nullptr;
             self->list_container_ = nullptr;
+            self->help_container_ = nullptr;
             self->refresh_enabled_ = false;
             self->refresh_timer_.stop();
         } else if (deleted == self->list_container_) {
             self->list_container_ = nullptr;
             self->refresh_enabled_ = false;
             self->refresh_timer_.stop();
+        } else if (deleted == self->help_container_) {
+            self->help_container_ = nullptr;
         }
     } catch (...) {
         if (self) self->refresh_enabled_ = false;
@@ -154,6 +179,9 @@ void UIIpPanelPage::static_owned_obj_delete_cb(lv_event_t *event) noexcept
 
 void UIIpPanelPage::detach_delete_callbacks()
 {
+    if (help_container_)
+        lv_obj_remove_event_cb_with_user_data(
+            help_container_, static_owned_obj_delete_cb, this);
     if (list_container_)
         lv_obj_remove_event_cb_with_user_data(
             list_container_, static_owned_obj_delete_cb, this);
@@ -161,5 +189,6 @@ void UIIpPanelPage::detach_delete_callbacks()
         lv_obj_remove_event_cb_with_user_data(
             background_, static_owned_obj_delete_cb, this);
     list_container_ = nullptr;
+    help_container_ = nullptr;
     background_ = nullptr;
 }

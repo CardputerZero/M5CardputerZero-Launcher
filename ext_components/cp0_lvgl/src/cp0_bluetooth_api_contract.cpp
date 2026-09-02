@@ -104,11 +104,12 @@ bool parse_request(const std::list<std::string> &arguments, Request &request)
         if (arguments.size() == 1) return true;
         return arguments.size() == 2 && parse_integer(*argument, 1, 16, request.max_count);
     }
-    if (command == "BtPair" || command == "BtConnect" || command == "BtDisconnect" ||
+    if (command == "BtPair" || command == "BtCancelPairing" || command == "BtConnect" || command == "BtDisconnect" ||
         command == "BtRemove") {
         request.command = command == "BtPair" ? Command::Pair :
-            (command == "BtConnect" ? Command::Connect :
-             (command == "BtDisconnect" ? Command::Disconnect : Command::Remove));
+            (command == "BtCancelPairing" ? Command::CancelPairing :
+             (command == "BtConnect" ? Command::Connect :
+              (command == "BtDisconnect" ? Command::Disconnect : Command::Remove)));
         if (arguments.size() != 2 || !valid_address(*argument)) return false;
         request.text = *argument;
         return true;

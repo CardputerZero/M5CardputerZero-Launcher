@@ -154,6 +154,17 @@ void Launch::select_previous_app()
     if (previous >= 0) current_app = previous;
 }
 
+std::size_t Launch::app_count() const
+{
+    return app_list.size();
+}
+
+std::size_t Launch::current_app_index() const
+{
+    const int normalized = normalized_app_index(current_app);
+    return normalized < 0 ? 0 : static_cast<std::size_t>(normalized);
+}
+
 const app *Launch::carousel_slot_app(size_t slot) const
 {
     if (slot >= kHomeCarouselSlotCount)

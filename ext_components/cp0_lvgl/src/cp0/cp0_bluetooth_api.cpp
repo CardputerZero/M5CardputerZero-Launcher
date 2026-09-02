@@ -314,6 +314,8 @@ void api_call(std::list<std::string> args, std::function<void(int, std::string)>
         cp0_bluez_dbus::stop_discovery_async(std::move(completion));
     else if (request.command == Command::Pair)
         cp0_bluez_dbus::pair_async(request.text.c_str(), std::move(completion));
+    else if (request.command == Command::CancelPairing)
+        cp0_bluez_dbus::cancel_pairing_async(request.text.c_str(), std::move(completion));
     else if (request.command == Command::Connect)
         cp0_bluez_dbus::connect_async(request.text.c_str(), std::move(completion));
     else if (request.command == Command::Disconnect)
@@ -329,6 +331,35 @@ extern "C" void init_bluetooth(void)
     static cp0::InitOnce initialized;
     initialized.run([] {
         cp0_bluez_dbus::initialize();
+        // Bridge Agent1 authentication requests to the UI signal. The
+        // callback may run on the BlueZ worker thread; UI consumers must
+        // enqueue the prompt on the LVGL thread. Replies are marshalled back
+        // through the worker's agent_reply() entry point.
+        cp0_bluez_dbus::set_agent_listener([](const cp0_bluez_dbus::AgentRequest &request) {
+            // The bridge remains installed for the lifetime of the backend,
+            // while the Settings page subscribes only when visible. Never
+            // leave a BlueZ Agent1 invocation pending when no UI can answer.
+            if (cp0_signal_bt_agent.empty()) {
+                // Existing bonds may still ask the agent to authorize an
+                // audio/profile connection. Allow only those requests for a
+                // device BlueZ already reports as paired; pairing credentials
+                // and confirmation remain UI-gated.
+                const bool authorization = request.method == "RequestAuthorization" ||
+                                            request.method == "AuthorizeService";
+                const bool accepted = authorization && request.paired;
+                cp0_zmq_logf("bt", "agent request without UI method=%s device=%s accepted=%d",
+                             request.method.c_str(), request.device.c_str(), accepted ? 1 : 0);
+                cp0_bluez_dbus::agent_reply(request.id, accepted, {});
+                return;
+            }
+            cp0_signal_bt_agent(request.id,
+                                request.method,
+                                request.device,
+                                request.method == "RequestConfirmation" ? request.passkey : request.uuid,
+                                [id = request.id](bool accepted, std::string text) {
+                                    cp0_bluez_dbus::agent_reply(id, accepted, text);
+                                });
+        });
         return static_cast<bool>(cp0_signal_bt_api.append(
             [](std::list<std::string> args,
                std::function<void(int, std::string)> callback) {

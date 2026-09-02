@@ -65,6 +65,11 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
 "$build_dir/test_ip_panel_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$test_root/../../../ext_components/cp0_lvgl/include" \
+    "$test_root/test_ip_panel_shortcut_action.cpp" \
+    -o "$build_dir/test_ip_panel_shortcut_action"
+"$build_dir/test_ip_panel_shortcut_action"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$test_root/../../../ext_components/cp0_lvgl/include" \
     "$test_root/test_ssh_connection_model.cpp" \
     "$test_root/../main/ui/model/ssh_connection_model.cpp" \
     "$test_root/../main/ui/keyboard_text_input.cpp" \
@@ -75,6 +80,11 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$test_root/test_ssh_view_build_contract.cpp" \
     -o "$build_dir/test_ssh_view_build_contract"
 "$build_dir/test_ssh_view_build_contract"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$test_root/../../../ext_components/cp0_lvgl/include" \
+    "$test_root/test_ssh_shortcut_action.cpp" \
+    -o "$build_dir/test_ssh_shortcut_action"
+"$build_dir/test_ssh_shortcut_action"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$test_root/../../../ext_components/cp0_lvgl/include" \
     "$test_root/test_keyboard_text_input.cpp" \

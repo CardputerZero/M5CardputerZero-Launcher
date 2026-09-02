@@ -116,6 +116,24 @@ Tree *&settings_tree_factory_context()
     return tree;
 }
 
+bool query_bluetooth_status(bool &powered, bool &discoverable, std::string *alias_output = nullptr);
+
+void refresh_bluetooth_alias(const NodeIter &page_node)
+{
+    bool powered = false;
+    bool discoverable = false;
+    std::string alias;
+    if (!query_bluetooth_status(powered, discoverable, &alias) || alias.empty()) return;
+
+    constexpr const char *prefix = "Alias: ";
+    for (auto child = page_node.begin(); child != page_node.end(); ++child) {
+        if (child->label.rfind(prefix, 0) == 0) {
+            child->label = std::string(prefix) + alias;
+            break;
+        }
+    }
+}
+
 static std::unique_ptr<DComponens::LvglComponensBase> bluetooth_roller_page_factory(lv_obj_t *parent,
                                                                                     const NodeIter &page_node,
                                                                                     std::function<void()> on_back)
@@ -129,6 +147,7 @@ static std::unique_ptr<DComponens::LvglComponensBase> bluetooth_roller_page_fact
     }
 #endif
     system("/usr/sbin/rfkill unblock bluetooth");
+    refresh_bluetooth_alias(page_node);
     return std::make_unique<LvSettingRollerPage2>(parent, page_node, std::move(on_back));
 }
 
@@ -256,7 +275,7 @@ bool bluetooth_power_pending        = false;
 bool bluetooth_discoverable_pending = false;
 std::recursive_mutex bluetooth_state_mutex;
 
-bool query_bluetooth_status(bool &powered, bool &discoverable)
+bool query_bluetooth_status(bool &powered, bool &discoverable, std::string *alias_output)
 {
     bool success = false;
     try {
@@ -273,6 +292,7 @@ bool query_bluetooth_status(bool &powered, bool &discoverable)
                 return;
             powered      = powered_text == "1";
             discoverable = discoverable_text == "1";
+            if (alias_output) *alias_output = alias;
             success      = true;
         });
     } catch (...) {
@@ -479,11 +499,11 @@ void UISettingTreePage::create_page_detail()
     {
         NodeIter bluetooth = mode_tree.append_child(root, SettingEntry{"Bluetooth", bluetooth_roller_page_factory});
         mode_tree.append_child(bluetooth, SettingEntry{"Power", bluetooth_power_api, true});
-        mode_tree.append_child(bluetooth, SettingEntry{"Alias: CardputerZero", bluetooth_alias_page_factory});
+        mode_tree.append_child(bluetooth, SettingEntry{"Alias: ", bluetooth_alias_page_factory});
         mode_tree.append_child(bluetooth, SettingEntry{"Discoverable", bluetooth_discoverable_api, true});
         mode_tree.append_child(bluetooth, SettingEntry{"Named Only", bluetooth_named_only_api, true});
         mode_tree.append_child(bluetooth,
-                               SettingEntry{"Connected", bluetooth_connected_page_factory, PageType::FullCustom});
+                               SettingEntry{"Paired Devices", bluetooth_connected_page_factory, PageType::FullCustom});
         mode_tree.append_child(bluetooth, SettingEntry{"Scan", bluetooth_scan_page_factory, PageType::FullCustom});
     }
 

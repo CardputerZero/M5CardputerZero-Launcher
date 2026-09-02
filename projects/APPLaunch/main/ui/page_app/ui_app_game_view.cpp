@@ -91,7 +91,7 @@ void UIGamePage::create_ui()
     lv_obj_set_style_border_width(game_area_, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(game_area_, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_clear_flag(game_area_, LV_OBJ_FLAG_SCROLLABLE);
-    if (!show_overlay("F/X/Z/C: Move\nOK: Start  ESC: Quit")) rollback();
+    if (!show_overlay("Classic Snake game.\n\nF / X / Z / C: move")) rollback();
 }
 
 bool UIGamePage::show_overlay(const char *text)

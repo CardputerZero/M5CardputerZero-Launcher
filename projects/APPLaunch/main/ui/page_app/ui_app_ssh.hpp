@@ -20,12 +20,13 @@ class UISTPage;
 //
 //  Views:
 //    VIEW_INPUT    -- Host/Port/User input fields
+//    VIEW_HELP     -- SSH controls and shortcut reference
 //    VIEW_TERMINAL -- Embedded UISTPage running ssh
 // ============================================================
 
 class UISSHPage : public AppPage
 {
-    enum class ViewState { INPUT, TERMINAL };
+    enum class ViewState { INPUT, HELP, TERMINAL };
 
 public:
     UISSHPage();
@@ -37,6 +38,7 @@ private:
     SshConnectionModel model_;
     lv_obj_t *background_ = nullptr;
     lv_obj_t *form_container_ = nullptr;
+    lv_obj_t *help_container_ = nullptr;
     ViewState view_state_ = ViewState::INPUT;
     std::shared_ptr<UISTPage> terminal_page_;
     bool terminal_return_pending_ = false;
@@ -49,7 +51,10 @@ private:
     void create_ui();
 
     bool build_input_fields();
+    bool build_help_view();
     void rebuild_or_restore(SshConnectionModel previous) noexcept;
+    void show_help();
+    void close_help();
 
     // ==================== connect via SSH ====================
     void do_connect();
