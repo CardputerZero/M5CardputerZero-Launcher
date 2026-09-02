@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -16,6 +17,7 @@
 #include <vector>
 
 #include "cp0_bounded_task_registry.hpp"
+#include "../../../../ext_components/cp0_lvgl/src/cp0_signal_registration.hpp"
 #include "settings_fonts.hpp"
 #include "cp0_lvgl_app.h"
 #include "cp0_lvgl_app_page_assets.h"
@@ -32,15 +34,24 @@ enum class LvSettingBluetoothListMode { Connected, Scan };
 
 class LvSettingBluetoothPage3 : public DComponens::LvglComponensBase {
 public:
+    struct AgentPromptRequest {
+        uint64_t id = 0;
+        std::string method;
+        std::string device;
+        // RequestConfirmation carries the numeric comparison code in the
+        // fourth signal argument (the same field is used for other hints).
+        std::string hint;
+        std::function<void(bool, std::string)> reply;
+    };
     enum class LayoutMetric : int {
         ScreenW     = 320,
         ScreenH     = 150,
-        RowH        = 17,
+        RowH        = 22,
         RowY        = 22,
         ConnectedRowY = 22,
         ScanSectionY = 23,
         ScanRowY    = 38,
-        VisibleRows = 5,
+        VisibleRows = 4,
         HintY       = ScreenH - 14,
     };
 
@@ -81,6 +92,7 @@ private:
         std::mutex mutex;
         bool stopped = false;
         std::deque<ApiResult> pending;
+        std::deque<AgentPromptRequest> agent_events;
     };
 
     static void enqueue_api_result(const std::shared_ptr<ApiDispatchState> &dispatch,
@@ -114,6 +126,8 @@ private:
 
     void request_status();
 
+    static void status_retry_timer_cb(lv_timer_t *timer) noexcept;
+
     void refresh_devices();
 
     void start_scan();
@@ -129,6 +143,20 @@ private:
     void activate_selected();
 
     void request_action(const char *command, const std::string &address);
+
+    void show_agent_prompt(const AgentPromptRequest &request);
+    void render_agent_prompt();
+    void handle_agent_key(const key_item &item);
+    void submit_agent_reply(bool accepted);
+    void clear_agent_prompt();
+    void reject_agent_prompt();
+
+    void enter_text_input_mode();
+    void restore_text_input_mode();
+
+    void cancel_pairing_on_exit(const std::string &address);
+
+    void cleanup_failed_pair(int code, std::string data);
 
     void cancel_action();
 
@@ -158,11 +186,23 @@ private:
     bool list_pending_ = false;
     bool loading_ = false;
     bool action_pending_ = false;
+    bool pair_in_flight_ = false;
+    bool leaving_ = false;
     bool action_waiting_for_scan_stop_ = false;
+    bool pair_cleanup_pending_ = false;
     bool scan_start_pending_ = false;
     bool scan_stop_after_start_ = false;
     bool scan_stop_pending_ = false;
     bool discovery_active_ = false;
+    bool agent_prompt_active_ = false;
+    AgentPromptRequest agent_request_{};
+    std::string agent_input_;
+    std::string agent_error_;
+    lv_obj_t *agent_overlay_ = nullptr;
+    lv_obj_t *agent_input_textarea_ = nullptr;
+    bool keyboard_mode_saved_ = false;
+    int previous_keypad_intercept_ = 0;
+    cp0_keyboard_input_context_t previous_input_context_ = KBD_INPUT_CONTEXT_NAVIGATION;
     std::string adapter_address_;
     std::string error_message_;
     std::string action_message_;
@@ -170,9 +210,11 @@ private:
     std::function<void()> scan_after_stop_;
     uint64_t scan_stop_request_id_ = 0;
     lv_timer_t *scan_timer_ = nullptr;
+    lv_timer_t *status_retry_timer_ = nullptr;
     lv_timer_t *api_timer_ = nullptr;
     lv_obj_t *keyboard_root_ = nullptr;
     lv_event_dsc_t *keyboard_event_dsc_ = nullptr;
+    cp0::SignalRegistration<decltype(cp0_signal_bt_agent)> agent_registration_;
     bool warning_active_ = false;
     Cp0BoundedTaskRegistry api_tasks_;
     std::shared_ptr<ApiDispatchState> api_dispatch_ = std::make_shared<ApiDispatchState>();
@@ -242,6 +284,9 @@ private:
 
     static std::size_t next_utf8_end(const std::string &value, std::size_t cursor);
 
+    static std::size_t byte_cursor_from_char_pos(const std::string &value,
+                                                 std::size_t char_pos);
+
     void render();
 
     void show_power_warning();
@@ -250,11 +295,21 @@ private:
                      ApiHandler handler,
                      ApiHandler stale_handler = {});
 
+    void request_status();
+
+    static void status_retry_timer_cb(lv_timer_t *timer) noexcept;
+
     static void api_result_timer_cb(lv_timer_t *timer) noexcept;
 
     static void cursor_timer_cb(lv_timer_t *timer) noexcept;
 
     void append_text(const char *text);
+
+    void sync_textarea_state();
+
+    void enter_text_input_mode();
+
+    void restore_text_input_mode();
 
     void save();
 
@@ -268,17 +323,23 @@ private:
     std::string alias_before_save_;
     std::size_t cursor_ = 0;
     bool saving_ = false;
+    bool alias_edited_ = false;
     bool cursor_visible_ = true;
     bool status_known_ = false;
     bool powered_ = false;
     bool status_pending_ = false;
     bool warning_active_ = false;
     std::string error_message_;
+    lv_obj_t *alias_input_ = nullptr;
     std::function<void(std::string)> saved_callback_;
     lv_obj_t *keyboard_root_ = nullptr;
     lv_event_dsc_t *keyboard_event_dsc_ = nullptr;
     lv_timer_t *api_timer_ = nullptr;
     lv_timer_t *cursor_timer_ = nullptr;
+    lv_timer_t *status_retry_timer_ = nullptr;
+    bool keyboard_mode_saved_ = false;
+    int previous_keypad_intercept_ = 0;
+    cp0_keyboard_input_context_t previous_input_context_ = KBD_INPUT_CONTEXT_NAVIGATION;
     Cp0BoundedTaskRegistry api_tasks_;
     std::shared_ptr<ApiDispatchState> api_dispatch_;
     std::shared_ptr<bool> lifetime_ = std::make_shared<bool>(true);

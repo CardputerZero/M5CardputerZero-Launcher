@@ -18,7 +18,6 @@ class HomeIconBufferPool
 {
 public:
     static constexpr uint32_t kIconSize = 100;
-    static constexpr float kCornerRadius = 22.0f;
 
     HomeIconBufferPool() = default;
     HomeIconBufferPool(const HomeIconBufferPool &) = delete;
@@ -26,6 +25,7 @@ public:
 
     void rebuild(const std::vector<std::string> &icon_paths);
     const lv_image_dsc_t *find(const std::string &path) const;
+    const lv_image_dsc_t *find(const std::string &path, uint32_t size);
     std::size_t size() const { return icons_.size(); }
     void swap(HomeIconBufferPool &other) noexcept;
 
@@ -38,9 +38,10 @@ private:
     using DrawBufferPtr = std::unique_ptr<lv_draw_buf_t, DrawBufferDeleter>;
 
     static DrawBufferPtr create_fallback();
-    static DrawBufferPtr decode_and_prepare(const std::string &path);
+    static DrawBufferPtr decode_and_prepare(const std::string &path, uint32_t size);
     static const lv_image_dsc_t *as_image(const DrawBufferPtr &buffer);
 
     std::unordered_map<std::string, DrawBufferPtr> icons_;
+    std::unordered_map<std::string, DrawBufferPtr> resized_icons_;
     DrawBufferPtr fallback_;
 };

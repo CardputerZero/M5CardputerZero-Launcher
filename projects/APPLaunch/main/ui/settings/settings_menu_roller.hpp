@@ -223,6 +223,19 @@ public:
         self->roller2_.reset();
         self->SetSelfUiMode(PageType::Normal);
 
+        // A child page may update its tree node asynchronously (for example,
+        // Bluetooth Alias is resolved from BtStatus after the page opens).
+        // The roller labels are snapshots created in create_ui(), so refresh
+        // their text before handing focus back to the parent view.
+        auto container = self->item_containers_.begin();
+        for (auto node = self->parent_node_.begin();
+             node != self->parent_node_.end() && container != self->item_containers_.end();
+             ++node, ++container) {
+            lv_obj_t *item_container = *container;
+            lv_obj_t *label = item_container ? lv_obj_get_child(item_container, 0) : nullptr;
+            if (label) lv_label_set_text(label, node->label.c_str());
+        }
+
         if (self->ComponensObj && group) {
             lv_group_add_obj(group, self->ComponensObj);
             self->top_in_group_ = true;

@@ -67,7 +67,15 @@ void UILaunchPage::handle_home_key(lv_event_t *event)
     if (!elm)
         return;
 
-    uint32_t code = fzxc_to_arrow(elm->key_code);
+    /* Text editors own printable keys, including F/X/Z/C.  This callback is
+     * installed on the active screen, so it must not let those events leak
+     * into launcher navigation while an editor has selected text context. */
+    if (elm->input_context == KBD_INPUT_CONTEXT_TEXT ||
+        cp0_keyboard_get_input_context() == KBD_INPUT_CONTEXT_TEXT) {
+        return;
+    }
+
+    uint32_t code = elm->semantic_key ? elm->semantic_key : fzxc_to_arrow(elm->key_code);
 
     SLOGI("[LAUNCHER] main_key_switch raw=%u->code=%u state=%s sym=%s",
            elm->key_code,
