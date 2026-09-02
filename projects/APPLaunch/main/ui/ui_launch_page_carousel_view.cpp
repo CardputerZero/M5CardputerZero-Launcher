@@ -7,6 +7,7 @@
 #include "ui_launch_page.h"
 
 #include "animation/launcher_carousel_layout.h"
+#include "cp0_enum_cast.h"
 #include "launcher_platform.hpp"
 
 #include <algorithm>
@@ -17,9 +18,11 @@ namespace {
 using launcher_carousel_layout::Slot;
 using launcher_carousel_layout::kSlots;
 
-// 320 px is the display width; use its golden-section width for the slider.
-constexpr lv_coord_t kHomeSliderWidth = 198;
-constexpr lv_coord_t kHomeSliderHeight = 6;
+enum class HomeSliderMetric : lv_coord_t {
+    Width = 150,
+    Height = 10,
+    OffsetY = 70,
+};
 
 static_assert(UILaunchPage::kPageSlider == launcher_carousel_layout::kElementCount);
 static_assert(UILaunchPage::kLauncherCarouselElementCount ==
@@ -30,10 +33,13 @@ lv_obj_t *create_page_slider(lv_obj_t *parent, size_t page_count, size_t selecte
     lv_obj_t *slider = lv_slider_create(parent);
     if (!slider) return nullptr;
 
-    // Use the centered golden-section width while keeping the track slim.
     lv_obj_remove_style_all(slider);
-    lv_obj_set_size(slider, kHomeSliderWidth, kHomeSliderHeight);
-    lv_obj_set_pos(slider, 0, 70);
+    lv_obj_set_size(
+        slider,
+        CP0_ENUM_CAST(lv_coord_t, HomeSliderMetric::Width),
+        CP0_ENUM_CAST(lv_coord_t, HomeSliderMetric::Height));
+    lv_obj_set_pos(
+        slider, 0, CP0_ENUM_CAST(lv_coord_t, HomeSliderMetric::OffsetY));
     lv_obj_set_align(slider, LV_ALIGN_CENTER);
     lv_obj_clear_flag(
         slider, static_cast<lv_obj_flag_t>(LV_OBJ_FLAG_CLICKABLE |
@@ -41,22 +47,21 @@ lv_obj_t *create_page_slider(lv_obj_t *parent, size_t page_count, size_t selecte
                                            LV_OBJ_FLAG_SCROLLABLE |
                                            LV_OBJ_FLAG_SCROLL_ON_FOCUS));
 
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0x4A4C4A), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(slider, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_radius(slider, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_pad_all(slider, 0, LV_PART_MAIN);
-    // Keep the knob fully visible at both ends of the golden-section track.
+    // Keep the 10px knob inside the 150px track at both end values. The
+    // main background remains gray across the full slider width.
     lv_obj_set_style_pad_left(slider, 5, LV_PART_MAIN);
     lv_obj_set_style_pad_right(slider, 5, LV_PART_MAIN);
-    // The indicator is intentionally the same color as the track: the
-    // yellow knob alone marks the current icon position.
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0x4A4C4A), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0xE0E0E0), LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(slider, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_set_style_radius(slider, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0xCCCC33), LV_PART_KNOB);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0xF2C94C), LV_PART_KNOB);
     lv_obj_set_style_bg_opa(slider, LV_OPA_COVER, LV_PART_KNOB);
     lv_obj_set_style_radius(slider, LV_RADIUS_CIRCLE, LV_PART_KNOB);
-    lv_obj_set_style_pad_all(slider, 2, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(slider, 0, LV_PART_KNOB);
     const size_t max_page = page_count > 0 ? page_count - 1 : 0;
     lv_slider_set_range(slider, 0, static_cast<int32_t>(max_page));
     lv_slider_set_value(slider, static_cast<int32_t>(selected_page), LV_ANIM_OFF);
