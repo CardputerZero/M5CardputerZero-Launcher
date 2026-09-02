@@ -11,8 +11,8 @@ enum class IpPanelShortcutAction {
 inline IpPanelShortcutAction ip_panel_shortcut_action(const key_item *item)
 {
     if (!item) return IpPanelShortcutAction::NONE;
-    if (item->key_code == KEY_F1) return IpPanelShortcutAction::SHOW_HELP;
-    if ((item->mods & KBD_MOD_FN) != 0 && item->key_code == KEY_H)
+    const uint32_t key = item->semantic_key ? item->semantic_key : item->key_code;
+    if (key == KEY_HELP)
         return IpPanelShortcutAction::SHOW_HELP;
     return IpPanelShortcutAction::NONE;
 }
