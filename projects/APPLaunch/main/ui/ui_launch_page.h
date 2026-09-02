@@ -39,11 +39,7 @@ public:
         kTitleCenter,
         kTitleRight,
         kTitleFarRight,
-        kPageDot0,
-        kPageDot1,
-        kPageDot2,
-        kPageDot3,
-        kPageDot4,
+        kPageSlider,
         kLauncherCarouselElementCount,
     };
 
@@ -102,7 +98,8 @@ private:
 
     void rotate_carousel_left(size_t start, size_t end);
     void rotate_carousel_right(size_t start, size_t end);
-    void set_page_dot_selected(size_t element, bool selected);
+    void set_page_slider_range(size_t page_count, size_t selected_page);
+    void set_page_slider_position(size_t page);
     void set_carousel_element_clickable(size_t element, bool clickable);
     void set_panel_icon(lv_obj_t *panel, const std::string &src);
     static void on_left_arrow_clicked(lv_event_t *event) noexcept;

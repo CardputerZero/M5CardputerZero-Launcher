@@ -13,6 +13,7 @@
 #include "esc_ui_watchdog.h"
 #include "model/launcher_navigation_model.hpp"
 
+#include <cstddef>
 #include <functional>
 #include <list>
 #include <memory>
@@ -56,6 +57,8 @@ public:
     void set_launch_page(std::shared_ptr<UILaunchPage> launch_page);
     void select_next_app();
     void select_previous_app();
+    std::size_t app_count() const;
+    std::size_t current_app_index() const;
     const app *carousel_slot_app(size_t slot) const;
     void launch_app();
 

@@ -17,26 +17,50 @@ namespace {
 using launcher_carousel_layout::Slot;
 using launcher_carousel_layout::kSlots;
 
-static_assert(UILaunchPage::kPageDot0 == launcher_carousel_layout::kElementCount);
-static_assert(UILaunchPage::kLauncherCarouselElementCount ==
-              launcher_carousel_layout::kElementCount + launcher_carousel_layout::kPanelCount);
+// 320 px is the display width; use its golden-section width for the slider.
+constexpr lv_coord_t kHomeSliderWidth = 198;
+constexpr lv_coord_t kHomeSliderHeight = 6;
 
-lv_obj_t *create_page_dot(lv_obj_t *parent, lv_coord_t x, bool selected)
+static_assert(UILaunchPage::kPageSlider == launcher_carousel_layout::kElementCount);
+static_assert(UILaunchPage::kLauncherCarouselElementCount ==
+              launcher_carousel_layout::kElementCount + 1);
+
+lv_obj_t *create_page_slider(lv_obj_t *parent, size_t page_count, size_t selected_page)
 {
-    lv_obj_t *dot = lv_obj_create(parent);
-    if (!dot) return nullptr;
-    const lv_coord_t size = selected ? 10 : 5;
-    const lv_color_t color = lv_color_hex(selected ? 0xCCCC33 : 0x4A4C4A);
-    lv_obj_set_size(dot, size, size);
-    lv_obj_set_pos(dot, x, 70);
-    lv_obj_set_align(dot, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(dot, color, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_grad_color(dot, lv_color_hex(0x4A4C4A), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(dot, color, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_opa(dot, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    return dot;
+    lv_obj_t *slider = lv_slider_create(parent);
+    if (!slider) return nullptr;
+
+    // Use the centered golden-section width while keeping the track slim.
+    lv_obj_remove_style_all(slider);
+    lv_obj_set_size(slider, kHomeSliderWidth, kHomeSliderHeight);
+    lv_obj_set_pos(slider, 0, 70);
+    lv_obj_set_align(slider, LV_ALIGN_CENTER);
+    lv_obj_clear_flag(
+        slider, static_cast<lv_obj_flag_t>(LV_OBJ_FLAG_CLICKABLE |
+                                           LV_OBJ_FLAG_CLICK_FOCUSABLE |
+                                           LV_OBJ_FLAG_SCROLLABLE |
+                                           LV_OBJ_FLAG_SCROLL_ON_FOCUS));
+
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0x4A4C4A), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(slider, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(slider, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(slider, 0, LV_PART_MAIN);
+    // Keep the knob fully visible at both ends of the golden-section track.
+    lv_obj_set_style_pad_left(slider, 5, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(slider, 5, LV_PART_MAIN);
+    // The indicator is intentionally the same color as the track: the
+    // yellow knob alone marks the current icon position.
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0x4A4C4A), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(slider, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(slider, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0xCCCC33), LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(slider, LV_OPA_COVER, LV_PART_KNOB);
+    lv_obj_set_style_radius(slider, LV_RADIUS_CIRCLE, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(slider, 2, LV_PART_KNOB);
+    const size_t max_page = page_count > 0 ? page_count - 1 : 0;
+    lv_slider_set_range(slider, 0, static_cast<int32_t>(max_page));
+    lv_slider_set_value(slider, static_cast<int32_t>(selected_page), LV_ANIM_OFF);
+    return slider;
 }
 
 lv_obj_t *create_carousel_card(lv_obj_t *parent, const Slot &slot,
@@ -104,20 +128,23 @@ lv_obj_t *create_carousel_arrow(lv_obj_t *parent, lv_coord_t x, const char *asse
 
 } // namespace
 
-void UILaunchPage::set_page_dot_selected(size_t element, bool selected)
+void UILaunchPage::set_page_slider_range(size_t page_count, size_t selected_page)
 {
-    if (element >= carousel_elements_.size() || !carousel_elements_[element]) return;
-    lv_obj_t *dot = carousel_elements_[element];
-    const lv_coord_t size = selected ? 10 : 5;
-    const lv_color_t color = lv_color_hex(selected ? 0xCCCC33 : 0x4A4C4A);
-    lv_obj_set_size(dot, size, size);
-    lv_obj_set_align(dot, LV_ALIGN_CENTER);
-    lv_obj_clear_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(dot, color, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_bg_grad_color(dot, lv_color_hex(0x4A4C4A), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_color(dot, color, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_border_opa(dot, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_t *slider = carousel_elements_[kPageSlider];
+    if (!slider) return;
+    const size_t max_page = page_count > 0 ? page_count - 1 : 0;
+    lv_slider_set_range(slider, 0, static_cast<int32_t>(max_page));
+    set_page_slider_position(selected_page);
+}
+
+void UILaunchPage::set_page_slider_position(size_t page)
+{
+    lv_obj_t *slider = carousel_elements_[kPageSlider];
+    if (!slider) return;
+    const int32_t max_page = lv_slider_get_max_value(slider);
+    const int32_t value = page > static_cast<size_t>(max_page)
+        ? max_page : static_cast<int32_t>(page);
+    lv_slider_set_value(slider, value, LV_ANIM_OFF);
 }
 
 void UILaunchPage::set_carousel_element_clickable(size_t element, bool clickable)
@@ -135,15 +162,39 @@ void UILaunchPage::set_panel_icon(lv_obj_t *panel, const std::string &src)
         return;
 
     lv_obj_set_style_pad_all(panel, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_t *image = lv_obj_get_child(panel, 0);
-    if (!image || !lv_obj_check_type(image, &lv_image_class)) {
-        image = lv_image_create(panel);
+    lv_obj_t *clip = lv_obj_get_child(panel, 0);
+    lv_obj_t *image = clip ? lv_obj_get_child(clip, 0) : nullptr;
+    if (!clip || !image || !lv_obj_check_type(image, &lv_image_class)) {
+        clip = lv_obj_create(panel);
+        if (!clip) return;
+        lv_obj_set_size(clip, LV_PCT(100), LV_PCT(100));
+        lv_obj_set_align(clip, LV_ALIGN_CENTER);
+        lv_obj_clear_flag(clip, LV_OBJ_FLAG_SCROLLABLE);
+        image = lv_image_create(clip);
         if (!image) return;
         lv_obj_set_size(image, LV_PCT(100), LV_PCT(100));
         lv_obj_set_align(image, LV_ALIGN_CENTER);
         lv_image_set_inner_align(image, LV_IMAGE_ALIGN_STRETCH);
     }
-    lv_image_set_src(image, home_icon_pool_.find(src));
+
+    // Clip the image in a child container. LVGL applies clip_corner to an
+    // object's children, not to the object's own draw operation.
+    const auto selector = LV_PART_MAIN | LV_STATE_DEFAULT;
+    const lv_coord_t card_radius = lv_obj_get_style_radius(panel, LV_PART_MAIN);
+    const lv_coord_t card_border = lv_obj_get_style_border_width(panel, LV_PART_MAIN);
+    lv_obj_set_style_radius(clip, std::max<lv_coord_t>(0, card_radius - card_border), selector);
+    lv_obj_set_style_clip_corner(clip, true, selector);
+    lv_obj_set_style_bg_opa(clip, LV_OPA_TRANSP, selector);
+    lv_obj_set_style_border_width(clip, 0, selector);
+    lv_obj_set_style_pad_all(clip, 0, selector);
+
+    // Match the decoded buffer to the card content size. The far slots are
+    // hidden while they enter the carousel, so use the side-card size for
+    // them and avoid a second transparent-edge resample when they appear.
+    const lv_coord_t source_card_size = lv_obj_get_width(panel) >= 100 ? 100 : 80;
+    const uint32_t image_size = static_cast<uint32_t>(std::max<lv_coord_t>(
+        1, source_card_size - 2 * card_border));
+    lv_image_set_src(image, home_icon_pool_.find(src, image_size));
 }
 
 void UILaunchPage::update_carousel_slot(size_t slot, const char *title, const std::string &icon)
@@ -184,21 +235,29 @@ void UILaunchPage::create_app_container(lv_obj_t *parent)
 
     std::array<lv_obj_t *, kLauncherCarouselElementCount> elements = {};
 
-    elements[kPageDot0] = create_page_dot(container, -20, navigation_.selected_page() == 0);
-    elements[kPageDot1] = create_page_dot(container, -10, navigation_.selected_page() == 1);
-    elements[kPageDot2] = create_page_dot(container, 0, navigation_.selected_page() == 2);
-    elements[kPageDot3] = create_page_dot(container, 10, navigation_.selected_page() == 3);
-    elements[kPageDot4] = create_page_dot(container, 20, navigation_.selected_page() == 4);
+    const size_t page_count = launch_ ? launch_->app_count() : 0;
+    const size_t selected_page = launch_ ? launch_->current_app_index() : 0;
+    elements[kPageSlider] = create_page_slider(container, page_count, selected_page);
 
     elements[kTitleCenter] = create_carousel_title(container, kSlots[kTitleCenter], 100, "CLI");
     elements[kTitleRight] = create_carousel_title(container, kSlots[kTitleRight], 80, "GAME");
     elements[kTitleLeft] = create_carousel_title(container, kSlots[kTitleLeft], 80, "STORE");
 
-    elements[kCardLeft] = create_carousel_card(container, kSlots[kCardLeft], 17, 0x222222, false);
-    elements[kCardCenter] = create_carousel_card(container, kSlots[kCardCenter], 22, 0x444444, true);
-    elements[kCardRight] = create_carousel_card(container, kSlots[kCardRight], 17, 0x222222, false);
-    elements[kCardFarRight] = create_carousel_card(container, kSlots[kCardFarRight], 17, 0x333333, false);
-    elements[kCardFarLeft] = create_carousel_card(container, kSlots[kCardFarLeft], 17, 0x333333, false);
+    elements[kCardLeft] = create_carousel_card(
+        container, kSlots[kCardLeft], launcher_carousel_layout::kSideCardRadius,
+        0x222222, false);
+    elements[kCardCenter] = create_carousel_card(
+        container, kSlots[kCardCenter], launcher_carousel_layout::kCenterCardRadius,
+        0x444444, true);
+    elements[kCardRight] = create_carousel_card(
+        container, kSlots[kCardRight], launcher_carousel_layout::kSideCardRadius,
+        0x222222, false);
+    elements[kCardFarRight] = create_carousel_card(
+        container, kSlots[kCardFarRight], launcher_carousel_layout::kSideCardRadius,
+        0x333333, false);
+    elements[kCardFarLeft] = create_carousel_card(
+        container, kSlots[kCardFarLeft], launcher_carousel_layout::kSideCardRadius,
+        0x333333, false);
 
     lv_obj_t *left_arrow = create_carousel_arrow(container, -151, "carousel_left_arrow.png");
     lv_obj_t *right_arrow = create_carousel_arrow(container, 150, "carousel_right_arrow.png");
