@@ -105,7 +105,9 @@ lv_color_t UISTPage::palette(uint32_t color)
 
 const lv_font_t *UISTPage::terminal_font()
 {
-    return launcher_fonts().get("JetBrainsMono-Regular.ttf", 11);
+    return launcher_fonts().get("JetBrainsMono-Bold.ttf", font_size(FontSize::Terminal),
+                                LV_FREETYPE_FONT_STYLE_NORMAL,
+                                LV_FREETYPE_FONT_RENDER_MODE_BITMAP);
 }
 
 uint32_t UISTPage::xterm256_to_palette(int color)
