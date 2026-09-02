@@ -77,7 +77,8 @@ public:
         BuildY     = 73,
         CommitY    = 90,
         StatusY    = 108,
-        HintY      = 133,
+        // Leave a couple of pixels for FreeType descenders in the final row.
+        HintY      = 131,
         DialogW    = 296,
         DialogH    = 132,
         DialogRadius = 4,

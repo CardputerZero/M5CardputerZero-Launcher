@@ -96,6 +96,7 @@ static uint32_t cp0_evdev_process_key(uint16_t code)
     case KEY_BACKSPACE:
         return LV_KEY_BACKSPACE;
     case KEY_ENTER:
+    case KEY_KPENTER:
         return LV_KEY_ENTER;
     case KEY_NEXT:
         return LV_KEY_NEXT;

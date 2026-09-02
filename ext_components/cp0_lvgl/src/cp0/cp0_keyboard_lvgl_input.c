@@ -59,7 +59,8 @@ static uint32_t lvgl_key_from_evdev(uint16_t code)
     case KEY_ESC: return LV_KEY_ESC;
     case KEY_DELETE: return LV_KEY_DEL;
     case KEY_BACKSPACE: return LV_KEY_BACKSPACE;
-    case KEY_ENTER: return LV_KEY_ENTER;
+    case KEY_ENTER:
+    case KEY_KPENTER: return LV_KEY_ENTER;
     case KEY_NEXT: return LV_KEY_NEXT;
     case KEY_TAB: return KEY_TAB;
     case KEY_PREVIOUS: return LV_KEY_PREV;
