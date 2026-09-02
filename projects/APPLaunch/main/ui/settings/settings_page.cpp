@@ -495,10 +495,10 @@ void UISettingTreePage::create_page_detail()
         mode_tree.append_child(root, SettingEntry{"Account", settings_account_page_factory, PageType::FullCustom});
     }
 
-    {
-        NodeIter sound_card = mode_tree.append_child(root, SettingEntry{"SoundCard", roller_page_factory});
-        mode_tree.append_child(sound_card, SettingEntry{"Open Mixer", soundcard_page4_factory, PageType::FullCustom});
-    }
+    // {
+    //     NodeIter sound_card = mode_tree.append_child(root, SettingEntry{"SoundCard", roller_page_factory});
+    //     mode_tree.append_child(sound_card, SettingEntry{"Open Mixer", soundcard_page4_factory, PageType::FullCustom});
+    // }
 }
 
 void UISettingTreePage::back_home(void *data)
