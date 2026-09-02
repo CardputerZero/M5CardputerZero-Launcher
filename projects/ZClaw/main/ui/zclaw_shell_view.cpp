@@ -9,6 +9,38 @@ namespace {
 
 constexpr lv_coord_t kScreenWidth = 320;
 constexpr lv_coord_t kScreenHeight = 170;
+
+enum class XPosition : lv_coord_t {
+    Origin = 0,
+    Avatar = 12,
+    Name = 34,
+    InputBox = 10,
+    Sparkles = 8,
+    InputText = 26,
+    SendButton = 292,
+    EllipsisFirst = 295,
+    EllipsisSecond = 300,
+    EllipsisThird = 305,
+};
+
+enum class YPosition : lv_coord_t {
+    Origin = 0,
+    InputBar = 148,
+    InputBox = 2,
+    Sparkles = 3,
+    SendButton = 2,
+};
+
+constexpr lv_coord_t to_coord(XPosition position)
+{
+    return static_cast<lv_coord_t>(position);
+}
+
+constexpr lv_coord_t to_coord(YPosition position)
+{
+    return static_cast<lv_coord_t>(position);
+}
+
 lv_coord_t centered_y(lv_coord_t container_height, lv_coord_t item_height)
 {
     return (container_height - item_height) / 2;
@@ -28,7 +60,8 @@ bool ShellView::create(lv_obj_t *parent, const FontManager *fonts,
 {
     if (root_ || !parent || !fonts)
         return false;
-    root_ = widgets::box(parent, 0, 0, kScreenWidth, kScreenHeight,
+    root_ = widgets::box(parent, to_coord(XPosition::Origin),
+                         to_coord(YPosition::Origin), kScreenWidth, kScreenHeight,
                          theme::kBackground);
     lv_obj_add_event_cb(root_, root_deleted, LV_EVENT_DELETE, this);
     lv_obj_move_foreground(root_);
@@ -67,27 +100,27 @@ void ShellView::create_top_bar(const FontManager *fonts,
 {
     constexpr lv_coord_t bar_height = 20;
     constexpr lv_coord_t avatar_size = 16;
-    constexpr lv_coord_t status_size = 6;
     constexpr lv_coord_t dot_size = 2;
     const lv_coord_t name_height = lv_font_get_line_height(fonts->font_12());
-    const lv_coord_t status_height = lv_font_get_line_height(fonts->font_10());
 
-    lv_obj_t *bar = widgets::box(root_, 0, 0, kScreenWidth, bar_height,
-                                 theme::kBar);
-    widgets::image(bar, avatar_path, 12, centered_y(bar_height, avatar_size));
-    widgets::box(bar, 34, centered_y(bar_height, status_size), status_size,
-                 status_size, theme::kOnline, status_size / 2);
-    widgets::label(bar, "ZClaw", 47, centered_y(bar_height, name_height), 42,
+    lv_obj_t *bar = widgets::box(root_, to_coord(XPosition::Origin),
+                                 to_coord(YPosition::Origin), kScreenWidth,
+                                 bar_height, theme::kBar);
+    widgets::image(bar, avatar_path, to_coord(XPosition::Avatar),
+                   centered_y(bar_height, avatar_size));
+    widgets::label(bar, "ZClaw", to_coord(XPosition::Name),
+                   centered_y(bar_height, name_height), 42,
                    name_height, fonts->font_12(), theme::kText);
-    widgets::label(bar, "Online", 89, centered_y(bar_height, status_height), 48,
-                   status_height, fonts->font_10(), theme::kOnline);
 
     const lv_coord_t ellipsis_y = centered_y(bar_height, dot_size);
-    widgets::box(bar, 295, ellipsis_y, dot_size, dot_size, theme::kMuted,
+    widgets::box(bar, to_coord(XPosition::EllipsisFirst), ellipsis_y, dot_size,
+                 dot_size, theme::kMuted,
                  dot_size / 2);
-    widgets::box(bar, 300, ellipsis_y, dot_size, dot_size, theme::kMuted,
+    widgets::box(bar, to_coord(XPosition::EllipsisSecond), ellipsis_y, dot_size,
+                 dot_size, theme::kMuted,
                  dot_size / 2);
-    widgets::box(bar, 305, ellipsis_y, dot_size, dot_size, theme::kMuted,
+    widgets::box(bar, to_coord(XPosition::EllipsisThird), ellipsis_y, dot_size,
+                 dot_size, theme::kMuted,
                  dot_size / 2);
 }
 
@@ -95,17 +128,24 @@ void ShellView::create_input_bar(const FontManager *fonts,
                                  const std::string &sparkles_path,
                                  const std::string &send_button_path)
 {
-    lv_obj_t *input_bar = widgets::box(root_, 0, 148, kScreenWidth, 22,
+    lv_obj_t *input_bar = widgets::box(root_, to_coord(XPosition::Origin),
+                                       to_coord(YPosition::InputBar), kScreenWidth,
+                                       22,
                                        theme::kBar);
     const lv_coord_t text_height = lv_font_get_line_height(fonts->font_10());
-    widgets::box(input_bar, 0, 0, kScreenWidth, 1, theme::kPanelLine);
-    lv_obj_t *input_box = widgets::box(input_bar, 10, 2, 274, 18,
+    widgets::box(input_bar, to_coord(XPosition::Origin),
+                 to_coord(YPosition::Origin), kScreenWidth, 1,
+                 theme::kPanelLine);
+    lv_obj_t *input_box = widgets::box(input_bar, to_coord(XPosition::InputBox),
+                                       to_coord(YPosition::InputBox), 274, 18,
                                        theme::kPanel, 8);
-    widgets::image(input_box, sparkles_path, 8, 3);
-    widgets::label(input_box, "Press Enter to ask", 26,
+    widgets::image(input_box, sparkles_path, to_coord(XPosition::Sparkles),
+                   to_coord(YPosition::Sparkles));
+    widgets::label(input_box, "Press Enter to ask", to_coord(XPosition::InputText),
                    centered_y(18, text_height), 180, text_height,
                    fonts->font_10(), theme::kDim);
-    widgets::image(input_bar, send_button_path, 292, 2);
+    widgets::image(input_bar, send_button_path, to_coord(XPosition::SendButton),
+                   to_coord(YPosition::SendButton));
 }
 
 }  // namespace zclaw
