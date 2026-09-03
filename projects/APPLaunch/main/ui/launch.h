@@ -17,6 +17,7 @@
 #include <functional>
 #include <list>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -67,6 +68,7 @@ private:
 
     void go_back_home();
     bool begin_page_launch();
+    void abort_page_launch() noexcept;
     void launch_Exec_in_terminal(const std::string &exec, bool sysplause = true);
     void launch_Exec(const std::string &exec, bool keep_root = false);
     void applications_load();
@@ -101,6 +103,8 @@ app::app(std::string name, std::string icon, page_t<PageT>)
         ui_loading::show("Loading...");
         lv_refr_now(nullptr);
         auto page = std::make_shared<PageT>();
+        if (!page->screen())
+            throw std::runtime_error("application page creation failed");
         owner->app_Page = page;
         page->navigate_home = std::bind(&Launch::go_back_home, owner);
         ui_loading::hide();
