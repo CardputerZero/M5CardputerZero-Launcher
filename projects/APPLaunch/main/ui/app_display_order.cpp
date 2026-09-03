@@ -12,7 +12,7 @@
 
 namespace {
 
-constexpr std::array<std::string_view, 23> kBuiltInAppOrder = {
+constexpr std::array<std::string_view, 24> kBuiltInAppOrder = {
     "settings",
     "store",
     "cli",
@@ -34,6 +34,7 @@ constexpr std::array<std::string_view, 23> kBuiltInAppOrder = {
     "keyboardguide",
     "factorytest",
     "gps",
+    "lora",
     "nfc",
     "capcc1101subgchat",
 };
@@ -57,6 +58,8 @@ int launcher_builtin_app_display_order(std::string_view label) noexcept
         const std::string normalized = normalized_label(label);
         for (std::size_t index = 0; index < kBuiltInAppOrder.size(); ++index)
             if (normalized == kBuiltInAppOrder[index]) return static_cast<int>(index);
+        // Releases have used both the short and hardware-prefixed SubG name.
+        if (normalized == "subgchat") return 23;
     } catch (...) {
         // An allocation failure must not prevent the launcher from showing apps.
     }

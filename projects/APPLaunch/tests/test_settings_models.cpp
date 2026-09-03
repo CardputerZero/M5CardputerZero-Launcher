@@ -13,6 +13,7 @@ struct Descriptor
     const char *config_key;
     bool configurable;
     bool always_on;
+    LauncherAppOrigin origin;
 };
 
 } // namespace
@@ -20,19 +21,29 @@ struct Descriptor
 int main()
 {
     const Descriptor descriptors[] = {
-        {"Hidden", "hidden", false, true},
-        {"Calculator", "calculator", true, false},
-        {nullptr, "missing-label", true, false},
-        {"Missing key", nullptr, true, false},
+        {"Hidden", "hidden", false, true, LauncherAppOrigin::Builtin},
+        {"Calculator", "calculator", true, false, LauncherAppOrigin::Builtin},
+        {"Python", "app_Python", true, false, LauncherAppOrigin::Builtin},
+        {"Snake", "app_Game", true, false, LauncherAppOrigin::Builtin},
+        {"Settings", "app_Setting", true, false, LauncherAppOrigin::Builtin},
+        {"Store", "app_Store", true, false, LauncherAppOrigin::Builtin},
+        {"CLI", "app_CLI", true, false, LauncherAppOrigin::Builtin},
+        {"ZClaw", "app_desktop_zclaw", true, false, LauncherAppOrigin::Preinstalled},
+        {"Downloaded", "app_desktop_downloaded", true, false, LauncherAppOrigin::StoreInstalled},
+        {nullptr, "missing-label", true, false, LauncherAppOrigin::Builtin},
+        {"Missing key", nullptr, true, false, LauncherAppOrigin::Builtin},
     };
     const auto entries = settings_t12b::launcher::configurable_entries(
         descriptors,
-        4,
+        11,
         [](const Descriptor &descriptor) { return descriptor.always_on; });
-    assert(entries.size() == 1);
+    assert(entries.size() == 4);
     assert(entries[0].label == "Calculator");
     assert(entries[0].config_key == "calculator");
     assert(!entries[0].enabled);
+    assert(entries[1].label == "Python" && entries[1].config_key == "app_Python");
+    assert(entries[2].label == "Snake" && entries[2].config_key == "app_Game");
+    assert(entries[3].label == "ZClaw" && entries[3].config_key == "app_desktop_zclaw");
     using settings_t12b::boot_actions::Action;
     using settings_t12b::boot_actions::Operation;
     assert(settings_t12b::boot_actions::presentation(Action::Reboot).confirmation_title == "Reboot?");
@@ -55,7 +66,7 @@ int main()
            "oobe_marker");
 
     const auto about = settings_t12b::about_help::about("1.2.3", "2026-08-24", "stable", "abc123");
-    const auto help = settings_t12b::about_help::help();
+    const auto credit = settings_t12b::about_help::credit();
     assert(!about.title.empty() && about.lines.size() >= 4);
-    assert(!help.title.empty() && !help.lines.empty());
+    assert(credit.title == "Credit" && !credit.lines.empty());
 }

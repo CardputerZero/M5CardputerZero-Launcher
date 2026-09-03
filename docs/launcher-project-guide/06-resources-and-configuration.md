@@ -236,6 +236,17 @@ Loading rules:
 - `TryExec` is currently not used by `applications_load()`.
 - The `applications/` directory is watched. It is polled every 3 seconds, and changes clear dynamic apps and rescan the directory.
 
+Dynamic desktop applications also carry a runtime origin. Entries whose exact
+`filename<TAB>Exec` identity appears in
+`/usr/share/APPLaunch/preinstalled-desktop-apps.tsv` are release-preinstalled;
+other desktop entries are treated as Store-installed. The Settings `Launcher`
+menu includes built-in and release-preinstalled configurable applications, but
+does not expose Store-installed entries or the protected Settings, Store, and
+CLI applications. The release aggregation script validates the manifest
+against the desktop resources that it copies. Add a manifest entry only for an
+application owned by the APPLaunch release payload; do not classify an
+application by its display label.
+
 ## 6. Configuration API and Persistence Paths
 
 The current configuration service is called through `cp0_signal_config_api`. It supports the `Init`, `Save`, `GetInt`, `SetInt`, `GetStr`, and `SetStr` commands. The service is implemented in `ext_components/cp0_lvgl/src/cp0_config_service.cpp`; the device and SDL backends register the signal in `ext_components/cp0_lvgl/src/cp0/cp0_lvgl_config.cpp` and `ext_components/cp0_lvgl/src/sdl/sdl_lvgl_config.cpp`.
@@ -286,7 +297,7 @@ The `Launcher` menu in `UISetupPage` saves `app_<Name>`:
 | `app_SSH` | `1` | SSH built-in page | Configurable; registered only in Linux non-SDL builds |
 | `app_Tank` | `1` | TANK built-in page | Configurable; registered only in Linux non-SDL builds |
 
-These entries come from `BUILTIN_APPS[]` in `projects/APPLaunch/main/ui/builtin_app_registry.cpp`. Entries with `configurable=false` or `always_on=true` are always enabled; other entries default to enabled when their key is absent.
+These entries come from `BUILTIN_APPS[]` in `projects/APPLaunch/main/ui/builtin_app_registry.cpp`. Release-preinstalled desktop entries use a stable `app_desktop_*` key derived from the desktop filename. Entries with `configurable=false` or `always_on=true` are always enabled; other entries default to enabled when their key is absent.
 
 ### 7.2 System and Page Configuration
 

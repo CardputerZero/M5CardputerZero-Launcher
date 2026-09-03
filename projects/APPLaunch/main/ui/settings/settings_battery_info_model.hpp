@@ -23,8 +23,12 @@ enum class SettingsBatteryReadState {
 
 class SettingsBatteryInfoModel {
 public:
-    enum class LabelMetric : std::size_t {
+    enum class ValueMetric : std::size_t {
         Count = 6,
+    };
+
+    enum class LabelMetric : std::size_t {
+        Count = static_cast<std::size_t>(ValueMetric::Count),
     };
 
     bool update(int result_code, const std::string &response);
@@ -35,6 +39,10 @@ public:
     const std::array<std::string, static_cast<std::size_t>(LabelMetric::Count)> &labels() const
     {
         return labels_;
+    }
+    const std::array<std::string, static_cast<std::size_t>(ValueMetric::Count)> &values() const
+    {
+        return values_;
     }
     SettingsBatteryReadState state() const { return state_; }
     bool valid() const { return state_ == SettingsBatteryReadState::Valid; }
@@ -54,7 +62,10 @@ private:
         "Temp: --C",
         "Current: --mA",
         "Voltage: --V",
-        "Remaining: --mAh",
-        "Full: --mAh",
+        "Remaining: 1750mAh",
+        "Full: 1750mAh",
+    };
+    std::array<std::string, static_cast<std::size_t>(ValueMetric::Count)> values_ = {
+        "--%", "-- C", "-- mA", "-- V", "1750 mAh", "1750 mAh",
     };
 };

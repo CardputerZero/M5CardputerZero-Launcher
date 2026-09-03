@@ -1,5 +1,6 @@
 #include "settings_bluetooth_page.hpp"
 #include "keyboard_text_input.hpp"
+#include "cp0_enum_cast.h"
 
 #include <algorithm>
 #include <charconv>
@@ -327,6 +328,11 @@ void copy_device_record(const settings_bluetooth_com::DeviceRecord &source,
     target.trusted = source.trusted ? 1 : 0;
 }
 
+bool is_agent_authorization_method(std::string_view method)
+{
+    return method == "RequestAuthorization" || method == "AuthorizeService";
+}
+
 } // namespace
 
 struct LvSettingBluetoothAliasPage3::ApiDispatchState {
@@ -448,8 +454,8 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
         ComponensObj = lv_obj_create(parent);
         if (!ComponensObj) return;
         lv_obj_set_size(ComponensObj,
-                        metric(LayoutMetric::ScreenW),
-                        metric(LayoutMetric::ScreenH));
+                        CP0_ENUM_CAST_INT(LayoutMetric::ScreenW),
+                        CP0_ENUM_CAST_INT(LayoutMetric::ScreenH));
         lv_obj_set_pos(ComponensObj, 0, 0);
         lv_obj_set_style_bg_color(ComponensObj, lv_color_black(), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(ComponensObj, LV_OPA_COVER, LV_PART_MAIN);
@@ -1012,6 +1018,9 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
             return;
         }
 
+        // A new explicit operation requires a fresh authorization decision.
+        agent_pairing_device_.clear();
+        agent_authorized_device_.clear();
         action_pending_ = true;
         action_address_ = address;
         ++generation_;
@@ -1142,6 +1151,8 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
         const bool succeeded = settings_bluetooth_com::success_without_payload(code, data);
         cancel_action();
         if (!succeeded) {
+            agent_pairing_device_.clear();
+            agent_authorized_device_.clear();
             error_message_ = data.empty() ? "Bluetooth action failed."
                                            : "Bluetooth action failed: " + data;
             render();
@@ -1248,7 +1259,7 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
             title.c_str(),
             8,
             2,
-            metric(LayoutMetric::ScreenW) - 16,
+            CP0_ENUM_CAST_INT(LayoutMetric::ScreenW) - 16,
             0x58A6FF,
             settings_fonts::sans(12, LV_FREETYPE_FONT_STYLE_BOLD));
 
@@ -1260,7 +1271,7 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
                          action_message_.c_str(),
                          8,
                          mode_ == LvSettingBluetoothListMode::Scan ? 45 : 52,
-                         metric(LayoutMetric::ScreenW) - 16,
+                         CP0_ENUM_CAST_INT(LayoutMetric::ScreenW) - 16,
                          0x58A6FF,
                          settings_fonts::sans(14, LV_FREETYPE_FONT_STYLE_BOLD));
             hint = pair_cleanup_pending_ ? "Please wait..." : "ESC:back";
@@ -1284,7 +1295,7 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
                              message.c_str(),
                              8,
                              mode_ == LvSettingBluetoothListMode::Scan ? 45 : 52,
-                             metric(LayoutMetric::ScreenW) - 16,
+                             CP0_ENUM_CAST_INT(LayoutMetric::ScreenW) - 16,
                              error_message_.empty() ? 0x666666 : 0xFFAA00,
                              settings_fonts::sans(12));
             }
@@ -1293,33 +1304,33 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
                 create_label(ComponensObj,
                              "Discovered Devices",
                              8,
-                             metric(LayoutMetric::ScanSectionY),
-                             metric(LayoutMetric::ScreenW) - 16,
+                             CP0_ENUM_CAST_INT(LayoutMetric::ScanSectionY),
+                             CP0_ENUM_CAST_INT(LayoutMetric::ScreenW) - 16,
                              0x888888,
                              settings_fonts::sans(10));
             }
 
             const int count = static_cast<int>(devices_.size());
-            const int offset = count <= metric(LayoutMetric::VisibleRows)
+            const int offset = count <= CP0_ENUM_CAST_INT(LayoutMetric::VisibleRows)
                 ? 0
-                : std::clamp(selected_index_ - metric(LayoutMetric::VisibleRows) / 2,
+                : std::clamp(selected_index_ - CP0_ENUM_CAST_INT(LayoutMetric::VisibleRows) / 2,
                              0,
-                             count - metric(LayoutMetric::VisibleRows));
+                             count - CP0_ENUM_CAST_INT(LayoutMetric::VisibleRows));
             for (int visible = 0;
-                 visible < metric(LayoutMetric::VisibleRows) && offset + visible < count;
+                 visible < CP0_ENUM_CAST_INT(LayoutMetric::VisibleRows) && offset + visible < count;
                  ++visible) {
                 const int index = offset + visible;
                 const auto &device = devices_[static_cast<size_t>(index)];
                 const int y = (mode_ == LvSettingBluetoothListMode::Scan
-                                   ? metric(LayoutMetric::ScanRowY)
-                                   : metric(LayoutMetric::ConnectedRowY)) + visible * metric(LayoutMetric::RowH);
+                                   ? CP0_ENUM_CAST_INT(LayoutMetric::ScanRowY)
+                                   : CP0_ENUM_CAST_INT(LayoutMetric::ConnectedRowY)) + visible * CP0_ENUM_CAST_INT(LayoutMetric::RowH);
                 const bool selected = index == selected_index_;
                 if (selected) {
                     lv_obj_t *background = lv_obj_create(ComponensObj);
                     if (background) {
                         lv_obj_set_size(background,
-                                        metric(LayoutMetric::ScreenW) - 8,
-                                        metric(LayoutMetric::RowH) - 1);
+                                        CP0_ENUM_CAST_INT(LayoutMetric::ScreenW) - 8,
+                                        CP0_ENUM_CAST_INT(LayoutMetric::RowH) - 1);
                         lv_obj_set_pos(background, 4, y);
                         lv_obj_set_style_radius(background, 2, LV_PART_MAIN);
                         lv_obj_set_style_bg_color(background, lv_color_hex(0x1F3A5F), LV_PART_MAIN);
@@ -1376,14 +1387,34 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
         create_label(ComponensObj,
                      hint,
                      8,
-                     metric(LayoutMetric::HintY),
-                     metric(LayoutMetric::ScreenW) - 16,
+                     CP0_ENUM_CAST_INT(LayoutMetric::HintY),
+                     CP0_ENUM_CAST_INT(LayoutMetric::ScreenW) - 16,
                      0x555555,
                      settings_fonts::sans(10));
     }
 
     void LvSettingBluetoothPage3::show_agent_prompt(const AgentPromptRequest &request)
     {
+        // A new numeric-comparison request starts a fresh pairing session;
+        // never carry an earlier connection approval into that session.
+        if (request.method == "RequestConfirmation") {
+            agent_pairing_device_.clear();
+            agent_authorized_device_.clear();
+        }
+
+        // BlueZ may ask for authorization once per profile after the user has
+        // already approved the connection. Keep the first user decision, then
+        // acknowledge subsequent requests for that same device in this
+        // session so identical dialogs are not shown repeatedly.
+        const std::string request_device = request.device.empty() ? action_address_ : request.device;
+        if (is_agent_authorization_method(request.method) &&
+            !agent_authorized_device_.empty() &&
+            request_device == agent_authorized_device_) {
+            if (request.reply) {
+                try { request.reply(true, {}); } catch (...) {}
+            }
+            return;
+        }
         const bool supported_method = request.method == "RequestPinCode" ||
                                       request.method == "RequestPasskey" ||
                                       request.method == "RequestConfirmation" ||
@@ -1443,7 +1474,7 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
             reject_agent_prompt();
             return;
         }
-        lv_obj_set_size(agent_overlay_, metric(LayoutMetric::ScreenW), metric(LayoutMetric::ScreenH));
+        lv_obj_set_size(agent_overlay_, CP0_ENUM_CAST_INT(LayoutMetric::ScreenW), CP0_ENUM_CAST_INT(LayoutMetric::ScreenH));
         lv_obj_set_pos(agent_overlay_, 0, 0);
         lv_obj_set_style_bg_color(agent_overlay_, lv_color_black(), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(agent_overlay_, LV_OPA_70, LV_PART_MAIN);
@@ -1468,12 +1499,14 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
         lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
 
         const bool confirmation = agent_request_.method == "RequestConfirmation";
-        const bool authorization = agent_request_.method == "RequestAuthorization" ||
-                                   agent_request_.method == "AuthorizeService";
+        const bool device_authorization = agent_request_.method == "RequestAuthorization";
+        const bool service_authorization = agent_request_.method == "AuthorizeService";
+        const bool authorization = device_authorization || service_authorization;
         const bool passkey = agent_request_.method == "RequestPasskey";
         const char *title = confirmation ? "Confirm Bluetooth pairing"
-                            : (authorization ? "Allow Bluetooth connection?"
-                                              : (passkey ? "Bluetooth Passkey" : "Bluetooth PIN Code"));
+                            : device_authorization ? "Allow device connection?"
+                            : service_authorization ? "Allow Bluetooth service?"
+                            : passkey ? "Bluetooth Passkey" : "Bluetooth PIN Code";
         create_label(dialog,
                      title,
                      12, 8, 276, 0x58A6FF,
@@ -1484,8 +1517,10 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
         if (confirmation) {
             value = "Pairing code: ";
             value += agent_request_.hint.empty() ? "(not provided)" : agent_request_.hint;
-        } else if (authorization) {
-            value = "Authorize this device?";
+        } else if (device_authorization) {
+            value = "Allow this device to connect?";
+        } else if (service_authorization) {
+            value = "Allow this Bluetooth service?";
         } else {
             agent_input_textarea_ = lv_textarea_create(dialog);
             if (agent_input_textarea_) {
@@ -1519,12 +1554,33 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
             }
         }
         if (confirmation || authorization)
-            create_label(dialog, value.c_str(), 12, 48, 276, 0xFFFFFF, settings_fonts::mono(14));
+            create_label(dialog,
+                         value.c_str(),
+                         12,
+                         48,
+                         276,
+                         0xFFFFFF,
+                         settings_fonts::mono(service_authorization ? 12 : 14));
+        if (service_authorization) {
+            const std::string service = agent_request_.hint.empty()
+                ? "Service: (not specified)"
+                : "Service: " + agent_request_.hint;
+            create_label(dialog,
+                         service.c_str(),
+                         12,
+                         68,
+                         276,
+                         0xBBBBBB,
+                         settings_fonts::mono(8));
+        }
         if (!agent_error_.empty())
             create_label(dialog, agent_error_.c_str(), 12, 78, 276, 0xFFAA00, settings_fonts::sans(10));
+        const char *prompt_hint = confirmation ? "Enter: Confirm    ESC: Reject"
+                                  : device_authorization ? "Enter: Allow connection    ESC: Reject"
+                                  : service_authorization ? "Enter: Allow service    ESC: Reject"
+                                  : "Enter: OK    ESC: Cancel";
         create_label(dialog,
-                     (confirmation || authorization) ? "Enter: Confirm    ESC: Reject"
-                                  : "Enter: OK    ESC: Cancel",
+                     prompt_hint,
                      12, 106, 276, 0x58A6FF, settings_fonts::sans(10));
     }
 
@@ -1580,6 +1636,12 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
                 render_agent_prompt();
                 return;
             }
+            const std::string request_device = request.device.empty() ? action_address_ : request.device;
+            if (request.method == "RequestConfirmation")
+                agent_pairing_device_ = request_device;
+            if (is_agent_authorization_method(request.method) &&
+                (action_pending_ || request_device == agent_pairing_device_))
+                agent_authorized_device_ = request_device;
         }
         clear_agent_prompt();
         if (request.reply) {
@@ -1643,7 +1705,7 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
 
         lv_obj_t *overlay = lv_obj_create(ComponensObj);
         if (!overlay) return;
-        lv_obj_set_size(overlay, metric(LayoutMetric::ScreenW), metric(LayoutMetric::ScreenH));
+        lv_obj_set_size(overlay, CP0_ENUM_CAST_INT(LayoutMetric::ScreenW), CP0_ENUM_CAST_INT(LayoutMetric::ScreenH));
         lv_obj_set_pos(overlay, 0, 0);
         lv_obj_set_style_bg_color(overlay, lv_color_black(), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(overlay, LV_OPA_70, LV_PART_MAIN);
@@ -1864,7 +1926,7 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
         if (!parent) return;
         ComponensObj = lv_obj_create(parent);
         if (!ComponensObj) return;
-        lv_obj_set_size(ComponensObj, metric(LayoutMetric::ScreenW), metric(LayoutMetric::ScreenH));
+        lv_obj_set_size(ComponensObj, CP0_ENUM_CAST_INT(LayoutMetric::ScreenW), CP0_ENUM_CAST_INT(LayoutMetric::ScreenH));
         lv_obj_set_pos(ComponensObj, 0, 0);
         lv_obj_set_style_bg_color(ComponensObj, lv_color_black(), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(ComponensObj, LV_OPA_COVER, LV_PART_MAIN);
@@ -2040,10 +2102,16 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
                      "Bluetooth Name",
                      8,
                      8,
-                     metric(LayoutMetric::ScreenW) - 16,
+                     CP0_ENUM_CAST_INT(LayoutMetric::ScreenW) - 16,
                      0x58A6FF,
                      settings_fonts::sans(13, LV_FREETYPE_FONT_STYLE_BOLD));
-        create_label(ComponensObj, "Name:", 8, 38, 52, 0xCCCCCC, settings_fonts::sans(12));
+        create_label(ComponensObj,
+                     "Name:",
+                     CP0_ENUM_CAST_INT(LayoutMetric::AliasLabelX),
+                     38,
+                     CP0_ENUM_CAST_INT(LayoutMetric::AliasLabelWidth),
+                     0xCCCCCC,
+                     settings_fonts::sans(12));
 
         alias_input_ = lv_textarea_create(ComponensObj);
         if (alias_input_) {
@@ -2051,11 +2119,11 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
             // LV_PART_CURSOR its own text color and padding, which can make
             // the cursor render black and taller than the input box.
             lv_obj_remove_style_all(alias_input_);
-            lv_obj_set_pos(alias_input_, metric(LayoutMetric::AliasTextX), 32);
-            lv_obj_set_size(alias_input_, metric(LayoutMetric::ScreenW) - metric(LayoutMetric::AliasTextX) -
-                                           metric(LayoutMetric::AliasTextRightInset), 28);
+            lv_obj_set_pos(alias_input_, CP0_ENUM_CAST_INT(LayoutMetric::AliasTextX), 32);
+            lv_obj_set_size(alias_input_, CP0_ENUM_CAST_INT(LayoutMetric::ScreenW) - CP0_ENUM_CAST_INT(LayoutMetric::AliasTextX) -
+                                           CP0_ENUM_CAST_INT(LayoutMetric::AliasTextRightInset), 28);
             lv_textarea_set_one_line(alias_input_, true);
-            lv_textarea_set_max_length(alias_input_, metric(LayoutMetric::MaxAliasBytes));
+            lv_textarea_set_max_length(alias_input_, CP0_ENUM_CAST_INT(LayoutMetric::MaxAliasBytes));
             lv_textarea_set_text(alias_input_, alias_.c_str());
             std::size_t cursor_chars = 0;
             for (std::size_t i = 0; i < cursor_ && i < alias_.size(); ++i) {
@@ -2064,7 +2132,7 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
             }
             lv_textarea_set_cursor_pos(alias_input_, static_cast<int32_t>(cursor_chars));
             lv_obj_set_style_text_font(alias_input_, input_font(14), LV_PART_MAIN);
-            lv_obj_set_style_text_letter_space(alias_input_, metric(LayoutMetric::AliasInputLetterSpace), LV_PART_MAIN);
+            lv_obj_set_style_text_letter_space(alias_input_, CP0_ENUM_CAST_INT(LayoutMetric::AliasInputLetterSpace), LV_PART_MAIN);
             lv_obj_set_style_text_color(alias_input_, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
             lv_obj_set_style_text_color(alias_input_, lv_color_hex(0xFFFFFF), LV_PART_CURSOR);
             lv_obj_set_style_bg_color(alias_input_, lv_color_hex(0x181818), LV_PART_MAIN);
@@ -2077,7 +2145,7 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
             lv_obj_set_style_pad_top(alias_input_, 3, LV_PART_MAIN);
             lv_obj_set_style_bg_opa(alias_input_, LV_OPA_TRANSP, LV_PART_CURSOR);
             lv_obj_set_style_border_color(alias_input_, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
-            lv_obj_set_style_border_width(alias_input_, metric(LayoutMetric::AliasInputCursorWidth), LV_PART_CURSOR);
+            lv_obj_set_style_border_width(alias_input_, CP0_ENUM_CAST_INT(LayoutMetric::AliasInputCursorWidth), LV_PART_CURSOR);
             lv_obj_set_style_border_side(alias_input_, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
             lv_obj_set_style_pad_left(alias_input_, -1, LV_PART_CURSOR);
             lv_obj_set_style_anim_duration(alias_input_, 400, LV_PART_CURSOR);
@@ -2089,16 +2157,16 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
         create_label(ComponensObj,
                      hint,
                      8,
-                     metric(LayoutMetric::ScreenH) - 14,
-                     metric(LayoutMetric::ScreenW) - 16,
+                     CP0_ENUM_CAST_INT(LayoutMetric::ScreenH) - 14,
+                     CP0_ENUM_CAST_INT(LayoutMetric::ScreenW) - 16,
                      saving_ ? 0xFFAA00 : 0x555555,
                      settings_fonts::sans(10));
         if (!error_message_.empty())
             create_label(ComponensObj,
                          error_message_.c_str(),
                          8,
-                         76,
-                         metric(LayoutMetric::ScreenW) - 16,
+                         CP0_ENUM_CAST_INT(LayoutMetric::AliasErrorY),
+                         CP0_ENUM_CAST_INT(LayoutMetric::ScreenW) - 16,
                          0xFF4444,
                          settings_fonts::sans(10));
     }
@@ -2111,7 +2179,7 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
         lv_obj_clean(ComponensObj);
         lv_obj_t *overlay = lv_obj_create(ComponensObj);
         if (!overlay) return;
-        lv_obj_set_size(overlay, metric(LayoutMetric::ScreenW), metric(LayoutMetric::ScreenH));
+        lv_obj_set_size(overlay, CP0_ENUM_CAST_INT(LayoutMetric::ScreenW), CP0_ENUM_CAST_INT(LayoutMetric::ScreenH));
         lv_obj_set_pos(overlay, 0, 0);
         lv_obj_set_style_bg_color(overlay, lv_color_black(), LV_PART_MAIN);
         lv_obj_set_style_bg_opa(overlay, LV_OPA_70, LV_PART_MAIN);
@@ -2305,12 +2373,12 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
         if (saving_ || !text || !text[0]) return;
         const std::string_view input(text);
         if (!settings_bluetooth_com::valid_text_field(
-                input, static_cast<std::size_t>(metric(LayoutMetric::MaxAliasBytes)), false))
+                input, CP0_ENUM_CAST_SIZE_T(LayoutMetric::MaxAliasBytes), false))
             return;
         if (alias_input_) {
             sync_textarea_state();
             if (alias_.size() + input.size() >
-                static_cast<std::size_t>(metric(LayoutMetric::MaxAliasBytes)))
+                CP0_ENUM_CAST_SIZE_T(LayoutMetric::MaxAliasBytes))
                 return;
             lv_textarea_add_text(alias_input_, text);
             sync_textarea_state();
@@ -2319,7 +2387,7 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
             error_message_.clear();
             return;
         }
-        if (alias_.size() + input.size() > static_cast<std::size_t>(metric(LayoutMetric::MaxAliasBytes)))
+        if (alias_.size() + input.size() > CP0_ENUM_CAST_SIZE_T(LayoutMetric::MaxAliasBytes))
             return;
         const std::size_t length = input.size();
         alias_.insert(cursor_, text, length);

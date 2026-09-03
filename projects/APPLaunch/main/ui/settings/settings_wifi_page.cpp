@@ -512,7 +512,7 @@ const lv_font_t *LvSettingWifiScanPage3::input_font(uint16_t size){
 const char *LvSettingWifiScanPage3::scan_error_message(int result){
         switch (result) {
             case CP0_WIFI_ERROR_RADIO_OFF:
-                return "WiFi is off. Turn on Power to scan";
+                return "WiFi is off. Enable WiFi to scan";
             case CP0_WIFI_ERROR_TIMEOUT:
                 return "WiFi scan timed out. Press R to retry";
             case CP0_WIFI_ERROR_SERVICE:
@@ -673,7 +673,7 @@ void LvSettingWifiScanPage3::create_hidden_network_panel(){
         lv_obj_remove_flag(hidden_panel_, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(hidden_panel_, LV_OBJ_FLAG_SCROLLABLE);
 
-        create_label(hidden_panel_, "Add Hidden WiFi", 10, 4, 0x58A6FF, settings_fonts::sans(12));
+        create_label(hidden_panel_, "Join Hidden Network", 10, 4, 0x58A6FF, settings_fonts::sans(12));
         create_label(hidden_panel_, "SSID", 10, 25, 0xCCCCCC, settings_fonts::sans(10));
         create_label(hidden_panel_, "PASSWORD", 10, 59, 0xCCCCCC, settings_fonts::sans(10));
 
@@ -826,10 +826,10 @@ void LvSettingWifiScanPage3::show_power_warning(){
         lv_obj_set_style_pad_all(power_warning_, 0, LV_PART_MAIN);
         lv_obj_clear_flag(power_warning_, LV_OBJ_FLAG_SCROLLABLE);
 
-        lv_obj_t *title     = lv_msgbox_add_title(power_warning_, "WiFi power is off");
+        lv_obj_t *title     = lv_msgbox_add_title(power_warning_, "WiFi is disabled");
         lv_obj_t *header    = lv_msgbox_get_header(power_warning_);
         lv_obj_t *content   = lv_msgbox_get_content(power_warning_);
-        lv_obj_t *message   = lv_msgbox_add_text(power_warning_, "Turn on Power before continuing.");
+        lv_obj_t *message   = lv_msgbox_add_text(power_warning_, "Enable WiFi before continuing.");
         lv_obj_t *ok_button = lv_msgbox_add_footer_button(power_warning_, "OK");
         lv_obj_t *footer    = lv_msgbox_get_footer(power_warning_);
         lv_obj_t *ok_label  = ok_button ? lv_obj_get_child(ok_button, 0) : nullptr;

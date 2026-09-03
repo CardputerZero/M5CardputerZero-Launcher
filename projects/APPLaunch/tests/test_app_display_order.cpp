@@ -6,11 +6,11 @@
 
 int main()
 {
-    constexpr std::array<std::string_view, 23> expected = {
+    constexpr std::array<std::string_view, 24> expected = {
         "Settings", "Store", "CLI", "Python", "ZClaw", "SSH", "IP Panel", "Files",
         "Camera", "Rec", "Music", "Piano", "Compass", "IR Remote", "IR Chat",
-        "Calculator", "Snake", "Tank", "Keyboard Guide", "FactoryTest", "GPS", "NFC",
-        "Cap-CC1101-SubG-Chat",
+        "Calculator", "Snake", "Tank", "Keyboard Guide", "FactoryTest", "GPS", "LoRa",
+        "NFC", "SubG Chat",
     };
 
     for (std::size_t index = 0; index < expected.size(); ++index)
@@ -18,6 +18,8 @@ int main()
 
     // Desktop files in the existing image use this spelling for IP Panel.
     assert(launcher_builtin_app_display_order("IP_PANEL") == 6);
+    // Existing images may use the hardware-prefixed SubG desktop name.
+    assert(launcher_builtin_app_display_order("Cap-CC1101-SubG-Chat") == 23);
     assert(launcher_builtin_app_display_order("Vim") == -1);
     return 0;
 }

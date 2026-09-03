@@ -3,6 +3,7 @@
 #include "settings_fonts.hpp"
 #include "settings_async_dispatch.hpp"
 #include "settings_battery_info_model.hpp"
+#include "cp0_enum_cast.h"
 #include "hal_lvgl_bsp.h"
 
 #include <array>
@@ -149,7 +150,9 @@ struct LvSettingBatteryInfoPage3::State {
     NodeIter parent_node{};
     BatteryRequestCoordinator requests;
     SettingsBatteryInfoModel model;
-    std::array<lv_obj_t *, static_cast<std::size_t>(SettingsBatteryInfoModel::LabelMetric::Count)> value_labels{};
+    std::array<lv_obj_t *,
+               CP0_ENUM_CAST_SIZE_T(SettingsBatteryInfoModel::ValueMetric::Count)>
+        value_labels{};
     lv_obj_t *title_label  = nullptr;
     lv_obj_t *status_label = nullptr;
     lv_obj_t *hint_label   = nullptr;
@@ -241,18 +244,30 @@ void LvSettingBatteryInfoPage3::create_ui(lv_obj_t *parent)
         metric(LayoutMetric::TitleY),
         metric(LayoutMetric::TitleW),
         metric(LayoutMetric::TitleH),
-        0xFFFFFF,
-        13);
+        0x58A6FF,
+        16);
     if (state_->title_label) lv_label_set_text(state_->title_label, "Battery Info");
 
-    for (std::size_t index = 0; index < state_->value_labels.size(); ++index) {
-        state_->value_labels[index] = create_label(
-            metric(LayoutMetric::ValueX),
-            metric(LayoutMetric::ValueY) + static_cast<int>(index) * metric(LayoutMetric::ValueGap),
-            metric(LayoutMetric::ValueW),
-            metric(LayoutMetric::ValueH),
-            index == 0 ? 0xFFFFFF : 0xB8B8B8,
-            index == 0 ? 12 : 11);
+    struct TableCellSpec {
+        std::size_t value_index;
+        int row;
+        int column;
+        const char *key;
+    };
+    static constexpr std::array<
+        TableCellSpec,
+        CP0_ENUM_CAST_SIZE_T(SettingsBatteryInfoModel::ValueMetric::Count)>
+        cells = {{
+            {0, 0, 0, "Battery"},
+            {3, 0, 1, "Voltage"},
+            {2, 1, 0, "Current"},
+            {1, 1, 1, "Temp"},
+            {4, 2, 0, "Remaining"},
+            {5, 2, 1, "Full"},
+        }};
+    for (const TableCellSpec &cell : cells) {
+        state_->value_labels[cell.value_index] =
+            create_table_cell(cell.row, cell.column, cell.key);
     }
 
     state_->status_label = create_label(
@@ -261,7 +276,7 @@ void LvSettingBatteryInfoPage3::create_ui(lv_obj_t *parent)
         metric(LayoutMetric::StatusW),
         metric(LayoutMetric::StatusH),
         0xF0C850,
-        11);
+        10);
     state_->hint_label = create_label(
         metric(LayoutMetric::HintX),
         metric(LayoutMetric::HintY),
@@ -320,6 +335,74 @@ lv_obj_t *LvSettingBatteryInfoPage3::create_label(int x,
     return label;
 }
 
+lv_obj_t *LvSettingBatteryInfoPage3::create_table_cell(int row,
+                                                       int column,
+                                                       const char *key)
+{
+    if (!ComponensObj) return nullptr;
+    lv_obj_t *cell = lv_obj_create(ComponensObj);
+    if (!cell) return nullptr;
+    lv_obj_set_pos(cell,
+                   metric(LayoutMetric::TableX) + column * metric(LayoutMetric::TableCellW),
+                   metric(LayoutMetric::TableY) + row * metric(LayoutMetric::TableRowH));
+    lv_obj_set_size(cell,
+                    metric(LayoutMetric::TableCellW),
+                    metric(LayoutMetric::TableRowH));
+    lv_obj_set_style_bg_color(cell,
+                              lv_color_hex(row % 2 == 0 ? 0x151515 : 0x1B1B1B),
+                              LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(cell, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(cell, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(cell, lv_color_hex(0x383838), LV_PART_MAIN);
+    lv_obj_set_style_border_side(
+        cell,
+        column == 0
+            ? CP0_ENUM_CAST(lv_border_side_t,
+                            LV_BORDER_SIDE_BOTTOM | LV_BORDER_SIDE_RIGHT)
+            : LV_BORDER_SIDE_BOTTOM,
+        LV_PART_MAIN);
+    lv_obj_set_style_pad_all(cell, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(cell, 0, LV_PART_MAIN);
+    lv_obj_remove_flag(cell, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(cell, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *key_label = lv_label_create(cell);
+    if (key_label) {
+        lv_label_set_text(key_label, key ? key : "");
+        lv_obj_set_pos(key_label,
+                       metric(LayoutMetric::TableKeyX),
+                       metric(LayoutMetric::TableTextY));
+        lv_obj_set_size(key_label,
+                        metric(LayoutMetric::TableKeyW),
+                        metric(LayoutMetric::TableTextH));
+        lv_obj_set_style_text_color(key_label, lv_color_hex(0xA8A8A8), LV_PART_MAIN);
+        lv_obj_set_style_text_font(
+            key_label,
+            settings_fonts::sans(12, LV_FREETYPE_FONT_STYLE_BOLD),
+            LV_PART_MAIN);
+        lv_label_set_long_mode(key_label, LV_LABEL_LONG_CLIP);
+    }
+
+    lv_obj_t *value_label = lv_label_create(cell);
+    if (!value_label) return nullptr;
+    lv_label_set_text(value_label, "--");
+    lv_obj_set_pos(value_label,
+                   metric(LayoutMetric::TableValueX),
+                   metric(LayoutMetric::TableTextY));
+    lv_obj_set_size(value_label,
+                    metric(LayoutMetric::TableValueW),
+                    metric(LayoutMetric::TableTextH));
+    lv_obj_set_style_text_color(value_label,
+                                lv_color_hex(row == 0 && column == 0 ? 0x46DC87 : 0xF2F2F2),
+                                LV_PART_MAIN);
+    lv_obj_set_style_text_font(
+        value_label,
+        settings_fonts::mono(13, LV_FREETYPE_FONT_STYLE_BOLD),
+        LV_PART_MAIN);
+    lv_label_set_long_mode(value_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    return value_label;
+}
+
 void LvSettingBatteryInfoPage3::request_read()
 {
     if (!state_ || !ComponensObj || !state_->async_token.valid() || state_->requests.pending()) return;
@@ -370,10 +453,10 @@ void LvSettingBatteryInfoPage3::handle_read_result(int outcome,
 void LvSettingBatteryInfoPage3::render()
 {
     if (!state_) return;
-    const auto &labels = state_->model.labels();
+    const auto &values = state_->model.values();
     for (std::size_t index = 0; index < state_->value_labels.size(); ++index) {
         if (state_->value_labels[index])
-            lv_label_set_text(state_->value_labels[index], labels[index].c_str());
+            lv_label_set_text(state_->value_labels[index], values[index].c_str());
     }
     if (state_->status_label)
         lv_label_set_text(state_->status_label, state_->status_message.c_str());

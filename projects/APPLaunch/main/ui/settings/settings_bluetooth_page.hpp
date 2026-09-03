@@ -18,6 +18,7 @@
 
 #include "cp0_bounded_task_registry.hpp"
 #include "../../../../ext_components/cp0_lvgl/src/cp0_signal_registration.hpp"
+#include "cp0_enum_cast.h"
 #include "settings_fonts.hpp"
 #include "cp0_lvgl_app.h"
 #include "cp0_lvgl_app_page_assets.h"
@@ -55,10 +56,6 @@ public:
         HintY       = ScreenH - 14,
     };
 
-    static constexpr int metric(LayoutMetric value)
-    {
-        return static_cast<int>(value);
-    }
     LvSettingBluetoothPage3() = default;
 
     LvSettingBluetoothPage3(lv_obj_t *parent,
@@ -196,6 +193,11 @@ private:
     bool discovery_active_ = false;
     bool agent_prompt_active_ = false;
     AgentPromptRequest agent_request_{};
+    // Device object paths used to scope the one-time pairing/connection
+    // authorization decision. Later profile requests for that session reuse
+    // the accepted decision without changing authorization for other devices.
+    std::string agent_pairing_device_;
+    std::string agent_authorized_device_;
     std::string agent_input_;
     std::string agent_error_;
     lv_obj_t *agent_overlay_ = nullptr;
@@ -231,8 +233,12 @@ public:
         ScreenW = 320,
         ScreenH = 150,
         MaxAliasBytes = CP0_BT_NAME_MAX - 1,
-        AliasTextX = 64,
+        AliasLabelX = 8,
+        AliasLabelWidth = 52,
+        AliasInputGap = 12,
+        AliasTextX = AliasLabelX + AliasLabelWidth + AliasInputGap,
         AliasTextRightInset = 8,
+        AliasErrorY = 84,
         AliasInputLetterSpace = 1,
         AliasInputCursorWidth = 1,
         CursorGap = 2,
@@ -240,11 +246,6 @@ public:
         CursorHeight = 18,
         HintY = ScreenH - 14,
     };
-
-    static constexpr int metric(LayoutMetric value)
-    {
-        return static_cast<int>(value);
-    }
 
     LvSettingBluetoothAliasPage3();
 

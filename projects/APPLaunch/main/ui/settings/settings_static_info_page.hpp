@@ -63,7 +63,12 @@ std::unique_ptr<DComponens::LvglComponensBase> settings_t12b_about_page_factory(
     const NodeIter &page_node,
     std::function<void()> on_back);
 
-std::unique_ptr<DComponens::LvglComponensBase> settings_t12b_help_page_factory(
+std::unique_ptr<DComponens::LvglComponensBase> settings_storage_page_factory(
+    lv_obj_t *parent,
+    const NodeIter &page_node,
+    std::function<void()> on_back);
+
+std::unique_ptr<DComponens::LvglComponensBase> settings_credit_page_factory(
     lv_obj_t *parent,
     const NodeIter &page_node,
     std::function<void()> on_back);

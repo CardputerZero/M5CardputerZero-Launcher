@@ -115,6 +115,11 @@ cp -a "$ROOT/projects/AppStore/dist/APPLaunch/." \
     "$ROOT/projects/APPLaunch/dist/APPLaunch/"
 cp -a "$ROOT/projects/ZClaw/dist/APPLaunch/." \
     "$ROOT/projects/APPLaunch/dist/APPLaunch/"
+PREINSTALLED_MANIFEST="$ROOT/projects/APPLaunch/dist/APPLaunch/preinstalled-desktop-apps.tsv"
+ZCLAW_DESKTOP="$ROOT/projects/APPLaunch/dist/APPLaunch/applications/zclaw.desktop"
+test -f "$ZCLAW_DESKTOP"
+python3 "$ROOT/projects/APPLaunch/build_support/verify_preinstalled_desktop.py" \
+    "$PREINSTALLED_MANIFEST" "$ZCLAW_DESKTOP" zclaw.desktop
 install -D -m 0755 "$ROOT/projects/LaunchWizard/dist/LaunchWizard" \
     "$ROOT/projects/APPLaunch/dist/APPLaunch/bin/LaunchWizard"
 aarch64-linux-gnu-gcc -std=c11 -Os -s -Wall -Wextra -Werror \
@@ -141,6 +146,7 @@ trap 'rm -f "$CONTENTS"' EXIT
 dpkg-deb -c "$PACKAGE" >"$CONTENTS"
 grep -q './usr/share/APPLaunch/bin/LaunchWizard$' "$CONTENTS"
 grep -q './usr/share/APPLaunch/bin/M5CardputerZero-APPLaunch$' "$CONTENTS"
+grep -q './usr/share/APPLaunch/preinstalled-desktop-apps.tsv$' "$CONTENTS"
 
 echo "=== Release package ==="
 dpkg-deb -f "$PACKAGE" Package Version Architecture
