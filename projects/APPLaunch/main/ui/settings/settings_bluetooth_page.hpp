@@ -193,6 +193,11 @@ private:
     bool discovery_active_ = false;
     bool agent_prompt_active_ = false;
     AgentPromptRequest agent_request_{};
+    // Device object paths used to scope the one-time pairing/connection
+    // authorization decision. Later profile requests for that session reuse
+    // the accepted decision without changing authorization for other devices.
+    std::string agent_pairing_device_;
+    std::string agent_authorized_device_;
     std::string agent_input_;
     std::string agent_error_;
     lv_obj_t *agent_overlay_ = nullptr;

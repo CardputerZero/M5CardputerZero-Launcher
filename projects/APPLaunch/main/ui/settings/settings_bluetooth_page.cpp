@@ -328,6 +328,11 @@ void copy_device_record(const settings_bluetooth_com::DeviceRecord &source,
     target.trusted = source.trusted ? 1 : 0;
 }
 
+bool is_agent_authorization_method(std::string_view method)
+{
+    return method == "RequestAuthorization" || method == "AuthorizeService";
+}
+
 } // namespace
 
 struct LvSettingBluetoothAliasPage3::ApiDispatchState {
@@ -1013,6 +1018,9 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
             return;
         }
 
+        // A new explicit operation requires a fresh authorization decision.
+        agent_pairing_device_.clear();
+        agent_authorized_device_.clear();
         action_pending_ = true;
         action_address_ = address;
         ++generation_;
@@ -1143,6 +1151,8 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
         const bool succeeded = settings_bluetooth_com::success_without_payload(code, data);
         cancel_action();
         if (!succeeded) {
+            agent_pairing_device_.clear();
+            agent_authorized_device_.clear();
             error_message_ = data.empty() ? "Bluetooth action failed."
                                            : "Bluetooth action failed: " + data;
             render();
@@ -1385,6 +1395,26 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
 
     void LvSettingBluetoothPage3::show_agent_prompt(const AgentPromptRequest &request)
     {
+        // A new numeric-comparison request starts a fresh pairing session;
+        // never carry an earlier connection approval into that session.
+        if (request.method == "RequestConfirmation") {
+            agent_pairing_device_.clear();
+            agent_authorized_device_.clear();
+        }
+
+        // BlueZ may ask for authorization once per profile after the user has
+        // already approved the connection. Keep the first user decision, then
+        // acknowledge subsequent requests for that same device in this
+        // session so identical dialogs are not shown repeatedly.
+        const std::string request_device = request.device.empty() ? action_address_ : request.device;
+        if (is_agent_authorization_method(request.method) &&
+            !agent_authorized_device_.empty() &&
+            request_device == agent_authorized_device_) {
+            if (request.reply) {
+                try { request.reply(true, {}); } catch (...) {}
+            }
+            return;
+        }
         const bool supported_method = request.method == "RequestPinCode" ||
                                       request.method == "RequestPasskey" ||
                                       request.method == "RequestConfirmation" ||
@@ -1469,12 +1499,14 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
         lv_obj_clear_flag(dialog, LV_OBJ_FLAG_SCROLLABLE);
 
         const bool confirmation = agent_request_.method == "RequestConfirmation";
-        const bool authorization = agent_request_.method == "RequestAuthorization" ||
-                                   agent_request_.method == "AuthorizeService";
+        const bool device_authorization = agent_request_.method == "RequestAuthorization";
+        const bool service_authorization = agent_request_.method == "AuthorizeService";
+        const bool authorization = device_authorization || service_authorization;
         const bool passkey = agent_request_.method == "RequestPasskey";
         const char *title = confirmation ? "Confirm Bluetooth pairing"
-                            : (authorization ? "Allow Bluetooth connection?"
-                                              : (passkey ? "Bluetooth Passkey" : "Bluetooth PIN Code"));
+                            : device_authorization ? "Allow device connection?"
+                            : service_authorization ? "Allow Bluetooth service?"
+                            : passkey ? "Bluetooth Passkey" : "Bluetooth PIN Code";
         create_label(dialog,
                      title,
                      12, 8, 276, 0x58A6FF,
@@ -1485,8 +1517,10 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
         if (confirmation) {
             value = "Pairing code: ";
             value += agent_request_.hint.empty() ? "(not provided)" : agent_request_.hint;
-        } else if (authorization) {
-            value = "Authorize this device?";
+        } else if (device_authorization) {
+            value = "Allow this device to connect?";
+        } else if (service_authorization) {
+            value = "Allow this Bluetooth service?";
         } else {
             agent_input_textarea_ = lv_textarea_create(dialog);
             if (agent_input_textarea_) {
@@ -1520,12 +1554,33 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
             }
         }
         if (confirmation || authorization)
-            create_label(dialog, value.c_str(), 12, 48, 276, 0xFFFFFF, settings_fonts::mono(14));
+            create_label(dialog,
+                         value.c_str(),
+                         12,
+                         48,
+                         276,
+                         0xFFFFFF,
+                         settings_fonts::mono(service_authorization ? 12 : 14));
+        if (service_authorization) {
+            const std::string service = agent_request_.hint.empty()
+                ? "Service: (not specified)"
+                : "Service: " + agent_request_.hint;
+            create_label(dialog,
+                         service.c_str(),
+                         12,
+                         68,
+                         276,
+                         0xBBBBBB,
+                         settings_fonts::mono(8));
+        }
         if (!agent_error_.empty())
             create_label(dialog, agent_error_.c_str(), 12, 78, 276, 0xFFAA00, settings_fonts::sans(10));
+        const char *prompt_hint = confirmation ? "Enter: Confirm    ESC: Reject"
+                                  : device_authorization ? "Enter: Allow connection    ESC: Reject"
+                                  : service_authorization ? "Enter: Allow service    ESC: Reject"
+                                  : "Enter: OK    ESC: Cancel";
         create_label(dialog,
-                     (confirmation || authorization) ? "Enter: Confirm    ESC: Reject"
-                                  : "Enter: OK    ESC: Cancel",
+                     prompt_hint,
                      12, 106, 276, 0x58A6FF, settings_fonts::sans(10));
     }
 
@@ -1581,6 +1636,12 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
                 render_agent_prompt();
                 return;
             }
+            const std::string request_device = request.device.empty() ? action_address_ : request.device;
+            if (request.method == "RequestConfirmation")
+                agent_pairing_device_ = request_device;
+            if (is_agent_authorization_method(request.method) &&
+                (action_pending_ || request_device == agent_pairing_device_))
+                agent_authorized_device_ = request_device;
         }
         clear_agent_prompt();
         if (request.reply) {
