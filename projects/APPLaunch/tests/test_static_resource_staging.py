@@ -69,6 +69,10 @@ def test_static_copy_excludes_python_cache_artifacts_only():
         target = root / "staged" / "APPLaunch"
         (source / "bin" / "__pycache__").mkdir(parents=True)
         (source / "share" / "images").mkdir(parents=True)
+        (source / "preinstalled-desktop-apps.tsv").write_text(
+            "app.desktop\tApp\tapp.png\t/usr/bin/app\tfalse\tfalse\n",
+            encoding="ascii",
+        )
         (source / "bin" / "helper.py").write_text("pass\n")
         (source / "bin" / "legacy.pyc").write_bytes(b"bytecode")
         (source / "bin" / "legacy.pyo").write_bytes(b"optimized bytecode")
@@ -85,6 +89,7 @@ def test_static_copy_excludes_python_cache_artifacts_only():
 
         assert (target / "bin" / "helper.py").is_file()
         assert (target / "share" / "images" / "icon.png").is_file()
+        assert (target / "preinstalled-desktop-apps.tsv").is_file()
         assert not (target / "bin" / "legacy.pyc").exists()
         assert not (target / "bin" / "legacy.pyo").exists()
         assert not (target / "bin" / "__pycache__").exists()

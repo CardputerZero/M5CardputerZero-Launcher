@@ -6,6 +6,7 @@
 #include "desktop_entry.h"
 #include "launch.h"
 #include "launcher_platform.hpp"
+#include "model/preinstalled_app_manifest.hpp"
 
 #include <algorithm>
 #include <cstdio>
@@ -16,6 +17,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -78,6 +80,25 @@ std::string desktop_config_key(const std::string &filename)
     return key;
 }
 
+std::vector<PreinstalledDesktopApp> load_preinstalled_app_manifest(
+    const std::string &applications_dir)
+{
+    const std::filesystem::path path =
+        std::filesystem::path(applications_dir).parent_path() /
+        "preinstalled-desktop-apps.tsv";
+    if (applications_dir.empty() || path.empty()) return {};
+
+    int read_code = -1;
+    std::string contents;
+    cp0_signal_filesystem_api({"ReadFile", path.string(), "65536"},
+                              [&](int code, std::string data) {
+                                  read_code = code;
+                                  contents = std::move(data);
+                              });
+    if (read_code != 0) return {};
+    return parse_preinstalled_app_manifest(contents);
+}
+
 } // namespace
 
 void launcher_append_desktop_apps(std::list<app> &apps)
@@ -97,6 +118,7 @@ void launcher_append_desktop_apps(std::list<app> &apps)
 
         launcher_app_registry_begin_dynamic_refresh();
         refresh_started = true;
+        const auto preinstalled_apps = load_preinstalled_app_manifest(app_dir);
 
         std::istringstream lines(listing);
         std::string line;
@@ -167,25 +189,38 @@ void launcher_append_desktop_apps(std::list<app> &apps)
 
         sort_desktop_candidates(candidates);
         std::size_t appended = 0;
+        std::unordered_set<std::string> registered_execs;
         for (auto &candidate : candidates) {
-            if (appended >= LAUNCHER_MAX_DESKTOP_APPS) break;
             if (contains_exec(apps, candidate.entry.exec)) {
                 std::fprintf(stderr, "applications_load: skip duplicate Exec %s\n",
                              candidate.entry.exec.c_str());
                 continue;
             }
+            if (!registered_execs.insert(candidate.entry.exec).second) {
+                std::fprintf(stderr, "applications_load: skip duplicate Exec %s\n",
+                             candidate.entry.exec.c_str());
+                continue;
+            }
 
-            const AppDescriptor *descriptor = launcher_app_registry_register_dynamic(
-                candidate.entry.name, candidate.icon_path,
-                desktop_config_key(candidate.filename));
-            if (!descriptor) continue;
+            const LauncherAppOrigin origin = preinstalled_app_manifest_contains(
+                preinstalled_apps, candidate.filename, candidate.entry)
+                ? LauncherAppOrigin::Preinstalled
+                : LauncherAppOrigin::StoreInstalled;
+            const std::string config_key = desktop_config_key(candidate.filename);
+            if (!launcher_app_registry_register_dynamic(
+                    candidate.entry.name, candidate.icon_path, config_key, origin))
+                continue;
+            const bool settings_managed = origin == LauncherAppOrigin::Preinstalled;
+            const AppDescriptor descriptor{
+                candidate.entry.name.c_str(), candidate.icon_path.c_str(),
+                config_key.c_str(), settings_managed, !settings_managed, origin};
             bool enabled = true;
             try {
-                enabled = launcher_app_registry_is_enabled(*descriptor);
+                enabled = launcher_app_registry_is_enabled(descriptor);
             } catch (...) {
                 enabled = true;
             }
-            if (!enabled) continue;
+            if (!enabled || appended >= LAUNCHER_MAX_DESKTOP_APPS) continue;
 
             apps.emplace_back(candidate.entry.name, candidate.icon_path, candidate.entry.exec,
                               candidate.entry.terminal, candidate.entry.sysplause);

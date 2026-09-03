@@ -36,6 +36,20 @@ public:
         LineThreeY    = 75,
         StatusY       = 99,
         HintY         = 133,
+        TableX        = 8,
+        TableY        = 23,
+        TableW        = 304,
+        TableRowH     = 27,
+        TableKeyX     = 10,
+        TableKeyW     = 70,
+        TableDividerX = 83,
+        TableDividerW = 1,
+        TableDividerH = 26,
+        TableValueX   = 88,
+        TableValueW   = 206,
+        TableStatusY  = 107,
+        TableStatusH  = 18,
+        TableHintH    = 13,
     };
 
     static constexpr int metric(LayoutMetric value)

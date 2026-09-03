@@ -539,7 +539,7 @@ public:
         item_count_ = static_cast<uint32_t>(item_containers_.size());
 
         // After initial creation, position the first entry in the center and trigger a style refresh.
-        selected_index = 2;
+        selected_index = 0;
 
         scroll_to_selected(ComponensObj, false);
     }

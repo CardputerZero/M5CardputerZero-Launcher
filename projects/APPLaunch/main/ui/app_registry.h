@@ -7,6 +7,13 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
+
+enum class LauncherAppOrigin : std::uint8_t {
+    Builtin,
+    Preinstalled,
+    StoreInstalled,
+};
 
 struct AppDescriptor {
     const char *label;
@@ -14,6 +21,7 @@ struct AppDescriptor {
     const char *config_key;
     bool configurable;
     bool always_on;
+    LauncherAppOrigin origin = LauncherAppOrigin::Builtin;
 };
 
 const AppDescriptor *launcher_app_registry_entries(std::size_t *count);

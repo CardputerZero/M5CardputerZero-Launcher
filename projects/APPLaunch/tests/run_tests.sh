@@ -5,6 +5,11 @@ settings_ui_root=$(CDPATH= cd -- "$test_root/../main/ui/settings" && pwd)
 python3 "$test_root/test_carousel_border_contract.py"
 python3 "$test_root/test_external_framebuffer_ownership.py"
 python3 "$test_root/test_settings_input_font_contract.py"
+python3 "$test_root/test_settings_menu_order.py"
+python3 "$test_root/test_settings_wifi_enable_copy_contract.py"
+python3 "$test_root/test_settings_ethernet_layout_contract.py"
+python3 "$test_root/test_preinstalled_app_packaging.py"
+python3 "$test_root/test_settings_storage_build_contract.py"
 python3 "$test_root/test_static_resource_staging.py"
 PYTHONPATH="$test_root/..${PYTHONPATH:+:$PYTHONPATH}" \
     python3 "$test_root/test_config_default_file.py"
@@ -38,6 +43,13 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$test_root/../main/ui/desktop_entry.cpp" \
     -o "$build_dir/test_desktop_entry"
 "$build_dir/test_desktop_entry"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$test_root/../main/ui" \
+    "$test_root/test_preinstalled_app_manifest.cpp" \
+    "$test_root/../main/ui/model/preinstalled_app_manifest.cpp" \
+    "$test_root/../main/ui/desktop_entry.cpp" \
+    -o "$build_dir/test_preinstalled_app_manifest"
+"$build_dir/test_preinstalled_app_manifest"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$test_root/../main/ui" \
     "$test_root/test_app_display_order.cpp" \
@@ -113,6 +125,17 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$settings_ui_root/settings_boot_action_policy.cpp" \
     -o "$build_dir/test_settings_models"
 "$build_dir/test_settings_models"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -pthread \
+    -I"$settings_ui_root" \
+    "$test_root/test_settings_ethernet_controller.cpp" \
+    "$settings_ui_root/settings_ethernet_controller.cpp" \
+    -o "$build_dir/test_settings_ethernet_controller"
+"$build_dir/test_settings_ethernet_controller"
+${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    "$test_root/test_settings_storage_model.cpp" \
+    "$settings_ui_root/settings_storage_model.cpp" \
+    -o "$build_dir/test_settings_storage_model"
+"$build_dir/test_settings_storage_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -I"$settings_ui_root" \
     "$test_root/test_settings_battery_info_model.cpp" \

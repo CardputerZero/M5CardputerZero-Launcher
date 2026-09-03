@@ -111,27 +111,37 @@ void SettingsBatteryInfoModel::rebuild_labels()
             "Temp: --C",
             "Current: --mA",
             "Voltage: --V",
-            "Remaining: --mAh",
-            "Full: --mAh",
+            "Remaining: 1750mAh",
+            "Full: 1750mAh",
         };
+        values_ = {"--%", "-- C", "-- mA", "-- V", "1750 mAh", "1750 mAh"};
         return;
     }
 
     char text[64];
     std::snprintf(text, sizeof(text), "Battery: %d%%", snapshot_.soc);
     labels_[0] = text;
+    std::snprintf(text, sizeof(text), "%d%%", snapshot_.soc);
+    values_[0] = text;
     std::snprintf(text, sizeof(text), "Temp: %.1fC", snapshot_.temperature_c10 / 10.0);
     labels_[1] = text;
-    if (snapshot_.current_ma == INT_MIN)
+    std::snprintf(text, sizeof(text), "%.1f C", snapshot_.temperature_c10 / 10.0);
+    values_[1] = text;
+    if (snapshot_.current_ma == INT_MIN) {
         labels_[2] = "Current: --mA";
-    else {
+        values_[2] = "-- mA";
+    } else {
         std::snprintf(text, sizeof(text), "Current: %dmA", snapshot_.current_ma);
         labels_[2] = text;
+        std::snprintf(text, sizeof(text), "%d mA", snapshot_.current_ma);
+        values_[2] = text;
     }
     std::snprintf(text, sizeof(text), "Voltage: %.2fV", snapshot_.voltage_mv / 1000.0);
     labels_[3] = text;
-    std::snprintf(text, sizeof(text), "Remaining: %dmAh", snapshot_.remain_mah);
-    labels_[4] = text;
-    std::snprintf(text, sizeof(text), "Full: %dmAh", snapshot_.full_mah);
-    labels_[5] = text;
+    std::snprintf(text, sizeof(text), "%.2f V", snapshot_.voltage_mv / 1000.0);
+    values_[3] = text;
+    labels_[4] = "Remaining: 1750mAh";
+    values_[4] = "1750 mAh";
+    labels_[5] = "Full: 1750mAh";
+    values_[5] = "1750 mAh";
 }

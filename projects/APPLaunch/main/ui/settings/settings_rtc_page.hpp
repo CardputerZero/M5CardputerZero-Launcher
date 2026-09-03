@@ -58,6 +58,8 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
+void settings_rtc_ntp_api(int command, void *data) noexcept;
+
 std::unique_ptr<DComponens::LvglComponensBase> settings_rtc_page_factory(
     lv_obj_t *parent,
     const NodeIter &parent_node,

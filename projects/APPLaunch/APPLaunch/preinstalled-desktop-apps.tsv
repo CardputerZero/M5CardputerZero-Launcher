@@ -1,0 +1,2 @@
+# filename<TAB>Name<TAB>Icon<TAB>Exec<TAB>Terminal<TAB>Sysplause
+zclaw.desktop	ZClaw	share/images/claw_100.png	/usr/share/APPLaunch/bin/ZClaw	false	true

@@ -10,6 +10,7 @@
 #include "settings_brightness_page.hpp"
 #include "settings_camera_resolution_page.hpp"
 #include "settings_confirmation_page.hpp"
+#include "settings_ethernet_controller.hpp"
 #include "settings_menu_roller.hpp"
 #include "settings_rtc_page.hpp"
 #include "settings_screen_timeout_page.hpp"
@@ -26,7 +27,10 @@
 #include "../model/setup_value_policy.hpp"
 
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <string>
@@ -108,6 +112,71 @@ void wifi_power_api(int cmd, void *data)
             wifi_power_state   = !next;
         }
     }
+}
+
+settings_ethernet::CommandResult execute_ethernet_operation(settings_ethernet::Operation operation)
+{
+    struct Invocation {
+        std::mutex mutex;
+        std::condition_variable condition;
+        settings_ethernet::CommandResult result;
+        bool completed = false;
+    };
+    auto invocation = std::make_shared<Invocation>();
+    try {
+        cp0_signal_process_api(
+            settings_ethernet::process_request(operation),
+            [invocation](int code, std::string output) {
+                {
+                    std::lock_guard<std::mutex> lock(invocation->mutex);
+                    if (invocation->completed) return;
+                    invocation->result.code = code;
+                    invocation->result.output = std::move(output);
+                    invocation->completed = true;
+                }
+                invocation->condition.notify_all();
+            });
+    } catch (...) {
+        return {};
+    }
+    std::unique_lock<std::mutex> lock(invocation->mutex);
+    const auto callback_timeout = operation == settings_ethernet::Operation::QueryState
+        ? std::chrono::seconds(7)
+        : std::chrono::seconds(12);
+    if (!invocation->condition.wait_for(lock, callback_timeout,
+                                        [&invocation] { return invocation->completed; }))
+        return {};
+    return invocation->result;
+}
+
+settings_ethernet::Controller &ethernet_controller()
+{
+    static settings_ethernet::Controller controller(execute_ethernet_operation);
+    return controller;
+}
+
+void ethernet_enabled_api(int cmd, void *data)
+{
+    if ((cmd == SettingApiReadFlag || cmd == SettingApiReadFlagTimeStart) && data) {
+        auto &controller = ethernet_controller();
+        auto state = controller.snapshot();
+        if (!state.pending) {
+            controller.request_refresh();
+            state = controller.snapshot();
+        }
+
+        if (cmd == SettingApiReadFlag) {
+            *static_cast<bool *>(data) = state.known && state.connected;
+        } else {
+            auto *result = static_cast<SettingApiReadFlagTimeStartData *>(data);
+            std::get<0>(*result) = state.known && state.connected;
+            if (auto *operation_started = std::get<1>(*result)) {
+                operation_started->store(state.pending, std::memory_order_release);
+            }
+        }
+        return;
+    }
+    if (cmd == SettingApiActivate) ethernet_controller().toggle();
 }
 
 Tree *&settings_tree_factory_context()
@@ -421,14 +490,6 @@ void UISettingTreePage::create_page_detail()
     settings_tree_factory_context() = &mode_tree;
     NodeIter root                   = mode_tree.set_head(SettingEntry{"Settings"});
 
-#ifdef LAUNCHER_BUILD
-    mode_tree.append_child(root, SettingEntry{"Launcher", roller_page_factory});
-#endif
-    {
-        NodeIter boot = mode_tree.append_child(root, SettingEntry{"Boot", roller_page_factory});
-        settings_t12b::append_boot_children(mode_tree, boot, confirm_page3_factory);
-    }
-
     {
         NodeIter screen = mode_tree.append_child(root, SettingEntry{"Screen", roller_page_factory});
         {
@@ -446,56 +507,31 @@ void UISettingTreePage::create_page_detail()
     }
 
     {
-        NodeIter wifi = mode_tree.append_child(root, SettingEntry{"WiFi", roller_page_factory});
-        mode_tree.append_child(wifi, SettingEntry{"Power", wifi_power_api, true});
-        mode_tree.append_child(wifi, SettingEntry{"Scan", wifi_scan_page3_factory, PageType::FullCustom});
-        mode_tree.append_child(wifi,
-                               SettingEntry{"Add Hidden WiFi", wifi_add_hidden_page_factory, PageType::FullCustom});
-    }
-
-    {
-        NodeIter speaker = mode_tree.append_child(root, SettingEntry{"Speaker", roller_page_factory});
-        NodeIter volume  = mode_tree.append_child(speaker, SettingEntry{"Volume", volume_page3_factory});
+        NodeIter speaker = mode_tree.append_child(
+            root, SettingEntry{"Speaker", volume_page3_factory, PageType::FullCustom});
         for (int index = 0; index < setup_values::volume_metric(setup_values::VolumeMetric::OptionCount); ++index) {
             mode_tree.append_child(
-                volume, SettingEntry{std::to_string(setup_values::volume_percent(index)) + "%"});
+                speaker, SettingEntry{std::to_string(setup_values::volume_percent(index)) + "%"});
         }
     }
+
     {
-        NodeIter info = mode_tree.append_child(root, SettingEntry{"Battery", roller_page_factory});
-        mode_tree.append_child(info, SettingEntry{"Info", settings_battery_info_page_factory, PageType::FullCustom});
-#if 0
-        NodeIter bq_calibrate = mode_tree.append_child(info, SettingEntry{"BQ Calibrate", bq_calibrate_page3_factory});
-        mode_tree.append_child(bq_calibrate, SettingEntry{"Enter CAL"});
-        mode_tree.append_child(bq_calibrate, SettingEntry{"CC Offset"});
-        mode_tree.append_child(bq_calibrate, SettingEntry{"Board Offset"});
-        mode_tree.append_child(bq_calibrate, SettingEntry{"Exit CAL"});
-#endif
+        NodeIter wifi = mode_tree.append_child(root, SettingEntry{"Wi-Fi", roller_page_factory});
+        mode_tree.append_child(wifi, SettingEntry{"Enable", wifi_power_api, true});
+        mode_tree.append_child(wifi, SettingEntry{"Networks", wifi_scan_page3_factory, PageType::FullCustom});
+        mode_tree.append_child(wifi,
+                               SettingEntry{"Join Hidden Network", wifi_add_hidden_page_factory, PageType::FullCustom});
     }
 
     {
-        NodeIter about = mode_tree.append_child(root, SettingEntry{"About", roller_page_factory});
-        mode_tree.append_child(about, SettingEntry{"OS", settings_system_info_page3_factory, PageType::FullCustom});
-        mode_tree.append_child(about, SettingEntry{"APPLaunch", settings_update_page_factory, PageType::FullCustom});
+        NodeIter ethernet = mode_tree.append_child(root, SettingEntry{"Ethernet", roller_page_factory});
+        NodeIter ethernet_enable =
+            mode_tree.append_child(ethernet, SettingEntry{"Enable", ethernet_enabled_api, true});
+        ethernet_enable->status_read_policy = SettingStatusReadPolicy::Direct;
+        mode_tree.append_child(
+            ethernet, SettingEntry{"Info", settings_ethernet_page_factory, PageType::FullCustom});
     }
 
-    {
-        mode_tree.append_child(root, SettingEntry{"Help", settings_t12b_help_page_factory, PageType::FullCustom});
-    }
-
-    {
-        NodeIter ext_port = mode_tree.append_child(root, SettingEntry{"ExtPort", roller_page_factory});
-        mode_tree.append_child(ext_port, SettingEntry{"GROVE5V",std::bind(&ext_port_com, "GROVE5V", std::placeholders::_1, std::placeholders::_2), true});
-        mode_tree.append_child(ext_port, SettingEntry{"EXT5V",std::bind(&ext_port_com, "EXT5V", std::placeholders::_1, std::placeholders::_2), true});
-    }
-
-    {
-        NodeIter developer = mode_tree.append_child(root, SettingEntry{"Developer", roller_page_factory});
-        SettingEntry adb_entry{"ADB", LvSettingAdbGuidePage3::toggle_setting, true};
-        adb_entry.status_read_policy = SettingStatusReadPolicy::Direct;
-        mode_tree.append_child(developer, std::move(adb_entry));
-        mode_tree.append_child(developer, SettingEntry{"ADB guide", adb_guide_page_factory, PageType::FullCustom});
-    }
     {
         NodeIter bluetooth = mode_tree.append_child(root, SettingEntry{"Bluetooth", bluetooth_roller_page_factory});
         mode_tree.append_child(bluetooth, SettingEntry{"Power", bluetooth_power_api, true});
@@ -508,11 +544,92 @@ void UISettingTreePage::create_page_detail()
     }
 
     {
-        mode_tree.append_child(root, SettingEntry{"Ethernet", settings_ethernet_page_factory, PageType::FullCustom});
+        NodeIter ext_port = mode_tree.append_child(root, SettingEntry{"ExtPort", roller_page_factory});
+        mode_tree.append_child(
+            ext_port,
+            SettingEntry{"Ext 5V", std::bind(&ext_port_com, "EXT5V", std::placeholders::_1,
+                                              std::placeholders::_2), true});
+        mode_tree.append_child(
+            ext_port,
+            SettingEntry{"Grove 5V", std::bind(&ext_port_com, "GROVE5V", std::placeholders::_1,
+                                                std::placeholders::_2), true});
     }
 
     {
-        mode_tree.append_child(root, SettingEntry{"Account", settings_account_page_factory, PageType::FullCustom});
+        NodeIter info = mode_tree.append_child(root, SettingEntry{"Battery", roller_page_factory});
+        mode_tree.append_child(info, SettingEntry{"Info", settings_battery_info_page_factory, PageType::FullCustom});
+#if 0
+        NodeIter bq_calibrate = mode_tree.append_child(info, SettingEntry{"BQ Calibrate", bq_calibrate_page3_factory});
+        mode_tree.append_child(bq_calibrate, SettingEntry{"Enter CAL"});
+        mode_tree.append_child(bq_calibrate, SettingEntry{"CC Offset"});
+        mode_tree.append_child(bq_calibrate, SettingEntry{"Board Offset"});
+        mode_tree.append_child(bq_calibrate, SettingEntry{"Exit CAL"});
+#endif
+    }
+
+#ifdef LAUNCHER_BUILD
+    mode_tree.append_child(root, SettingEntry{"Launcher", roller_page_factory});
+#endif
+
+    {
+        NodeIter developer = mode_tree.append_child(root, SettingEntry{"Developer", roller_page_factory});
+        SettingEntry adb_entry{"ADB", LvSettingAdbGuidePage3::toggle_setting, true};
+        adb_entry.status_read_policy = SettingStatusReadPolicy::Direct;
+        mode_tree.append_child(developer, std::move(adb_entry));
+        mode_tree.append_child(developer, SettingEntry{"ADB guide", adb_guide_page_factory, PageType::FullCustom});
+    }
+
+    {
+        mode_tree.append_child(root, SettingEntry{"User", settings_account_page_factory, PageType::FullCustom});
+    }
+    if(0)
+    {
+        NodeIter date_time = mode_tree.append_child(root, SettingEntry{"Date & Time", roller_page_factory});
+        SettingEntry ntp_entry{"NTP", settings_rtc_ntp_api, true};
+        ntp_entry.status_read_policy = SettingStatusReadPolicy::Direct;
+        mode_tree.append_child(date_time, std::move(ntp_entry));
+        {
+            NodeIter year = mode_tree.append_child(date_time, SettingEntry{"Year", rtc_page3_factory});
+            append_numeric_options(mode_tree, year, 2000, 2099);
+        }
+        {
+            NodeIter month = mode_tree.append_child(date_time, SettingEntry{"Month", rtc_page3_factory});
+            append_numeric_options(mode_tree, month, 1, 12);
+        }
+        {
+            NodeIter day = mode_tree.append_child(date_time, SettingEntry{"Day", rtc_page3_factory});
+            append_numeric_options(mode_tree, day, 1, 31);
+        }
+        {
+            NodeIter hour = mode_tree.append_child(date_time, SettingEntry{"Hour", rtc_page3_factory});
+            append_numeric_options(mode_tree, hour, 0, 23);
+        }
+        {
+            NodeIter minute = mode_tree.append_child(date_time, SettingEntry{"Minute", rtc_page3_factory});
+            append_numeric_options(mode_tree, minute, 0, 59);
+        }
+        {
+            NodeIter second = mode_tree.append_child(date_time, SettingEntry{"Second", rtc_page3_factory});
+            append_numeric_options(mode_tree, second, 0, 59);
+        }
+        {
+            NodeIter write_rtc = mode_tree.append_child(
+                date_time, SettingEntry{"Write hardware RTC?", settings_rtc_confirm_page_factory});
+            mode_tree.append_child(write_rtc, SettingEntry{"Yes"});
+            mode_tree.append_child(write_rtc, SettingEntry{"No"});
+        }
+    }
+
+    {
+        NodeIter system = mode_tree.append_child(root, SettingEntry{"System", roller_page_factory});
+        mode_tree.append_child(system,
+                               SettingEntry{"Software", settings_update_page_factory, PageType::FullCustom});
+        mode_tree.append_child(system,
+                               SettingEntry{"Storage", settings_storage_page_factory, PageType::FullCustom});
+        mode_tree.append_child(system,
+                               SettingEntry{"Credit", settings_credit_page_factory, PageType::FullCustom});
+        settings_t12b::append_boot_action_child(
+            mode_tree, system, settings_t12b::boot_actions::Action::Reboot, confirm_page3_factory);
     }
 
     // {

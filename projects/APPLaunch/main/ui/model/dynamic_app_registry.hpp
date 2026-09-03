@@ -12,24 +12,29 @@ struct DynamicAppRegistration {
     std::string label;
     std::string icon;
     std::string config_key;
+    LauncherAppOrigin origin = LauncherAppOrigin::StoreInstalled;
 
     void bind_descriptor()
     {
-        desc = {label.c_str(), icon.c_str(), config_key.c_str(), true, false};
+        const bool settings_managed = origin == LauncherAppOrigin::Preinstalled;
+        desc = {label.c_str(), icon.c_str(), config_key.c_str(),
+                settings_managed, !settings_managed, origin};
     }
 
     DynamicAppRegistration(std::string app_label,
                            std::string app_icon,
-                           std::string app_config_key)
+                           std::string app_config_key,
+                           LauncherAppOrigin app_origin)
         : label(std::move(app_label)),
           icon(std::move(app_icon)),
-          config_key(std::move(app_config_key))
+          config_key(std::move(app_config_key)),
+          origin(app_origin)
     {
         bind_descriptor();
     }
 
     DynamicAppRegistration(const DynamicAppRegistration &other)
-        : label(other.label), icon(other.icon), config_key(other.config_key)
+        : label(other.label), icon(other.icon), config_key(other.config_key), origin(other.origin)
     {
         bind_descriptor();
     }
@@ -37,7 +42,8 @@ struct DynamicAppRegistration {
     DynamicAppRegistration(DynamicAppRegistration &&other) noexcept
         : label(std::move(other.label)),
           icon(std::move(other.icon)),
-          config_key(std::move(other.config_key))
+          config_key(std::move(other.config_key)),
+          origin(other.origin)
     {
         bind_descriptor();
     }
@@ -48,6 +54,7 @@ struct DynamicAppRegistration {
         label = other.label;
         icon = other.icon;
         config_key = other.config_key;
+        origin = other.origin;
         bind_descriptor();
         return *this;
     }
@@ -58,6 +65,7 @@ struct DynamicAppRegistration {
         label = std::move(other.label);
         icon = std::move(other.icon);
         config_key = std::move(other.config_key);
+        origin = other.origin;
         bind_descriptor();
         return *this;
     }
@@ -76,13 +84,14 @@ public:
         refreshing_ = true;
     }
 
-    const AppDescriptor *register_pending(const std::string &label,
-                                          const std::string &icon,
-                                          const std::string &config_key)
+    bool register_pending(const std::string &label,
+                          const std::string &icon,
+                          const std::string &config_key,
+                          LauncherAppOrigin origin)
     {
-        if (!refreshing_ || label.empty() || config_key.empty()) return nullptr;
-        pending_.emplace_back(label, icon, config_key);
-        return &pending_.back().desc;
+        if (!refreshing_ || label.empty() || config_key.empty()) return false;
+        pending_.emplace_back(label, icon, config_key, origin);
+        return true;
     }
 
     void commit_refresh()

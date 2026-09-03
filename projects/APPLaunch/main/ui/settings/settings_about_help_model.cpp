@@ -28,16 +28,13 @@ Content about(std::string_view version,
     };
 }
 
-Content help()
+Content credit()
 {
     return {
-        "Help",
+        "Credit",
         {
-            "Up/Down: select",
-            "Enter/Right: open or apply",
-            "Esc/Left: go back",
-            "Toggle status is read from the device",
-            "A failed operation restores the previous state",
+            "Open-source software and asset credits",
+            "Credit list pending.",
         },
     };
 }

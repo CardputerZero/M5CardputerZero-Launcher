@@ -533,6 +533,48 @@ PrivilegedResultKind classify_privileged_result(int result, int exit_code) noexc
 
 namespace {
 
+struct NtpAdapterState {
+    std::mutex mutex;
+    bool available = true;
+    bool enabled = true;
+    bool pending = false;
+    bool initialized = false;
+};
+
+NtpAdapterState &ntp_adapter_state()
+{
+    static NtpAdapterState state;
+    return state;
+}
+
+void refresh_ntp_cache()
+{
+    auto &state = ntp_adapter_state();
+    {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        if (state.pending || state.initialized) return;
+        state.pending = true;
+    }
+
+    const int result = read_ntp_async([](NtpReadResult value) {
+        session().set_ntp_status(value.status);
+        auto &state = ntp_adapter_state();
+        {
+            std::lock_guard<std::mutex> lock(state.mutex);
+            state.pending = false;
+            state.initialized = true;
+            state.available = value.available;
+            if (value.available) state.enabled = value.enabled;
+        }
+    });
+    if (result != 0) {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        state.pending = false;
+        state.initialized = true;
+        state.available = false;
+    }
+}
+
 template <typename Callback, typename Value>
 void invoke_noexcept(const Callback &callback, Value value) noexcept
 {
@@ -882,6 +924,69 @@ RtcWorkflowModel &session() noexcept
 } // namespace settings_rtc
 
 } // namespace
+
+void settings_rtc_ntp_api(int command, void *data) noexcept
+{
+    auto &state = settings_rtc::ntp_adapter_state();
+    if (command == SettingApiReadFlag || command == SettingApiReadFlagTimeStart) {
+        if (command == SettingApiReadFlagTimeStart) settings_rtc::refresh_ntp_cache();
+
+        bool enabled = false;
+        bool pending = false;
+        {
+            std::lock_guard<std::mutex> lock(state.mutex);
+            enabled = state.enabled;
+            pending = state.pending;
+        }
+        if (!data) return;
+
+        if (command == SettingApiReadFlag) {
+            *static_cast<bool *>(data) = enabled;
+        } else {
+            auto *result = static_cast<SettingApiReadFlagTimeStartData *>(data);
+            std::get<0>(*result) = enabled;
+            if (std::get<1>(*result))
+                std::get<1>(*result)->store(pending, std::memory_order_release);
+        }
+        return;
+    }
+    if (command != SettingApiActivate) return;
+
+    auto &session = settings_rtc::session();
+    bool desired = false;
+    {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        if (state.pending || !state.available) return;
+        desired = !state.enabled;
+        state.pending = true;
+    }
+    if (!session.begin_ntp_toggle(desired)) {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        state.pending = false;
+        return;
+    }
+
+    const int result = settings_rtc::set_ntp_async(
+        desired,
+        [desired](settings_rtc::PrivilegedResult value) {
+            settings_rtc::session().finish_ntp_toggle(value.succeeded(), desired ? 1 : 0);
+            auto &state = settings_rtc::ntp_adapter_state();
+            {
+                std::lock_guard<std::mutex> lock(state.mutex);
+                state.pending = false;
+                if (value.succeeded()) {
+                    state.available = true;
+                    state.enabled = desired;
+                }
+                state.initialized = true;
+            }
+        });
+    if (result != 0) {
+        std::lock_guard<std::mutex> lock(state.mutex);
+        state.pending = false;
+        session.cancel_ntp_toggle();
+    }
+}
 
 namespace {
 

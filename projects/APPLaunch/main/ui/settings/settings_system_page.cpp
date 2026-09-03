@@ -132,6 +132,71 @@ void set_label(lv_obj_t *label, const std::string &text)
     if (label) lv_label_set_text(label, text.c_str());
 }
 
+bool uses_network_table(SettingsSystemPageKind kind)
+{
+    return kind == SettingsSystemPageKind::Network ||
+           kind == SettingsSystemPageKind::Ethernet;
+}
+
+lv_obj_t *create_network_table_row(lv_obj_t *parent,
+                                   int row_index,
+                                   const char *key)
+{
+    if (!parent) return nullptr;
+    using LayoutMetric = LvSettingSystemInfoPage3::LayoutMetric;
+    const auto metric = [](LayoutMetric value) {
+        return LvSettingSystemInfoPage3::metric(value);
+    };
+
+    lv_obj_t *row = lv_obj_create(parent);
+    if (!row) return nullptr;
+    lv_obj_set_pos(row,
+                   metric(LayoutMetric::TableX),
+                   metric(LayoutMetric::TableY) + row_index * metric(LayoutMetric::TableRowH));
+    lv_obj_set_size(row, metric(LayoutMetric::TableW), metric(LayoutMetric::TableRowH));
+    lv_obj_set_style_bg_color(row,
+                              lv_color_hex(row_index % 2 == 0 ? 0x151515 : 0x1B1B1B),
+                              LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(row, 1, LV_PART_MAIN);
+    lv_obj_set_style_border_color(row, lv_color_hex(0x383838), LV_PART_MAIN);
+    lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(row, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(row, 0, LV_PART_MAIN);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t *divider = lv_obj_create(row);
+    if (divider) {
+        lv_obj_set_pos(divider, metric(LayoutMetric::TableDividerX), 0);
+        lv_obj_set_size(divider,
+                        metric(LayoutMetric::TableDividerW),
+                        metric(LayoutMetric::TableDividerH));
+        lv_obj_set_style_bg_color(divider, lv_color_hex(0x505050), LV_PART_MAIN);
+        lv_obj_set_style_bg_opa(divider, LV_OPA_COVER, LV_PART_MAIN);
+        lv_obj_set_style_border_width(divider, 0, LV_PART_MAIN);
+        lv_obj_set_style_pad_all(divider, 0, LV_PART_MAIN);
+        lv_obj_set_style_radius(divider, 0, LV_PART_MAIN);
+        lv_obj_remove_flag(divider, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_remove_flag(divider, LV_OBJ_FLAG_SCROLLABLE);
+    }
+
+    create_label(row,
+                 metric(LayoutMetric::TableKeyX),
+                 4,
+                 metric(LayoutMetric::TableKeyW),
+                 key,
+                 0xA8A8A8,
+                 settings_fonts::sans(13, LV_FREETYPE_FONT_STYLE_BOLD));
+    return create_label(row,
+                        metric(LayoutMetric::TableValueX),
+                        3,
+                        metric(LayoutMetric::TableValueW),
+                        "--",
+                        0xF2F2F2,
+                        settings_fonts::mono(14));
+}
+
 SettingsSystemPageKind resolve_kind(const NodeIter &page_node, SettingsSystemPageKind requested)
 {
     if (requested != SettingsSystemPageKind::Auto) return requested;
@@ -310,10 +375,10 @@ void render_system_info(LvSettingSystemInfoPage3 *page)
     switch (state->kind) {
     case SettingsSystemPageKind::Network:
     case SettingsSystemPageKind::Ethernet:
-        set_label(state->title, "Ethernet");
-        set_label(state->line_one, "IP: " + state->network.ip);
-        set_label(state->line_two, "Gateway: " + state->network.gateway);
-        set_label(state->line_three, "MAC: " + state->network.mac);
+        set_label(state->title, "Ethernet Info");
+        set_label(state->line_one, state->network.ip);
+        set_label(state->line_two, state->network.gateway);
+        set_label(state->line_three, state->network.mac);
         break;
     case SettingsSystemPageKind::Account:
         set_label(state->title, "Account");
@@ -353,12 +418,14 @@ void render_system_info(LvSettingSystemInfoPage3 *page)
 
     // Keep machine-readable values (addresses, versions and commits) in a
     // fixed-width face while account and explanatory text retain CJK coverage.
-    const bool machine_values = state->kind == SettingsSystemPageKind::Network ||
-                                state->kind == SettingsSystemPageKind::Ethernet ||
+    const bool network_table = uses_network_table(state->kind);
+    const bool machine_values = network_table ||
                                 state->kind == SettingsSystemPageKind::OS ||
                                 state->kind == SettingsSystemPageKind::Version ||
                                 state->kind == SettingsSystemPageKind::Build;
-    const lv_font_t *line_font = machine_values ? settings_fonts::mono(11) : settings_fonts::cjk_sans(12);
+    const lv_font_t *line_font = network_table
+        ? settings_fonts::mono(14)
+        : machine_values ? settings_fonts::mono(11) : settings_fonts::cjk_sans(12);
     for (lv_obj_t *line : {state->line_one, state->line_two, state->line_three}) {
         if (!line) continue;
         lv_obj_set_style_text_font(line, line_font, LV_PART_MAIN);
@@ -629,36 +696,66 @@ void LvSettingSystemInfoPage3::create_ui(lv_obj_t *parent)
         nullptr,
         std::bind(&system_info_key_event, this, std::placeholders::_1));
 
-    state_->title = create_label(ComponensObj,
-                                 LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
-                                 LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TitleY),
-                                 LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
-                                 "System", 0x58A6FF, title_font());
-    state_->line_one = create_label(ComponensObj,
-                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
-                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::LineOneY),
-                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
-                                    "", 0xECECEC, body_font());
-    state_->line_two = create_label(ComponensObj,
-                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
-                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::LineTwoY),
-                                    LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
-                                    "", 0xCCCCCC, body_font());
-    state_->line_three = create_label(ComponensObj,
-                                      LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
-                                      LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::LineThreeY),
-                                      LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
-                                      "", 0xAAAAAA, body_font());
+    const bool network_table = uses_network_table(state_->kind);
+    state_->title = create_label(
+        ComponensObj,
+        LvSettingSystemInfoPage3::metric(LayoutMetric::TextX),
+        LvSettingSystemInfoPage3::metric(LayoutMetric::TitleY),
+        LvSettingSystemInfoPage3::metric(LayoutMetric::TextW),
+        "System",
+        0x58A6FF,
+        network_table ? settings_fonts::sans(16, LV_FREETYPE_FONT_STYLE_BOLD) : title_font());
+    if (network_table) {
+        state_->line_one = create_network_table_row(ComponensObj, 0, "IP");
+        state_->line_two = create_network_table_row(ComponensObj, 1, "Gateway");
+        state_->line_three = create_network_table_row(ComponensObj, 2, "MAC");
+    } else {
+        state_->line_one = create_label(ComponensObj,
+                                        LvSettingSystemInfoPage3::metric(LayoutMetric::TextX),
+                                        LvSettingSystemInfoPage3::metric(LayoutMetric::LineOneY),
+                                        LvSettingSystemInfoPage3::metric(LayoutMetric::TextW),
+                                        "", 0xECECEC, body_font());
+        state_->line_two = create_label(ComponensObj,
+                                        LvSettingSystemInfoPage3::metric(LayoutMetric::TextX),
+                                        LvSettingSystemInfoPage3::metric(LayoutMetric::LineTwoY),
+                                        LvSettingSystemInfoPage3::metric(LayoutMetric::TextW),
+                                        "", 0xCCCCCC, body_font());
+        state_->line_three = create_label(ComponensObj,
+                                          LvSettingSystemInfoPage3::metric(LayoutMetric::TextX),
+                                          LvSettingSystemInfoPage3::metric(LayoutMetric::LineThreeY),
+                                          LvSettingSystemInfoPage3::metric(LayoutMetric::TextW),
+                                          "", 0xAAAAAA, body_font());
+    }
     state_->status_label = create_label(ComponensObj,
-                                        LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
-                                        LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::StatusY),
-                                        LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
-                                        "", 0xF0C850, body_font(), true);
+                                        LvSettingSystemInfoPage3::metric(LayoutMetric::TextX),
+                                        network_table
+                                            ? LvSettingSystemInfoPage3::metric(LayoutMetric::TableStatusY)
+                                            : LvSettingSystemInfoPage3::metric(LayoutMetric::StatusY),
+                                        LvSettingSystemInfoPage3::metric(LayoutMetric::TextW),
+                                        "", 0xF0C850,
+                                        network_table ? settings_fonts::sans(11) : body_font(),
+                                        !network_table);
     state_->hint = create_label(ComponensObj,
-                                LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextX),
-                                LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::HintY),
-                                LvSettingSystemInfoPage3::metric(LvSettingSystemInfoPage3::LayoutMetric::TextW),
-                                "", 0x46DC87, hint_font());
+                                LvSettingSystemInfoPage3::metric(LayoutMetric::TextX),
+                                LvSettingSystemInfoPage3::metric(LayoutMetric::HintY),
+                                LvSettingSystemInfoPage3::metric(LayoutMetric::TextW),
+                                "", 0x46DC87,
+                                network_table ? settings_fonts::sans(10, LV_FREETYPE_FONT_STYLE_BOLD)
+                                              : hint_font());
+    if (network_table) {
+        if (state_->status_label) {
+            lv_obj_set_height(
+                state_->status_label,
+                LvSettingSystemInfoPage3::metric(LayoutMetric::TableStatusH));
+            lv_label_set_long_mode(state_->status_label, LV_LABEL_LONG_SCROLL_CIRCULAR);
+        }
+        if (state_->hint) {
+            lv_obj_set_height(
+                state_->hint,
+                LvSettingSystemInfoPage3::metric(LayoutMetric::TableHintH));
+            lv_label_set_long_mode(state_->hint, LV_LABEL_LONG_CLIP);
+        }
+    }
     refresh_system_info(this);
 }
 

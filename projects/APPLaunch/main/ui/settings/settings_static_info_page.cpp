@@ -1,5 +1,6 @@
 #include "settings_static_info_page.hpp"
 #include "settings_fonts.hpp"
+#include "settings_storage_model.hpp"
 
 #include "cp0_font_service.hpp"
 
@@ -184,11 +185,31 @@ std::unique_ptr<DComponens::LvglComponensBase> settings_t12b_about_page_factory(
             build_version(), build_date(), build_channel(), build_commit()));
 }
 
-std::unique_ptr<DComponens::LvglComponensBase> settings_t12b_help_page_factory(
+std::unique_ptr<DComponens::LvglComponensBase> settings_storage_page_factory(
+    lv_obj_t *parent,
+    const NodeIter &page_node,
+    std::function<void()> on_back)
+{
+    const SettingsStorageInfo storage = SettingsStorageModel::read();
+    settings_t12b::about_help::Content content{"Storage", {}};
+    if (storage.valid) {
+        content.lines = {
+            "SD card",
+            "Total: " + SettingsStorageModel::format_bytes(storage.total_bytes),
+            "Available: " + SettingsStorageModel::format_bytes(storage.available_bytes),
+        };
+    } else {
+        content.lines = {"SD card information unavailable."};
+    }
+    return std::make_unique<LvSettingStaticInfoPage3>(
+        parent, page_node, std::move(on_back), std::move(content));
+}
+
+std::unique_ptr<DComponens::LvglComponensBase> settings_credit_page_factory(
     lv_obj_t *parent,
     const NodeIter &page_node,
     std::function<void()> on_back)
 {
     return std::make_unique<LvSettingStaticInfoPage3>(
-        parent, page_node, std::move(on_back), settings_t12b::about_help::help());
+        parent, page_node, std::move(on_back), settings_t12b::about_help::credit());
 }

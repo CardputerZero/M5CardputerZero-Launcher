@@ -37,4 +37,11 @@ config APPLAUNCH_DARWIN_SDL
 
 endchoice
 
+# Product builds may inspect Linux MMC mounts for the SD card. Keep this
+# disabled for SDL targets so host storage is never exposed as product media.
+config APPLAUNCH_TARGET_SD_MMC_STORAGE
+    bool
+    depends on APPLAUNCH_LINUX_CP0 || APPLAUNCH_LINUX_X86_CROSS_CP0 || APPLAUNCH_MAC_CROSS_CP0 || APPLAUNCH_WIN_X86_CROSS_CP0
+    default y
+
 endmenu
