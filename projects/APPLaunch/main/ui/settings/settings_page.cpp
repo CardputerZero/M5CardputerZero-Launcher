@@ -8,7 +8,6 @@
 #include "settings_bluetooth_connected_devices_page.hpp"
 #include "settings_bluetooth_scan_page.hpp"
 #include "settings_brightness_page.hpp"
-#include "settings_camera_resolution_page.hpp"
 #include "settings_confirmation_page.hpp"
 #include "settings_ethernet_controller.hpp"
 #include "settings_menu_roller.hpp"
@@ -259,13 +258,6 @@ static std::unique_ptr<DComponens::LvglComponensBase> volume_page3_factory(lv_ob
                                                                            std::function<void()> on_back)
 {
     return std::make_unique<LvSettingVolumePage3>(parent, page_node, std::move(on_back));
-}
-
-static std::unique_ptr<DComponens::LvglComponensBase> resolution_page3_factory(lv_obj_t *parent,
-                                                                               const NodeIter &page_node,
-                                                                               std::function<void()> on_back)
-{
-    return std::make_unique<LvSettingResolutionPage3>(parent, page_node, std::move(on_back));
 }
 
 static std::unique_ptr<DComponens::LvglComponensBase> bq_calibrate_page3_factory(lv_obj_t *parent,
