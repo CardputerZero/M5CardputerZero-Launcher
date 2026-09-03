@@ -92,6 +92,8 @@ private:
 
     void game_start();
 
+    void stop_game_timer() noexcept;
+
     void game_over();
 
     void game_tick();

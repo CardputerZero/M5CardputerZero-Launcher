@@ -24,7 +24,7 @@ UIGamePage::~UIGamePage()
     if (root_screen_)
         lv_obj_remove_event_cb_with_user_data(
             root_screen_, UIGamePage::static_lvgl_handler, this);
-    game_timer_.stop();
+    stop_game_timer();
     detach_ui_callbacks();
 }
 
@@ -55,10 +55,16 @@ void UIGamePage::game_start()
     }
 }
 
+void UIGamePage::stop_game_timer() noexcept
+{
+    game_tick_callback_enabled_ = false;
+    game_timer_.stop();
+}
+
 void UIGamePage::game_over()
 {
     state_ = STATE_GAME_OVER;
-    game_timer_.stop();
+    stop_game_timer();
 
     char buf[80];
     snprintf(buf, sizeof(buf), "Game Over! Score: %d\nOK: Restart  ESC: Quit", model_.score());
@@ -76,7 +82,7 @@ void UIGamePage::game_tick()
     }
     if (model_.score() != previous_score) update_score_label();
     if (!render_game()) {
-        game_timer_.stop();
+        stop_game_timer();
         state_ = STATE_READY;
         show_overlay("Unable to render game");
     }
@@ -128,7 +134,7 @@ void UIGamePage::event_handler(lv_event_t *e)
 {
     if (lv_event_get_code(e) == LV_EVENT_DELETE &&
         lv_event_get_target(e) == lv_event_get_current_target(e)) {
-        game_timer_.stop();
+        stop_game_timer();
         bg_ = nullptr;
         title_bar_ = nullptr;
         score_label_ = nullptr;
@@ -188,7 +194,7 @@ void UIGamePage::handle_playing_key(GameInputAction action)
         break;
     case GameInputAction::CANCEL:
         // Pause and quit
-        game_timer_.stop();
+        stop_game_timer();
         state_ = STATE_READY;
         if (game_area_) lv_obj_clean(game_area_);
         render_layer_ = nullptr;
