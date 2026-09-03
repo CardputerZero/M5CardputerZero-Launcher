@@ -35,17 +35,18 @@ bool SettingsPanel::create(lv_obj_t *parent, const FontManager *fonts)
     lv_obj_t *bar = widgets::box(panel_, 0, 0, kScreenWidth, kHeaderHeight,
                                  theme::kBar);
     const lv_coord_t title_height =
-        lv_font_get_line_height(fonts_->font_12());
+        lv_font_get_line_height(fonts_->settings_font_12());
     const lv_coord_t hint_height =
-        lv_font_get_line_height(fonts_->font_10());
+        lv_font_get_line_height(fonts_->settings_font_10());
     header_label_ = widgets::label(
         bar, "ZClaw Settings", 12, centered_y(kHeaderHeight, title_height),
         160, title_height,
-                                   fonts_->font_12(), theme::kText);
+                                   fonts_->settings_font_12(), theme::kText);
     hint_label_ = widgets::label(bar, "Tab / Esc", 214,
                                  centered_y(kHeaderHeight, hint_height),
                                  94, hint_height,
-                                 fonts_->font_10(), theme::kDim, LV_TEXT_ALIGN_RIGHT);
+                                 fonts_->settings_font_10(), theme::kDim,
+                                 LV_TEXT_ALIGN_RIGHT);
     widgets::box(bar, 0, kHeaderHeight - 1, kScreenWidth, 1, theme::kPanelLine);
     rows_container_ = widgets::box(panel_, 0, kHeaderHeight, kScreenWidth,
                                    kScreenHeight - kHeaderHeight,
@@ -125,12 +126,13 @@ bool SettingsPanel::add_row(const std::string &title, const std::string &value)
     lv_obj_set_style_border_width(row, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_color(row, lv_color_hex(theme::kPanelLine),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
-    const lv_coord_t text_height = lv_font_get_line_height(fonts_->font_10());
+    const lv_coord_t text_height =
+        lv_font_get_line_height(fonts_->settings_font_10());
     const lv_coord_t text_y = centered_y(row_height, text_height);
     widgets::label(row, title, 10, text_y, 160, text_height,
-                   fonts_->font_10(), theme::kText);
+                   fonts_->settings_font_10(), theme::kText);
     values_[index] = widgets::label(row, value, 168, text_y, 118, text_height,
-                                    fonts_->font_10(), theme::kMuted,
+                                    fonts_->settings_font_10(), theme::kMuted,
                                     LV_TEXT_ALIGN_RIGHT);
     widgets::box(row, 8, row_height - 3, 280, 1, theme::kPanelLine);
     rows_[index] = row;

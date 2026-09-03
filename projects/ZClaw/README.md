@@ -59,7 +59,9 @@ The UI configuration files may contain provider API keys, webhook secrets, and
 the gateway bearer token. Protect the user's home directory accordingly.
 
 Packaged image assets are installed below `APPLaunch/share/images`; the build
-also stages `AlibabaPuHuiTi-3-55-Regular.ttf` from the APPLaunch project.
+also stages JetBrains Mono and its OFL license from the APPLaunch project for
+the settings interface. The chat interface keeps the regular proportional
+font.
 
 ## Build
 

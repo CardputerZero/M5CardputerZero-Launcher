@@ -143,6 +143,9 @@ void InputDialog::open(const FontManager *fonts)
         return;
 
     const bool single_line = input_is_single_line(mode_);
+    const lv_font_t *font = mode_ == InputMode::Chat
+                                ? fonts->font_10()
+                                : fonts->settings_font_10();
     dialog_ = lv_msgbox_create(lv_layer_top());
     lv_obj_add_event_cb(dialog_, dialog_deleted, LV_EVENT_DELETE, this);
     lv_obj_set_size(dialog_, 300, kDialogHeight);
@@ -154,7 +157,7 @@ void InputDialog::open(const FontManager *fonts)
     lv_obj_set_style_border_color(dialog_, lv_color_hex(theme::kPanelLine),
                                   LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(dialog_, lv_color_hex(theme::kText), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(dialog_, fonts->font_10(), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(dialog_, font, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(dialog_, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
 
     lv_obj_t *content = lv_msgbox_get_content(dialog_);
@@ -172,7 +175,7 @@ void InputDialog::open(const FontManager *fonts)
     lv_obj_set_style_bg_opa(textarea_, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_border_width(textarea_, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(textarea_, lv_color_hex(theme::kWhite), LV_PART_MAIN | LV_STATE_DEFAULT);
-    lv_obj_set_style_text_font(textarea_, fonts->font_10(), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(textarea_, font, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_letter_space(textarea_, 1, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_pad_all(textarea_, 8, LV_PART_MAIN | LV_STATE_DEFAULT);
 

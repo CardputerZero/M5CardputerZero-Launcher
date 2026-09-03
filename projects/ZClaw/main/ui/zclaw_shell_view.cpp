@@ -18,9 +18,7 @@ enum class XPosition : lv_coord_t {
     Sparkles = 8,
     InputText = 26,
     SendButton = 292,
-    EllipsisFirst = 295,
-    EllipsisSecond = 300,
-    EllipsisThird = 305,
+    SettingsHint = 282,
 };
 
 enum class YPosition : lv_coord_t {
@@ -100,7 +98,6 @@ void ShellView::create_top_bar(const FontManager *fonts,
 {
     constexpr lv_coord_t bar_height = 20;
     constexpr lv_coord_t avatar_size = 16;
-    constexpr lv_coord_t dot_size = 2;
     const lv_coord_t name_height = lv_font_get_line_height(fonts->font_12());
 
     lv_obj_t *bar = widgets::box(root_, to_coord(XPosition::Origin),
@@ -109,19 +106,13 @@ void ShellView::create_top_bar(const FontManager *fonts,
     widgets::image(bar, avatar_path, to_coord(XPosition::Avatar),
                    centered_y(bar_height, avatar_size));
     widgets::label(bar, "ZClaw", to_coord(XPosition::Name),
-                   centered_y(bar_height, name_height), 42,
+                   centered_y(bar_height, name_height), 64,
                    name_height, fonts->font_12(), theme::kText);
 
-    const lv_coord_t ellipsis_y = centered_y(bar_height, dot_size);
-    widgets::box(bar, to_coord(XPosition::EllipsisFirst), ellipsis_y, dot_size,
-                 dot_size, theme::kMuted,
-                 dot_size / 2);
-    widgets::box(bar, to_coord(XPosition::EllipsisSecond), ellipsis_y, dot_size,
-                 dot_size, theme::kMuted,
-                 dot_size / 2);
-    widgets::box(bar, to_coord(XPosition::EllipsisThird), ellipsis_y, dot_size,
-                 dot_size, theme::kMuted,
-                 dot_size / 2);
+    const lv_coord_t hint_height = lv_font_get_line_height(fonts->font_10());
+    widgets::label(bar, "TAB", to_coord(XPosition::SettingsHint),
+                   centered_y(bar_height, hint_height), 30, hint_height,
+                   fonts->font_10(), theme::kMuted, LV_TEXT_ALIGN_RIGHT);
 }
 
 void ShellView::create_input_bar(const FontManager *fonts,

@@ -19,6 +19,7 @@ public:
     void append_assistant_message(const std::string &text);
     void append_user_message(const std::string &text);
     void scroll(int delta);
+    void scroll_page(int direction);
 
 private:
     static void scroll_event(lv_event_t *event);
