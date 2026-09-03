@@ -103,11 +103,15 @@ void LvSettingBQCalibratePage3::create_ui(lv_obj_t *parent)
     state_->async_token = async_token();
     if (!ComponensObj) return;
 
+    reserve_footer(metric(LayoutMetric::FooterH));
+
     result_label_ = lv_label_create(ComponensObj);
     if (!result_label_) return;
     lv_label_set_text(result_label_, "Ready");
-    lv_obj_set_pos(result_label_, 8, 120);
-    lv_obj_set_size(result_label_, 304, 15);
+    lv_obj_set_pos(result_label_, metric(LayoutMetric::ResultX),
+                   metric(LayoutMetric::ResultY));
+    lv_obj_set_size(result_label_, metric(LayoutMetric::ResultW),
+                    metric(LayoutMetric::ResultH));
     lv_obj_set_style_text_color(result_label_, lv_color_hex(0xF0C850), LV_PART_MAIN);
     const lv_font_t *font = settings_fonts::sans(11, LV_FREETYPE_FONT_STYLE_BOLD);
     if (font) lv_obj_set_style_text_font(result_label_, font, LV_PART_MAIN);

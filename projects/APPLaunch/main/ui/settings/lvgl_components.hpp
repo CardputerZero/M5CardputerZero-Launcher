@@ -8164,6 +8164,21 @@ public:
         update_arrow_visibility();
     }
 
+    // Reserve a fixed footer below the scrollable value list for page-specific
+    // status content without changing the selection bar or arrow positions.
+    void reserve_footer(int height)
+    {
+        if (!value_list_) return;
+        const int footer_height = std::clamp(height, 0, metric(LayoutMetric::ScreenH));
+        const int footer_start = metric(LayoutMetric::ScreenH) - footer_height;
+        const int bar_center = metric(LayoutMetric::BarY) + metric(LayoutMetric::BarH) / 2;
+        const int list_y = std::clamp(2 * bar_center - footer_start, 0, footer_start);
+        lv_obj_set_y(value_list_, list_y);
+        lv_obj_set_height(value_list_, footer_start - list_y);
+        lv_obj_update_layout(value_list_);
+        scroll_to_selected(false);
+    }
+
     void select(int index)
     {
         if (item_count_ == 0) return;
