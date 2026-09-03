@@ -236,16 +236,18 @@ Loading rules:
 - `TryExec` is currently not used by `applications_load()`.
 - The `applications/` directory is watched. It is polled every 3 seconds, and changes clear dynamic apps and rescan the directory.
 
-Dynamic desktop applications also carry a runtime origin. Entries whose exact
-`filename<TAB>Exec` identity appears in
-`/usr/share/APPLaunch/preinstalled-desktop-apps.tsv` are release-preinstalled;
-other desktop entries are treated as Store-installed. The Settings `Launcher`
-menu includes built-in and release-preinstalled configurable applications, but
-does not expose Store-installed entries or the protected Settings, Store, and
-CLI applications. The release aggregation script validates the manifest
-against the desktop resources that it copies. Add a manifest entry only for an
-application owned by the APPLaunch release payload; do not classify an
-application by its display label.
+Dynamic desktop applications also carry a runtime origin. Product packages
+are recognized by a trusted desktop filename and a label in the product's
+built-in app set, even when their `.desktop` file is delivered by a separate
+app repository. The manifest at
+`/usr/share/APPLaunch/preinstalled-desktop-apps.tsv` remains available for
+release-owned entries such as ZClaw whose package identity is not part of the
+static app set. Other desktop entries are treated as Store-installed or
+user-installed. The Settings `Launcher` menu includes built-in and
+release-preinstalled configurable applications, but does not expose
+Store-installed entries or the protected Settings, Store, and CLI applications.
+All dynamic entries remain visible on the home launcher; only product-owned
+entries receive a Settings toggle.
 
 ## 6. Configuration API and Persistence Paths
 
