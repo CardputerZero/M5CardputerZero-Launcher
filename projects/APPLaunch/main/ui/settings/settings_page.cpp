@@ -344,13 +344,14 @@ bool read_bluetooth_named_only_config(bool fallback)
     int value = fallback ? 1 : 0;
     try {
         cp0_signal_config_api(
-            {"GetInt", kBluetoothNamedOnlyConfigKey, fallback ? "1" : "0"},
+            {"GetInt", kBluetoothNamedOnlyConfigKey, "1"},
             [&](int code, std::string data) {
                 int parsed = 0;
                 const char *begin = data.data();
                 const char *end = begin + data.size();
                 const auto result = std::from_chars(begin, end, parsed);
-                if (code == 0 && result.ec == std::errc{} && result.ptr == end)
+                if (code == 0 && result.ec == std::errc{} && result.ptr == end &&
+                    (parsed == 0 || parsed == 1))
                     value = parsed != 0 ? 1 : 0;
             });
     } catch (...) {
@@ -552,6 +553,8 @@ static void append_brightness_options(Tree &tree, const NodeIter &parent)
 bool settings_bluetooth_named_only_enabled()
 {
     std::lock_guard<std::recursive_mutex> state_lock(bluetooth_state_mutex);
+    bluetooth_named_only_state =
+        read_bluetooth_named_only_config(bluetooth_named_only_state);
     return bluetooth_named_only_state;
 }
 
