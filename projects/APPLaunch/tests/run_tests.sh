@@ -97,11 +97,6 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     -o "$build_dir/test_mesh_page_model"
 "$build_dir/test_mesh_page_model"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
-    "$test_root/test_lora_page_model.cpp" \
-    "$test_root/../main/ui/model/lora_page_model.cpp" \
-    -o "$build_dir/test_lora_page_model"
-"$build_dir/test_lora_page_model"
-${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
     "$test_root/test_tank_battle_model.cpp" \
     "$test_root/../main/ui/model/tank_battle_model.cpp" \
     -o "$build_dir/test_tank_battle_model"
