@@ -89,6 +89,25 @@ int main()
     assert(model.player().fire_cooldown == 0);
     assert(model.player_fire());
 
+    TankBattleModel full_pool_model(1);
+    auto &full_pool_bullets = const_cast<std::vector<TankBattleBullet> &>(
+        full_pool_model.bullets());
+    for (auto &bullet : full_pool_bullets) {
+        bullet.x = TankBattleModel::GRID_COLUMNS / 2;
+        bullet.y = TankBattleModel::GRID_ROWS / 2;
+        bullet.direction = TankDirection::UP;
+        bullet.from_player = false;
+        bullet.alive = true;
+    }
+    assert(!full_pool_model.player_fire());
+    assert(full_pool_model.player().fire_cooldown == 0);
+    full_pool_model.tick();
+    assert(full_pool_model.enemies()[0].fire_cooldown == 0);
+
+    TankBattleModel available_pool_model(1);
+    available_pool_model.tick();
+    assert(available_pool_model.enemies()[0].fire_cooldown > 0);
+
     model.reset();
     assert(model.score() == 0);
     assert(model.tick_count() == 0);
