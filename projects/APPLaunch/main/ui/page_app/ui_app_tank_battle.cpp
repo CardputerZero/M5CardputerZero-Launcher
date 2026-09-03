@@ -136,6 +136,7 @@ void UITankBattlePage::event_handler(lv_event_t *e)
     const GameInputAction action =
         game_input_action(launcher_ui::events::keyboard_item(e));
     if (action == GameInputAction::CANCEL) {
+        if (!launcher_ui::events::is_key_released(e)) return;
         tick_timer_.stop();
         if (navigate_home) navigate_home();
         return;
