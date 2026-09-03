@@ -6,6 +6,7 @@
 
 #include "app_display_order.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
 #include <string>
@@ -39,6 +40,26 @@ constexpr std::array<std::string_view, 24> kBuiltInAppOrder = {
     "capcc1101subgchat",
 };
 
+// These applications are delivered as independent product packages and are
+// therefore not all present in APPLaunch's preinstalled manifest.
+constexpr std::array<std::string_view, 15> kManagedDesktopFilenames = {
+    "zclaw.desktop",
+    "files.desktop",
+    "camera_app.desktop",
+    "recorder.desktop",
+    "music.desktop",
+    "piano.desktop",
+    "compass.desktop",
+    "ir-remote.desktop",
+    "ir-chat.desktop",
+    "keyboard-guide.desktop",
+    "factory_test.desktop",
+    "cap-lora-1262-gps.desktop",
+    "cap-lora-1262.desktop",
+    "cap-cc1101-nfc.desktop",
+    "cap-cc1101-subg-chat.desktop",
+};
+
 std::string normalized_label(std::string_view label)
 {
     std::string normalized;
@@ -64,4 +85,18 @@ int launcher_builtin_app_display_order(std::string_view label) noexcept
         // An allocation failure must not prevent the launcher from showing apps.
     }
     return -1;
+}
+
+bool launcher_builtin_desktop_app_is_managed(std::string_view label) noexcept
+{
+    // The first three entries are APPLaunch's protected pages. The remaining
+    // labels are the product-owned app set, including desktop applications.
+    const int order = launcher_builtin_app_display_order(label);
+    return order >= 3;
+}
+
+bool launcher_builtin_desktop_filename_is_managed(std::string_view filename) noexcept
+{
+    return std::find(kManagedDesktopFilenames.begin(), kManagedDesktopFilenames.end(),
+                     filename) != kManagedDesktopFilenames.end();
 }

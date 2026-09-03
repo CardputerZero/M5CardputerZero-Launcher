@@ -21,5 +21,21 @@ int main()
     // Existing images may use the hardware-prefixed SubG desktop name.
     assert(launcher_builtin_app_display_order("Cap-CC1101-SubG-Chat") == 23);
     assert(launcher_builtin_app_display_order("Vim") == -1);
+
+    assert(!launcher_builtin_desktop_app_is_managed("Settings"));
+    assert(!launcher_builtin_desktop_app_is_managed("Store"));
+    assert(!launcher_builtin_desktop_app_is_managed("CLI"));
+    for (std::size_t index = 3; index < expected.size(); ++index)
+        assert(launcher_builtin_desktop_app_is_managed(expected[index]));
+    assert(launcher_builtin_desktop_app_is_managed("Cap-CC1101-SubG-Chat"));
+    assert(!launcher_builtin_desktop_app_is_managed("Vim"));
+
+    assert(launcher_builtin_desktop_filename_is_managed("files.desktop"));
+    assert(launcher_builtin_desktop_filename_is_managed("camera_app.desktop"));
+    assert(launcher_builtin_desktop_filename_is_managed("recorder.desktop"));
+    assert(launcher_builtin_desktop_filename_is_managed("cap-lora-1262.desktop"));
+    assert(launcher_builtin_desktop_filename_is_managed("cap-cc1101-nfc.desktop"));
+    assert(launcher_builtin_desktop_filename_is_managed("cap-cc1101-subg-chat.desktop"));
+    assert(!launcher_builtin_desktop_filename_is_managed("downloaded.desktop"));
     return 0;
 }

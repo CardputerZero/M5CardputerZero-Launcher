@@ -2,6 +2,7 @@
 
 #include "builtin_app_registry.hpp"
 #include "app_registry.h"
+#include "app_display_order.hpp"
 #include "cp0_lvgl_app.h"
 #include "desktop_entry.h"
 #include "launch.h"
@@ -202,8 +203,21 @@ void launcher_append_desktop_apps(std::list<app> &apps)
                 continue;
             }
 
-            const LauncherAppOrigin origin = preinstalled_app_manifest_contains(
-                preinstalled_apps, candidate.filename, candidate.entry)
+            // Release-owned desktop apps may come from projects outside the
+            // APPLaunch repository. Require both the stable package filename
+            // and product label; the manifest permits explicitly listed
+            // release entries whose label is not in the shared order table.
+            const int display_order = launcher_builtin_app_display_order(candidate.entry.name);
+            const bool protected_builtin = display_order >= 0 &&
+                                           !launcher_builtin_desktop_app_is_managed(
+                                               candidate.entry.name);
+            const bool product_builtin =
+                launcher_builtin_desktop_filename_is_managed(candidate.filename) &&
+                launcher_builtin_desktop_app_is_managed(candidate.entry.name);
+            const bool manifest_builtin = preinstalled_app_manifest_contains(
+                preinstalled_apps, candidate.filename, candidate.entry);
+            const LauncherAppOrigin origin = (!protected_builtin &&
+                                              (product_builtin || manifest_builtin))
                 ? LauncherAppOrigin::Preinstalled
                 : LauncherAppOrigin::StoreInstalled;
             const std::string config_key = desktop_config_key(candidate.filename);

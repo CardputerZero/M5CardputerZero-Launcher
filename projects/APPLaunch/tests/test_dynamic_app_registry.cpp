@@ -87,6 +87,8 @@ int main(int argc, char **argv)
     assert(loader.find("sort_desktop_candidates(candidates);") != std::string::npos);
     assert(loader.find("desktop_config_key(candidate.filename)") != std::string::npos);
     assert(loader.find("preinstalled_app_manifest_contains(") != std::string::npos);
+    assert(loader.find("launcher_builtin_desktop_app_is_managed(") != std::string::npos);
+    assert(loader.find("protected_builtin") != std::string::npos);
     assert(loader.find("LauncherAppOrigin::Preinstalled") != std::string::npos);
     assert(loader.find("LauncherAppOrigin::StoreInstalled") != std::string::npos);
     assert(loader.find("origin == LauncherAppOrigin::Preinstalled") != std::string::npos);
