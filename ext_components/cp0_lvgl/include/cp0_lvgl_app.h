@@ -202,6 +202,7 @@ int cp0_time_set(const char *timestamp);
 int cp0_time_ntp_get(void);
 int cp0_time_ntp_set(int enable);
 int cp0_bq27220_calibrate(int command_index);
+/* Returns the latest background battery snapshot; never performs hardware I/O. */
 cp0_battery_info_t cp0_battery_read(void);
 int cp0_backlight_read(void);
 int cp0_backlight_max(void);

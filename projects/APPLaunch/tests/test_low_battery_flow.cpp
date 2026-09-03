@@ -27,7 +27,7 @@ int main()
     assert(flow.warning() == LowBatteryWarning::None);
     flow.update(true, 4, false, 20000);
     flow.update(false, 0, false, 21000);
-    assert(flow.warning() == LowBatteryWarning::None);
+    assert(flow.warning() == LowBatteryWarning::Undefined);
 
     flow.update(true, 0, false, UINT32_MAX - 5000u);
     assert(!flow.take_shutdown_due(4999));

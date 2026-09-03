@@ -509,7 +509,13 @@ void AppTopBarBatteryComponent::child_delete_cb(lv_event_t *event)
 
 void AppTopBarBatteryComponent::update(const cp0_battery_info_t &battery)
 {
-    if (!battery.valid || !label_) return;
+    if (!label_) return;
+    if (!battery.valid) {
+        lv_label_set_text(label_, "--");
+        set_charging(false);
+        set_low_battery_blink(false);
+        return;
+    }
     int charge = battery.soc < 0 ? 0 : (battery.soc > 100 ? 100 : battery.soc);
     char text[16];
     std::snprintf(text, sizeof(text), "%d%%", charge);
