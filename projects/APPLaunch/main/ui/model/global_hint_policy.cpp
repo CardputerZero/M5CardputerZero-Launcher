@@ -96,7 +96,11 @@ std::string GlobalHintScreenshotPolicy::saved_file_message(
     const std::string &path, const std::string &home_directory)
 {
     std::string display_path = path;
-    if (!home_directory.empty() && display_path.compare(0, home_directory.size(), home_directory) == 0)
+    const bool is_in_home = !home_directory.empty() &&
+        display_path.compare(0, home_directory.size(), home_directory) == 0 &&
+        (display_path.size() == home_directory.size() ||
+         display_path[home_directory.size()] == '/');
+    if (is_in_home)
         display_path.replace(0, home_directory.size(), "~");
 
     const std::size_t separator = display_path.find_last_of('/');

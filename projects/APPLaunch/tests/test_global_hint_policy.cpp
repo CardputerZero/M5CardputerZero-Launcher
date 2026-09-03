@@ -75,6 +75,9 @@ int main()
     assert(GlobalHintScreenshotPolicy::saved_file_message(
                "/home/test/Pictures/Screenshots/scr_20260727_151000.bmp", "/home/test") ==
            "Saved: scr_20260727_151000.bmp\n~/Pictures/Screenshots");
+    assert(GlobalHintScreenshotPolicy::saved_file_message(
+               "/home/test2/Pictures/Screenshots/capture.bmp", "/home/test") ==
+           "Saved: capture.bmp\n/home/test2/Pictures/Screenshots");
     assert(GlobalHintScreenshotPolicy::saved_file_message("capture.bmp", "/home/test") ==
            "Screenshot saved\ncapture.bmp");
 }
