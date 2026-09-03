@@ -73,8 +73,6 @@ constexpr BuiltinAppRegistration BUILTIN_APPS[] = {
      nullptr, false, true, false, append_page_app<UIGamePage>},
     {{"Tank", "tank_100.png", "app_Tank", true, false},
      nullptr, false, true, false, append_page_app<UITankBattlePage>},
-    {{"LoRa", "lora_100.png", "app_LoRa", true, false},
-     nullptr, false, true, false, append_page_app<UILoraPage>},
 };
 
 DynamicAppRegistry &dynamic_app_registry()

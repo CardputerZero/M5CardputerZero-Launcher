@@ -12,7 +12,7 @@
 
 namespace {
 
-constexpr std::array<std::string_view, 24> kBuiltInAppOrder = {
+constexpr std::array<std::string_view, 23> kBuiltInAppOrder = {
     "settings",
     "store",
     "cli",
@@ -34,7 +34,6 @@ constexpr std::array<std::string_view, 24> kBuiltInAppOrder = {
     "keyboardguide",
     "factorytest",
     "gps",
-    "lora",
     "nfc",
     "capcc1101subgchat",
 };

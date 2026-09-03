@@ -216,6 +216,10 @@ private:
     lv_event_dsc_t *keyboard_event_dsc_ = nullptr;
     cp0::SignalRegistration<decltype(cp0_signal_bt_agent)> agent_registration_;
     bool warning_active_ = false;
+    // KEY_R (Linux value 19) is numerically identical to LV_KEY_RIGHT. The
+    // raw keyboard callback handles restart, then consumes the matching LVGL
+    // navigation event generated for that same physical key.
+    bool suppress_next_navigation_key_ = false;
     Cp0BoundedTaskRegistry api_tasks_;
     std::shared_ptr<ApiDispatchState> api_dispatch_ = std::make_shared<ApiDispatchState>();
     std::shared_ptr<bool> page_lifetime_ = std::make_shared<bool>(true);
@@ -229,6 +233,8 @@ public:
         MaxAliasBytes = CP0_BT_NAME_MAX - 1,
         AliasTextX = 64,
         AliasTextRightInset = 8,
+        AliasInputLetterSpace = 1,
+        AliasInputCursorWidth = 1,
         CursorGap = 2,
         CursorWidth = 2,
         CursorHeight = 18,

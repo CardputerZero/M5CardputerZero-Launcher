@@ -871,7 +871,8 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
 
     void LvSettingBluetoothPage3::restart_scan()
 {
-        if (mode_ != LvSettingBluetoothListMode::Scan || !powered_ || action_pending_)
+        if (mode_ != LvSettingBluetoothListMode::Scan || !powered_ || action_pending_ ||
+            leaving_ || scan_start_pending_ || scan_stop_pending_)
             return;
 
         ++generation_;
@@ -1252,7 +1253,7 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
             settings_fonts::sans(12, LV_FREETYPE_FONT_STYLE_BOLD));
 
         const char *hint = mode_ == LvSettingBluetoothListMode::Scan
-            ? "OK:act  D:remove  R:restart  ESC:back"
+            ? "OK:act  D:remove  R:rescan  ESC:back"
             : "OK:toggle  D:remove  ESC:back";
         if (action_pending_) {
             create_label(ComponensObj,
@@ -1676,24 +1677,37 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
         if (!event) return;
         auto *self = static_cast<LvSettingBluetoothPage3 *>(lv_event_get_user_data(event));
         auto *item = static_cast<const key_item *>(lv_event_get_param(event));
-        if (!self || !item ||
-            (item->key_state != KBD_KEY_PRESSED && item->key_state != KBD_KEY_REPEATED))
+        if (!self || !item)
             return;
         if (self->agent_prompt_active_) {
             self->handle_agent_key(*item);
             lv_event_stop_processing(event);
             return;
         }
-        if (self->mode_ == LvSettingBluetoothListMode::Scan &&
-            (item->key_code == KEY_R || item->semantic_key == KEY_R)) {
-            self->restart_scan();
-        } else if (self->mode_ == LvSettingBluetoothListMode::Scan &&
-                   (item->key_code == KEY_D || item->semantic_key == KEY_D)) {
+        const bool pressed = item->key_state == KBD_KEY_PRESSED ||
+                             item->key_state == KBD_KEY_REPEATED;
+        const bool restart_key = self->mode_ == LvSettingBluetoothListMode::Scan &&
+                                 (item->key_code == KEY_R || item->semantic_key == KEY_R);
+        if (restart_key) {
+            // KEY_R (19) collides with LV_KEY_RIGHT (19). The raw callback
+            // owns the restart action; consume all matching LVGL key states,
+            // including release, so the same physical key cannot activate a
+            // selected device.
+            self->suppress_next_navigation_key_ = true;
+            if (item->key_state == KBD_KEY_PRESSED)
+                self->restart_scan();
+            lv_event_stop_processing(event);
+            return;
+        }
+        self->suppress_next_navigation_key_ = false;
+        if (pressed && self->mode_ == LvSettingBluetoothListMode::Scan &&
+            (item->key_code == KEY_D || item->semantic_key == KEY_D)) {
             self->remove_selected();
-        } else if (self->mode_ == LvSettingBluetoothListMode::Connected &&
-                   (item->key_code == KEY_D || item->semantic_key == KEY_D)) {
+        } else if (pressed && self->mode_ == LvSettingBluetoothListMode::Connected &&
+            (item->key_code == KEY_D || item->semantic_key == KEY_D)) {
             self->remove_selected();
         }
+        lv_event_stop_processing(event);
     }
 
 
@@ -1705,6 +1719,15 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
             return;
         }
         const uint32_t key = lv_event_get_key(event);
+        // The raw keyboard callback marks the keypad event generated for the
+        // same physical R. Check this before navigation handling so R cannot
+        // be mistaken for LV_KEY_RIGHT (both are value 19).
+        const bool suppress_navigation = suppress_next_navigation_key_;
+        suppress_next_navigation_key_ = false;
+        if (suppress_navigation && key == LV_KEY_RIGHT) {
+            lv_event_stop_processing(event);
+            return;
+        }
         if (warning_active_) {
             if (key == LV_KEY_ESC || key == LV_KEY_LEFT || key == LV_KEY_ENTER ||
                 key == LV_KEY_RIGHT) {
@@ -2024,6 +2047,10 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
 
         alias_input_ = lv_textarea_create(ComponensObj);
         if (alias_input_) {
+            // Start from a neutral textarea style. The default theme gives
+            // LV_PART_CURSOR its own text color and padding, which can make
+            // the cursor render black and taller than the input box.
+            lv_obj_remove_style_all(alias_input_);
             lv_obj_set_pos(alias_input_, metric(LayoutMetric::AliasTextX), 32);
             lv_obj_set_size(alias_input_, metric(LayoutMetric::ScreenW) - metric(LayoutMetric::AliasTextX) -
                                            metric(LayoutMetric::AliasTextRightInset), 28);
@@ -2037,7 +2064,9 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
             }
             lv_textarea_set_cursor_pos(alias_input_, static_cast<int32_t>(cursor_chars));
             lv_obj_set_style_text_font(alias_input_, input_font(14), LV_PART_MAIN);
+            lv_obj_set_style_text_letter_space(alias_input_, metric(LayoutMetric::AliasInputLetterSpace), LV_PART_MAIN);
             lv_obj_set_style_text_color(alias_input_, lv_color_hex(0xFFFFFF), LV_PART_MAIN);
+            lv_obj_set_style_text_color(alias_input_, lv_color_hex(0xFFFFFF), LV_PART_CURSOR);
             lv_obj_set_style_bg_color(alias_input_, lv_color_hex(0x181818), LV_PART_MAIN);
             lv_obj_set_style_bg_opa(alias_input_, LV_OPA_COVER, LV_PART_MAIN);
             lv_obj_set_style_border_color(alias_input_, lv_color_hex(0x58A6FF), LV_PART_MAIN);
@@ -2048,9 +2077,10 @@ LvSettingBluetoothAliasPage3::~LvSettingBluetoothAliasPage3()
             lv_obj_set_style_pad_top(alias_input_, 3, LV_PART_MAIN);
             lv_obj_set_style_bg_opa(alias_input_, LV_OPA_TRANSP, LV_PART_CURSOR);
             lv_obj_set_style_border_color(alias_input_, lv_color_hex(0x58A6FF), LV_PART_CURSOR);
-            lv_obj_set_style_border_width(alias_input_, 1, LV_PART_CURSOR);
+            lv_obj_set_style_border_width(alias_input_, metric(LayoutMetric::AliasInputCursorWidth), LV_PART_CURSOR);
             lv_obj_set_style_border_side(alias_input_, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
             lv_obj_set_style_pad_left(alias_input_, -1, LV_PART_CURSOR);
+            lv_obj_set_style_anim_duration(alias_input_, 400, LV_PART_CURSOR);
             if (!saving_) lv_obj_add_state(alias_input_, LV_STATE_FOCUSED);
             else lv_obj_clear_state(alias_input_, LV_STATE_FOCUSED);
         }
