@@ -40,7 +40,7 @@ void UITankBattlePage::creat_UI()
 
     lv_obj_t *hint_label = lv_label_create(title);
     if (hint_label) {
-        lv_label_set_text(hint_label, "Classic tank game inspired by Battle City.\n\nF / X / Z / C: move\nSpace: fire");
+        lv_label_set_text(hint_label, "Fn+H:Help");
         lv_obj_set_align(hint_label, LV_ALIGN_RIGHT_MID);
         lv_obj_set_x(hint_label, -4);
         lv_obj_set_style_text_color(hint_label, lv_color_hex(0xB7D1E6), LV_PART_MAIN | LV_STATE_DEFAULT);
@@ -73,6 +73,8 @@ void UITankBattlePage::creat_UI()
     lv_obj_set_style_pad_all(arena, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_clear_flag(arena, LV_OBJ_FLAG_SCROLLABLE);
     ui_obj_["arena"] = arena;
+
+    if (!build_help_view()) return;
 
     for (int x = 1; x < GRID_COLS; ++x) {
         lv_obj_t *line = lv_obj_create(arena);
@@ -131,6 +133,55 @@ void UITankBattlePage::creat_UI()
 
     create_game_message_panel(arena);
     sync_scene();
+}
+
+bool UITankBattlePage::build_help_view()
+{
+    if (!background_ || help_panel_) return help_panel_ != nullptr;
+
+    help_panel_ = lv_obj_create(background_);
+    if (!help_panel_) return false;
+    lv_obj_add_event_cb(help_panel_, owned_obj_delete_cb, LV_EVENT_DELETE, this);
+    lv_obj_set_size(help_panel_, SCREEN_W, SCREEN_H);
+    lv_obj_set_pos(help_panel_, 0, 0);
+    lv_obj_set_style_radius(help_panel_, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_color(help_panel_, lv_color_hex(0x10151C), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_bg_opa(help_panel_, 255, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_border_width(help_panel_, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_all(help_panel_, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_clear_flag(help_panel_, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(help_panel_, LV_OBJ_FLAG_HIDDEN);
+
+    help_label_ = lv_label_create(help_panel_);
+    if (!help_label_) {
+        lv_obj_delete(help_panel_);
+        help_panel_ = nullptr;
+        return false;
+    }
+    lv_obj_add_event_cb(help_label_, owned_obj_delete_cb, LV_EVENT_DELETE, this);
+    lv_label_set_text(help_label_,
+                      "Tank Game Help\n\n"
+                      "Classic tank game inspired by Battle City.\n\n"
+                      "F / X / Z / C: move\n"
+                      "Space: fire\n\n"
+                      "Fn+H: close");
+    lv_obj_set_pos(help_label_, 12, 10);
+    lv_obj_set_width(help_label_, SCREEN_W - 24);
+    lv_label_set_long_mode(help_label_, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_color(help_label_, lv_color_hex(0xE6EDF3), LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_text_font(help_label_, &lv_font_montserrat_12, LV_PART_MAIN | LV_STATE_DEFAULT);
+    return true;
+}
+
+void UITankBattlePage::toggle_help_view()
+{
+    if (!help_panel_ || !help_label_) return;
+    if (lv_obj_has_flag(help_panel_, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_clear_flag(help_panel_, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(help_panel_);
+    } else {
+        lv_obj_add_flag(help_panel_, LV_OBJ_FLAG_HIDDEN);
+    }
 }
 
 UITankBattlePage::TankVisual UITankBattlePage::create_tank_visual(
