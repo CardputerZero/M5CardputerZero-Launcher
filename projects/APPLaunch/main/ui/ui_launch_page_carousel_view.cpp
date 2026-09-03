@@ -20,9 +20,9 @@ using launcher_carousel_layout::Slot;
 using launcher_carousel_layout::kSlots;
 
 enum class HomeSliderMetric : lv_coord_t {
-    Width = 150,
-    Height = 10,
-    OffsetY = 70,
+    Width = 160,
+    Height = 8,
+    OffsetY = 65,
 };
 
 static_assert(UILaunchPage::kPageSlider == launcher_carousel_layout::kElementCount);
@@ -77,15 +77,15 @@ lv_obj_t *create_page_slider(lv_obj_t *parent, size_t page_count, size_t selecte
                                            LV_OBJ_FLAG_SCROLLABLE |
                                            LV_OBJ_FLAG_SCROLL_ON_FOCUS));
 
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0xE0E0E0), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0x212021), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(slider, LV_OPA_COVER, LV_PART_MAIN);
     lv_obj_set_style_radius(slider, LV_RADIUS_CIRCLE, LV_PART_MAIN);
     lv_obj_set_style_pad_all(slider, 0, LV_PART_MAIN);
-    // Keep the 10px knob inside the 150px track at both end values. The
-    // main background remains gray across the full slider width.
-    lv_obj_set_style_pad_left(slider, 5, LV_PART_MAIN);
-    lv_obj_set_style_pad_right(slider, 5, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(slider, lv_color_hex(0xE0E0E0), LV_PART_INDICATOR);
+    // Keep the 8px knob inside the 160px track at both end values. The
+    // main background remains dark across the full slider width.
+    lv_obj_set_style_pad_left(slider, 4, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(slider, 4, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(slider, lv_color_hex(0x212021), LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(slider, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_set_style_radius(slider, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
     lv_obj_set_style_bg_color(slider, lv_color_hex(0xF2C94C), LV_PART_KNOB);
