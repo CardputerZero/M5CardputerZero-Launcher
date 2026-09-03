@@ -311,6 +311,8 @@ void UILaunchPage::refresh_carousel()
     for (size_t slot = 0; slot < launcher_carousel_layout::kPanelCount; ++slot) {
         if (const app *item = launch_->carousel_slot_app(slot))
             update_carousel_slot(slot, item->Name.c_str(), item->Icon);
+        else
+            update_carousel_slot(slot, "", {});
     }
 }
 
