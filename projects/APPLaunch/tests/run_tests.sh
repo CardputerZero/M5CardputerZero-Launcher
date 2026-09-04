@@ -11,6 +11,7 @@ python3 "$test_root/test_settings_ethernet_layout_contract.py"
 python3 "$test_root/test_preinstalled_app_packaging.py"
 python3 "$test_root/test_settings_storage_build_contract.py"
 python3 "$test_root/test_static_resource_staging.py"
+python3 "$test_root/test_screensaver_image_contract.py"
 PYTHONPATH="$test_root/..${PYTHONPATH:+:$PYTHONPATH}" \
     python3 "$test_root/test_config_default_file.py"
 build_dir="${TMPDIR:-/tmp}/applaunch-tests"
@@ -173,6 +174,7 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -pthread \
     -o "$build_dir/test_settings_adapter"
 "$build_dir/test_settings_adapter"
 ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror \
+    -I"$test_root/../../../ext_components/cp0_lvgl/include" \
     "$test_root/test_screensaver_model.cpp" \
     "$test_root/../main/ui/model/screensaver_model.cpp" \
     -o "$build_dir/test_screensaver_model"
