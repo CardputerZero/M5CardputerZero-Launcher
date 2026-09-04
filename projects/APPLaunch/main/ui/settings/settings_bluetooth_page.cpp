@@ -333,6 +333,27 @@ bool is_agent_authorization_method(std::string_view method)
     return method == "RequestAuthorization" || method == "AuthorizeService";
 }
 
+std::string normalized_mac_text(std::string_view text)
+{
+    std::string result;
+    result.reserve(text.size());
+    for (const unsigned char character : text) {
+        if (std::isxdigit(character))
+            result.push_back(static_cast<char>(std::tolower(character)));
+        else if (character != ':' && character != '-' && character != '_' && character != ' ')
+            return {};
+    }
+    return result;
+}
+
+bool should_hide_named_only_device(const settings_bluetooth_com::DeviceRecord &device)
+{
+    if (device.name.empty()) return true;
+    const std::string name_hex = normalized_mac_text(device.name);
+    const std::string address_hex = normalized_mac_text(device.address);
+    return !name_hex.empty() && (name_hex == address_hex || name_hex.size() == 12);
+}
+
 } // namespace
 
 struct LvSettingBluetoothAliasPage3::ApiDispatchState {
@@ -791,6 +812,14 @@ LvSettingBluetoothPage3::~LvSettingBluetoothPage3()
                                 devices_.clear();
                                 error_message_ = "Bluetooth device list unavailable.";
                             } else {
+                                if (settings_bluetooth_named_only_enabled()) {
+                                    decoded_devices.erase(
+                                        std::remove_if(
+                                            decoded_devices.begin(),
+                                            decoded_devices.end(),
+                                            should_hide_named_only_device),
+                                        decoded_devices.end());
+                                }
                                 if (mode_ == LvSettingBluetoothListMode::Connected) {
                                     decoded_devices.erase(
                                         std::remove_if(

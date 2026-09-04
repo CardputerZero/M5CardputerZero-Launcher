@@ -18,8 +18,10 @@
 #include "cp0_lvgl_app.h"
 #include "sample_log.h"
 
+#include <exception>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -52,7 +54,17 @@ void Launch::bind_ui()
 void Launch::launch_app()
 {
     const app *selected = app_at_index(current_app);
-    if (selected) selected->launch(this);
+    if (!selected) return;
+
+    try {
+        selected->launch(this);
+    } catch (const std::exception &error) {
+        SLOGE("Failed to launch app %s: %s", selected->Name.c_str(), error.what());
+        abort_page_launch();
+    } catch (...) {
+        SLOGE("Failed to launch app %s: unknown exception", selected->Name.c_str());
+        abort_page_launch();
+    }
 }
 
 void Launch::lv_go_back_home(void *arg) noexcept
@@ -93,6 +105,30 @@ bool Launch::begin_page_launch()
     return true;
 }
 
+void Launch::abort_page_launch() noexcept
+{
+    try {
+        esc_ui_watchdog_.disarm();
+    } catch (...) {
+        SLOGW("[HOME] failed to disarm launch watchdog during rollback");
+    }
+    if (!page_lifecycle_.abort_app()) return;
+
+    try {
+        esc_hold_hint_controller().set_return_home_enabled(false);
+        if (auto page = launch_page_.lock()) page->show_home_screen();
+        app_Page.reset();
+    } catch (...) {
+        app_Page.reset();
+    }
+
+    try {
+        ui_loading::hide();
+        lv_refr_now(nullptr);
+    } catch (...) {
+    }
+}
+
 void Launch::launch_Exec_in_terminal(const std::string &exec, bool sysplause)
 {
     if (!begin_page_launch()) return;
@@ -100,6 +136,8 @@ void Launch::launch_Exec_in_terminal(const std::string &exec, bool sysplause)
     ui_loading::show("Loading...");
     lv_refr_now(nullptr);
     auto p = std::make_shared<UISTPage>();
+    if (!p->screen())
+        throw std::runtime_error("terminal page creation failed");
     app_Page = p;
     p->navigate_home = std::bind(&Launch::go_back_home, this);
     p->terminal_sysplause = sysplause;

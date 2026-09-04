@@ -40,7 +40,7 @@ void UITankBattlePage::event_handler_init()
 void UITankBattlePage::detach_ui_callbacks()
 {
     std::vector<lv_obj_t *> objects = {background_, arena_, status_label_, player_obj_,
-                                      game_msg_panel_, game_msg_label_};
+                                      game_msg_panel_, game_msg_label_, help_panel_, help_label_};
     for (const TankVisual &visual : enemy_tanks_) objects.push_back(visual.root);
     objects.insert(objects.end(), bullet_objs_.begin(), bullet_objs_.end());
     for (lv_obj_t *object : objects)
@@ -61,6 +61,11 @@ void UITankBattlePage::owned_obj_delete_cb(lv_event_t *event) noexcept
         if (self->game_msg_panel_ == deleted) {
             self->game_msg_panel_ = nullptr;
             self->game_msg_label_ = nullptr;
+        }
+        if (self->help_label_ == deleted) self->help_label_ = nullptr;
+        if (self->help_panel_ == deleted) {
+            self->help_panel_ = nullptr;
+            self->help_label_ = nullptr;
         }
         if (self->player_obj_ == deleted) {
             self->player_obj_ = nullptr;
@@ -84,6 +89,8 @@ void UITankBattlePage::owned_obj_delete_cb(lv_event_t *event) noexcept
             self->bullet_objs_.clear();
             self->game_msg_panel_ = nullptr;
             self->game_msg_label_ = nullptr;
+            self->help_panel_ = nullptr;
+            self->help_label_ = nullptr;
             self->ui_obj_.erase("arena");
         }
         if (self->background_ == deleted) {
@@ -97,6 +104,8 @@ void UITankBattlePage::owned_obj_delete_cb(lv_event_t *event) noexcept
             self->bullet_objs_.clear();
             self->game_msg_panel_ = nullptr;
             self->game_msg_label_ = nullptr;
+            self->help_panel_ = nullptr;
+            self->help_label_ = nullptr;
             self->ui_obj_.clear();
         }
     } catch (...) {
@@ -129,13 +138,29 @@ void UITankBattlePage::event_handler(lv_event_t *e)
         bullet_objs_.clear();
         game_msg_panel_ = nullptr;
         game_msg_label_ = nullptr;
+        help_panel_ = nullptr;
+        help_label_ = nullptr;
         return;
     }
     if (!launcher_ui::events::is_key_pressed(e) && !launcher_ui::events::is_key_released(e)) return;
 
-    const GameInputAction action =
-        game_input_action(launcher_ui::events::keyboard_item(e));
+    const key_item *item = launcher_ui::events::keyboard_item(e);
+    const bool help_key = item &&
+                          (item->key_code == KEY_HELP || item->semantic_key == KEY_HELP);
+    if (help_key && launcher_ui::events::is_key_pressed(e)) {
+        toggle_help_view();
+        return;
+    }
+
+    const GameInputAction action = game_input_action(item);
+    if (help_panel_ && !lv_obj_has_flag(help_panel_, LV_OBJ_FLAG_HIDDEN)) {
+        if (action == GameInputAction::CANCEL && launcher_ui::events::is_key_released(e))
+            toggle_help_view();
+        return;
+    }
+
     if (action == GameInputAction::CANCEL) {
+        if (!launcher_ui::events::is_key_released(e)) return;
         tick_timer_.stop();
         if (navigate_home) navigate_home();
         return;

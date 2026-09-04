@@ -6,6 +6,7 @@ namespace launcher_battery_ui {
 
 enum class LowBatteryWarning {
     None,
+    Undefined,
     Low,
     ShutdownCountdown,
 };
@@ -18,7 +19,12 @@ public:
 
     void update(bool valid, int soc, bool charging, uint32_t now)
     {
-        if (!valid || charging || soc >= 5) {
+        if (!valid) {
+            warning_ = LowBatteryWarning::Undefined;
+            shutdown_requested_ = false;
+            return;
+        }
+        if (charging || soc >= 5) {
             warning_ = LowBatteryWarning::None;
             shutdown_requested_ = false;
             return;

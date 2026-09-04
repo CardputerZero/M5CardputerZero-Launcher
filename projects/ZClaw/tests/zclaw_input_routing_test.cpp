@@ -63,6 +63,10 @@ int main()
     assert(!adapted.shift && adapted.text.empty());
     adapted = zclaw::adapt_key_event(KEY_ESC, KBD_KEY_RELEASED, 0, "");
     assert(adapted.key == Key::Escape && adapted.phase == KeyPhase::Released);
+    adapted = zclaw::adapt_key_event(KEY_PAGEUP, KBD_KEY_RELEASED, 0, "");
+    assert(adapted.key == Key::PageUp && adapted.phase == KeyPhase::Released);
+    adapted = zclaw::adapt_key_event(KEY_PAGEDOWN, KBD_KEY_RELEASED, 0, "");
+    assert(adapted.key == Key::PageDown && adapted.phase == KeyPhase::Released);
     adapted = zclaw::adapt_key_event(KEY_RESERVED, 99, KBD_MOD_CTRL, "x");
     assert(adapted.key == Key::Other && adapted.phase == KeyPhase::Unknown);
     assert(!adapted.shift && adapted.text == "x");
@@ -202,10 +206,24 @@ int main()
            KeyActionType::None);
     assert(routed(context, KeyPhase::Pressed, Key::Enter).type ==
            KeyActionType::None);
+    assert(routed(context, KeyPhase::Pressed, Key::Up).type ==
+           KeyActionType::None);
+    assert(routed(context, KeyPhase::Repeated, Key::Up).type ==
+           KeyActionType::ChatScrollUp);
+    assert(routed(context, KeyPhase::Repeated, Key::Down).type ==
+           KeyActionType::ChatScrollDown);
+    assert(routed(context, KeyPhase::Repeated, Key::F).type ==
+           KeyActionType::ChatScrollUp);
+    assert(routed(context, KeyPhase::Repeated, Key::X).type ==
+           KeyActionType::ChatScrollDown);
     assert(routed(context, KeyPhase::Released, Key::Up).type ==
            KeyActionType::ChatScrollUp);
     assert(routed(context, KeyPhase::Released, Key::X).type ==
            KeyActionType::ChatScrollDown);
+    assert(routed(context, KeyPhase::Released, Key::PageUp).type ==
+           KeyActionType::ChatPageUp);
+    assert(routed(context, KeyPhase::Released, Key::PageDown).type ==
+           KeyActionType::ChatPageDown);
     assert(routed(context, KeyPhase::Released, Key::Enter).type ==
            KeyActionType::ChatOpenInput);
     assert(routed(context, KeyPhase::Released, Key::Escape).type ==

@@ -24,6 +24,9 @@ STATIC_FILES = []
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.getcwd(), ".."))
 ZCLAW_STATIC_ROOT = os.path.join(PROJECT_ROOT, "APPLaunch")
+APPLAUNCH_FONT_ROOT = os.path.abspath(os.path.join(
+    PROJECT_ROOT, "..", "APPLaunch", "APPLaunch", "share", "font"))
+ZCLAW_FONT_FILES = ["JetBrainsMono-Regular.ttf", "JetBrainsMono-OFL.txt"]
 STAGED_STATIC_ROOT = os.path.abspath(os.path.join("build", "static"))
 STAGED_APPLAUNCH = os.path.join(STAGED_STATIC_ROOT, "APPLaunch")
 
@@ -31,6 +34,11 @@ def stage_zclaw_static_files():
     if os.path.exists(STAGED_APPLAUNCH):
         shutil.rmtree(STAGED_APPLAUNCH)
     shutil.copytree(ZCLAW_STATIC_ROOT, STAGED_APPLAUNCH)
+    staged_font_root = os.path.join(STAGED_APPLAUNCH, "share", "font")
+    os.makedirs(staged_font_root, exist_ok=True)
+    for filename in ZCLAW_FONT_FILES:
+        shutil.copy2(os.path.join(APPLAUNCH_FONT_ROOT, filename),
+                     os.path.join(staged_font_root, filename))
 
 stage_zclaw_static_files()
 STATIC_FILES += [(STAGED_APPLAUNCH, "APPLaunch")]

@@ -69,6 +69,8 @@ private:
 
     lv_obj_t *game_msg_panel_ = nullptr;
     lv_obj_t *game_msg_label_ = nullptr;
+    lv_obj_t *help_panel_ = nullptr;
+    lv_obj_t *help_label_ = nullptr;
 
 private:
     void init_game_state();
@@ -76,6 +78,8 @@ private:
 private:
     void creat_UI();
     void create_game_message_panel(lv_obj_t *arena);
+    bool build_help_view();
+    void toggle_help_view();
     TankVisual create_tank_visual(lv_obj_t *arena, std::uint32_t armor_color);
     void sync_tank_visual(TankVisual &visual, TankDirection direction,
                           std::uint32_t armor_color);

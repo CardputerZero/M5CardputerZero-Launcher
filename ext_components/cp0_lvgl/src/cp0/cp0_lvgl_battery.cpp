@@ -61,4 +61,5 @@ extern "C" void init_battery()
 extern "C" void deinit_battery()
 {
     battery_lifecycle().stop();
+    deinit_bq27220();
 }

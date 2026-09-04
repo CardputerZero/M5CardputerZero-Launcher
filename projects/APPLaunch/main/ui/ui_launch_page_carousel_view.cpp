@@ -199,6 +199,11 @@ void UILaunchPage::set_panel_icon(lv_obj_t *panel, const std::string &src)
     lv_obj_set_style_pad_all(panel, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_t *clip = lv_obj_get_child(panel, 0);
     lv_obj_t *image = clip ? lv_obj_get_child(clip, 0) : nullptr;
+    if (src.empty()) {
+        if (image && lv_obj_check_type(image, &lv_image_class))
+            lv_image_set_src(image, nullptr);
+        return;
+    }
     if (!clip || !image || !lv_obj_check_type(image, &lv_image_class)) {
         clip = lv_obj_create(panel);
         if (!clip) return;

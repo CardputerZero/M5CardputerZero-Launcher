@@ -47,6 +47,22 @@ std::string runtime_font_path()
                                    file_exists);
 }
 
+std::string runtime_settings_font_path()
+{
+    const char *env_path = std::getenv("ZCLAW_SETTINGS_FONT");
+    const std::vector<std::string> candidates = {
+        cp0_file_path("share/font/JetBrainsMono-Regular.ttf"),
+        "./APPLaunch/share/font/JetBrainsMono-Regular.ttf",
+        "../APPLaunch/share/font/JetBrainsMono-Regular.ttf",
+        "./dist/APPLaunch/share/font/JetBrainsMono-Regular.ttf",
+        "../dist/APPLaunch/share/font/JetBrainsMono-Regular.ttf",
+        "/usr/share/APPLaunch/share/font/JetBrainsMono-Regular.ttf",
+        "/usr/share/fonts/truetype/jetbrains-mono/JetBrainsMono-Regular.ttf",
+    };
+    return zclaw::select_font_path(env_path ? env_path : "", candidates,
+                                   file_exists);
+}
+
 std::string runtime_fallback_font_path()
 {
     const char *env_path = std::getenv("ZCLAW_FALLBACK_FONT");
@@ -105,19 +121,28 @@ FontManager::~FontManager()
 void FontManager::init()
 {
 #if LV_USE_FREETYPE
-    if (font_10_ || font_12_)
+    if (font_10_ || font_12_ || settings_font_10_ || settings_font_12_)
         return;
 
     const std::string font_path = runtime_font_path();
-    if (font_path.empty())
-        return;
+    if (!font_path.empty()) {
+        font_10_ = lv_freetype_font_create(
+            font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
+            kZClawFontSize, LV_FREETYPE_FONT_STYLE_NORMAL);
+        font_12_ = lv_freetype_font_create(
+            font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
+            kZClawFontSize, LV_FREETYPE_FONT_STYLE_NORMAL);
+    }
 
-    font_10_ = lv_freetype_font_create(
-        font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP, kZClawFontSize,
-        LV_FREETYPE_FONT_STYLE_NORMAL);
-    font_12_ = lv_freetype_font_create(
-        font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP, kZClawFontSize,
-        LV_FREETYPE_FONT_STYLE_NORMAL);
+    const std::string settings_font_path = runtime_settings_font_path();
+    if (!settings_font_path.empty()) {
+        settings_font_10_ = lv_freetype_font_create(
+            settings_font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
+            kZClawFontSize, LV_FREETYPE_FONT_STYLE_NORMAL);
+        settings_font_12_ = lv_freetype_font_create(
+            settings_font_path.c_str(), LV_FREETYPE_FONT_RENDER_MODE_BITMAP,
+            kZClawFontSize, LV_FREETYPE_FONT_STYLE_NORMAL);
+    }
 
     const std::string fallback_path = runtime_fallback_font_path();
     if (!fallback_path.empty()) {
@@ -130,6 +155,8 @@ void FontManager::init()
     }
     set_fallback_chain(font_10_, fallback_font_10_);
     set_fallback_chain(font_12_, fallback_font_12_);
+    set_fallback_chain(settings_font_10_, fallback_font_10_);
+    set_fallback_chain(settings_font_12_, fallback_font_12_);
 #endif
 }
 
@@ -140,12 +167,18 @@ void FontManager::release()
         lv_freetype_font_delete(font_10_);
     if (font_12_)
         lv_freetype_font_delete(font_12_);
+    if (settings_font_10_)
+        lv_freetype_font_delete(settings_font_10_);
+    if (settings_font_12_)
+        lv_freetype_font_delete(settings_font_12_);
     if (fallback_font_10_)
         lv_freetype_font_delete(fallback_font_10_);
     if (fallback_font_12_)
         lv_freetype_font_delete(fallback_font_12_);
     font_10_ = nullptr;
     font_12_ = nullptr;
+    settings_font_10_ = nullptr;
+    settings_font_12_ = nullptr;
     fallback_font_10_ = nullptr;
     fallback_font_12_ = nullptr;
 #endif
@@ -177,6 +210,22 @@ const lv_font_t *FontManager::font_12() const
     return &lv_font_source_han_sans_sc_16_cjk;
 #endif
     return &lv_font_montserrat_14;
+}
+
+const lv_font_t *FontManager::settings_font_10() const
+{
+#if LV_USE_FREETYPE
+    if (settings_font_10_) return settings_font_10_;
+#endif
+    return font_10();
+}
+
+const lv_font_t *FontManager::settings_font_12() const
+{
+#if LV_USE_FREETYPE
+    if (settings_font_12_) return settings_font_12_;
+#endif
+    return font_12();
 }
 
 }  // namespace zclaw

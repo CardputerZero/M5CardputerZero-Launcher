@@ -13,6 +13,10 @@ LAUNCH = (
     Path(__file__).resolve().parents[1]
     / "main/ui/launch.cpp"
 ).read_text(encoding="utf-8")
+LAUNCH_PAGE = (
+    Path(__file__).resolve().parents[1]
+    / "main/ui/ui_launch_page.cpp"
+).read_text(encoding="utf-8")
 POOL = (
     Path(__file__).resolve().parents[1]
     / "main/ui/home_icon_buffer_pool.cpp"
@@ -75,6 +79,19 @@ def test_icon_scale_rounds_up_during_carousel_animation():
     assert "compensate_image_scale(obj);" in animation
 
 
+def test_carousel_refresh_clears_slots_when_the_app_list_is_empty():
+    refresh_start = LAUNCH_PAGE.index("void UILaunchPage::refresh_carousel()")
+    refresh_end = LAUNCH_PAGE.index("void UILaunchPage::reload_home_icons", refresh_start)
+    refresh = LAUNCH_PAGE[refresh_start:refresh_end]
+    assert 'update_carousel_slot(slot, "", {});' in refresh
+
+    setter_start = SOURCE.index("void UILaunchPage::set_panel_icon")
+    setter_end = SOURCE.index("void UILaunchPage::update_carousel_slot", setter_start)
+    setter = SOURCE[setter_start:setter_end]
+    assert "if (src.empty())" in setter
+    assert "lv_image_set_src(image, nullptr);" in setter
+
+
 if __name__ == "__main__":
     test_every_carousel_card_keeps_the_theme_border()
     test_carousel_switch_uses_only_preloaded_images()
@@ -82,3 +99,4 @@ if __name__ == "__main__":
     test_icon_pool_rebuilds_with_the_app_list()
     test_icons_are_clipped_by_their_card_content_geometry()
     test_icon_scale_rounds_up_during_carousel_animation()
+    test_carousel_refresh_clears_slots_when_the_app_list_is_empty()

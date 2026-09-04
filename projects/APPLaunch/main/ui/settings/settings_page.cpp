@@ -8,13 +8,11 @@
 #include "settings_bluetooth_connected_devices_page.hpp"
 #include "settings_bluetooth_scan_page.hpp"
 #include "settings_brightness_page.hpp"
-#include "settings_camera_resolution_page.hpp"
 #include "settings_confirmation_page.hpp"
 #include "settings_ethernet_controller.hpp"
 #include "settings_menu_roller.hpp"
 #include "settings_rtc_page.hpp"
 #include "settings_screen_timeout_page.hpp"
-#include "settings_sound_card_page.hpp"
 #include "settings_submenu_page.hpp"
 #include "settings_system_page.hpp"
 #include "settings_adapter.hpp"
@@ -27,6 +25,7 @@
 #include "../model/setup_value_policy.hpp"
 
 #include <atomic>
+#include <charconv>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -34,6 +33,7 @@
 #include <mutex>
 #include <sstream>
 #include <string>
+#include <system_error>
 #include <tuple>
 #include <utility>
 
@@ -260,13 +260,6 @@ static std::unique_ptr<DComponens::LvglComponensBase> volume_page3_factory(lv_ob
     return std::make_unique<LvSettingVolumePage3>(parent, page_node, std::move(on_back));
 }
 
-static std::unique_ptr<DComponens::LvglComponensBase> resolution_page3_factory(lv_obj_t *parent,
-                                                                               const NodeIter &page_node,
-                                                                               std::function<void()> on_back)
-{
-    return std::make_unique<LvSettingResolutionPage3>(parent, page_node, std::move(on_back));
-}
-
 static std::unique_ptr<DComponens::LvglComponensBase> bq_calibrate_page3_factory(lv_obj_t *parent,
                                                                                  const NodeIter &page_node,
                                                                                  std::function<void()> on_back)
@@ -343,6 +336,50 @@ bool bluetooth_named_only_state     = true;
 bool bluetooth_power_pending        = false;
 bool bluetooth_discoverable_pending = false;
 std::recursive_mutex bluetooth_state_mutex;
+
+constexpr const char *kBluetoothNamedOnlyConfigKey = "bt_named_only";
+
+bool read_bluetooth_named_only_config(bool fallback)
+{
+    int value = fallback ? 1 : 0;
+    try {
+        cp0_signal_config_api(
+            {"GetInt", kBluetoothNamedOnlyConfigKey, "1"},
+            [&](int code, std::string data) {
+                int parsed = 0;
+                const char *begin = data.data();
+                const char *end = begin + data.size();
+                const auto result = std::from_chars(begin, end, parsed);
+                if (code == 0 && result.ec == std::errc{} && result.ptr == end &&
+                    (parsed == 0 || parsed == 1))
+                    value = parsed != 0 ? 1 : 0;
+            });
+    } catch (...) {
+    }
+    return value != 0;
+}
+
+bool write_bluetooth_named_only_config(int value)
+{
+    bool succeeded = false;
+    try {
+        cp0_signal_config_api(
+            {"SetInt", kBluetoothNamedOnlyConfigKey, value != 0 ? "1" : "0"},
+            [&](int code, std::string) { succeeded = code == 0; });
+    } catch (...) {
+    }
+    return succeeded;
+}
+
+bool save_bluetooth_config()
+{
+    bool succeeded = false;
+    try {
+        cp0_signal_config_api({"Save"}, [&](int code, std::string) { succeeded = code == 0; });
+    } catch (...) {
+    }
+    return succeeded;
+}
 
 bool query_bluetooth_status(bool &powered, bool &discoverable, std::string *alias_output)
 {
@@ -466,7 +503,36 @@ void bluetooth_discoverable_api(int cmd, void *data)
 
 void bluetooth_named_only_api(int cmd, void *data)
 {
-    bluetooth_toggle_api(cmd, data, bluetooth_named_only_state, nullptr);
+    std::lock_guard<std::recursive_mutex> state_lock(bluetooth_state_mutex);
+    if ((cmd == SettingApiReadFlag || cmd == SettingApiReadFlagTimeStart) && data) {
+        bluetooth_named_only_state =
+            read_bluetooth_named_only_config(bluetooth_named_only_state);
+        if (cmd == SettingApiReadFlag)
+            *static_cast<bool *>(data) = bluetooth_named_only_state;
+        else
+            std::get<0>(*static_cast<SettingApiReadFlagTimeStartData *>(data)) =
+                bluetooth_named_only_state;
+        return;
+    }
+    if (cmd != SettingApiActivate) return;
+
+    const bool previous =
+        read_bluetooth_named_only_config(bluetooth_named_only_state);
+    const bool desired = !previous;
+    if (!write_bluetooth_named_only_config(desired ? 1 : 0)) {
+        bluetooth_named_only_state = previous;
+        return;
+    }
+    if (save_bluetooth_config()) {
+        bluetooth_named_only_state = desired;
+        return;
+    }
+
+    // SetInt mutates the live config immediately. Restore it when Save fails
+    // so a later page rebuild cannot observe an unpersisted value.
+    if (write_bluetooth_named_only_config(previous ? 1 : 0))
+        (void)save_bluetooth_config();
+    bluetooth_named_only_state = previous;
 }
 
 static void append_numeric_options(Tree &tree, const NodeIter &parent, int first, int last)
@@ -483,6 +549,14 @@ static void append_brightness_options(Tree &tree, const NodeIter &parent)
 }
 
 }  // namespace
+
+bool settings_bluetooth_named_only_enabled()
+{
+    std::lock_guard<std::recursive_mutex> state_lock(bluetooth_state_mutex);
+    bluetooth_named_only_state =
+        read_bluetooth_named_only_config(bluetooth_named_only_state);
+    return bluetooth_named_only_state;
+}
 
 void UISettingTreePage::create_page_detail()
 {
@@ -632,10 +706,6 @@ void UISettingTreePage::create_page_detail()
             mode_tree, system, settings_t12b::boot_actions::Action::Reboot, confirm_page3_factory);
     }
 
-    // {
-    //     NodeIter sound_card = mode_tree.append_child(root, SettingEntry{"SoundCard", roller_page_factory});
-    //     mode_tree.append_child(sound_card, SettingEntry{"Open Mixer", soundcard_page4_factory, PageType::FullCustom});
-    // }
 }
 
 void UISettingTreePage::back_home(void *data)

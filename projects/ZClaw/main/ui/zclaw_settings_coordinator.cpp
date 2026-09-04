@@ -120,15 +120,17 @@ void SettingsCoordinator::show_setup_error(const std::string &error)
     lv_obj_set_style_border_color(setup_error_dialog_,
                                   lv_color_hex(theme::kPurple), LV_PART_MAIN);
     lv_obj_move_foreground(setup_error_dialog_);
-    const lv_coord_t title_height = lv_font_get_line_height(fonts_.font_12());
-    const lv_coord_t text_height = lv_font_get_line_height(fonts_.font_10());
+    const lv_coord_t title_height =
+        lv_font_get_line_height(fonts_.settings_font_12());
+    const lv_coord_t text_height =
+        lv_font_get_line_height(fonts_.settings_font_10());
     widgets::label(setup_error_dialog_, "Quickstart failed", 12, 5, 226,
                    title_height,
-                   fonts_.font_12(), theme::kText);
+                   fonts_.settings_font_12(), theme::kText);
     widgets::label(setup_error_dialog_,
                    error.empty() ? "Network connection failed." : error,
                    12, 25, 226, text_height * 2,
-                   fonts_.font_10(), theme::kMuted);
+                   fonts_.settings_font_10(), theme::kMuted);
     static constexpr const char *labels[] = {"Retry", "Exit"};
     for (int index = 0; index < 2; ++index) {
         setup_error_buttons_[index] = widgets::box(
@@ -138,7 +140,7 @@ void SettingsCoordinator::show_setup_error(const std::string &error)
                                       LV_PART_MAIN);
         widgets::label(setup_error_buttons_[index], labels[index], 0,
                        centered_y(20, text_height), 96, text_height,
-                       fonts_.font_10(), theme::kText,
+                       fonts_.settings_font_10(), theme::kText,
                        LV_TEXT_ALIGN_CENTER);
     }
     update_setup_error_selection(0);

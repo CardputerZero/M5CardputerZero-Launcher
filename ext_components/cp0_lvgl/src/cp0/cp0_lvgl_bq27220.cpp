@@ -7,6 +7,7 @@
 #include "../cp0_signal_registration.hpp"
 #include "../cp0_battery_testable.hpp"
 #include "../cp0_callback_contract.hpp"
+#include "../cp0_battery_snapshot_cache.hpp"
 
 #include <cerrno>
 #include <cstdio>
@@ -15,10 +16,13 @@
 #include <dirent.h>
 #include <fcntl.h>
 #include <functional>
+#include <condition_variable>
+#include <chrono>
 #include <list>
 #include <memory>
 #include <mutex>
 #include <string>
+#include <thread>
 #include <utility>
 #include <unistd.h>
 
@@ -36,11 +40,38 @@
 
 namespace {
 
+cp0::battery::Lifecycle &bq_lifecycle()
+{
+    static cp0::battery::Lifecycle lifecycle;
+    return lifecycle;
+}
+
 class Bq27220System
 {
 public:
     using arg_t = std::list<std::string>;
     using callback_t = std::function<void(int, std::string)>;
+
+    Bq27220System()
+        : worker_([this] { sample_loop(); })
+    {
+    }
+
+    ~Bq27220System()
+    {
+        stop();
+    }
+
+    void stop() noexcept
+    {
+        {
+            std::lock_guard<std::mutex> lock(worker_mutex_);
+            stopping_ = true;
+        }
+        worker_cv_.notify_all();
+        if (worker_.joinable() && worker_.get_id() != std::this_thread::get_id())
+            worker_.join();
+    }
 
     void api_call(arg_t arg, callback_t callback)
     {
@@ -48,16 +79,16 @@ public:
         result.guard(-1, "battery api failure", [&] {
             cp0::battery::ApiReply reply;
             {
-                std::lock_guard<std::mutex> lock(mutex_);
+                std::lock_guard<std::mutex> lock(api_mutex_);
                 reply = cp0::battery::dispatch_api_request(
-                    arg, [this] { return read(); },
+                    arg, [this] { return read_cached(); },
                     [this](int index) { return calibrate(index); });
             }
             result.complete(reply.code, reply.data);
         });
     }
 
-    cp0_battery_info_t read()
+    cp0_battery_info_t read_hardware()
     {
         cp0_battery_info_t info{};
 
@@ -87,6 +118,11 @@ public:
         }
 
         return info;
+    }
+
+    cp0_battery_info_t read_cached()
+    {
+        return cache_.read();
     }
 
     int calibrate(int command_index)
@@ -125,7 +161,34 @@ public:
     }
 
 private:
-    std::mutex mutex_;
+    static constexpr std::chrono::seconds kSamplePeriod{3};
+
+    void sample_loop() noexcept
+    {
+        while (true) {
+            cp0_battery_info_t info{};
+            try {
+                std::lock_guard<std::mutex> lock(api_mutex_);
+                info = read_hardware();
+            } catch (...) {
+                info = {};
+            }
+            if (info.valid == 1) {
+                cache_.update(info);
+            }
+
+            std::unique_lock<std::mutex> lock(worker_mutex_);
+            if (worker_cv_.wait_for(lock, kSamplePeriod, [this] { return stopping_; }))
+                return;
+        }
+    }
+
+    std::mutex api_mutex_;
+    std::mutex worker_mutex_;
+    std::condition_variable worker_cv_;
+    std::thread worker_;
+    bool stopping_ = false;
+    cp0::battery::SnapshotCache cache_;
 
     static constexpr const char *kI2cDev = "/dev/i2c-1";
     static constexpr int kI2cAddr = 0x55;
@@ -257,8 +320,7 @@ int cp0_bq27220_calibrate(int command_index)
 
 void init_bq27220(void)
 {
-    static cp0::battery::Lifecycle lifecycle;
-    lifecycle.start(
+    bq_lifecycle().start(
         [] {
             auto bq27220 = std::make_shared<Bq27220System>();
             using Registration = cp0::SignalRegistration<decltype(cp0_signal_bq27220_api)>;
@@ -270,9 +332,17 @@ void init_bq27220(void)
                     bq27220->api_call(std::move(arg), std::move(callback));
                 });
             return cp0::battery::LifecycleResource{
-                registered, [registration] { registration->reset(); }};
+                registered, [registration, bq27220] {
+                    registration->reset();
+                    bq27220->stop();
+                }};
         },
         [] { return cp0::battery::LifecycleResource{true, {}}; });
+}
+
+void deinit_bq27220(void)
+{
+    bq_lifecycle().stop();
 }
 
 }

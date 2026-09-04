@@ -119,7 +119,7 @@ void UIGamePage::clear_overlay()
 bool UIGamePage::render_game()
 {
     if (!game_area_) {
-        game_timer_.stop();
+        stop_game_timer();
         state_ = STATE_READY;
         return false;
     }
@@ -203,7 +203,7 @@ void UIGamePage::owned_obj_delete_cb(lv_event_t *event) noexcept
         self->game_area_ = nullptr;
         self->render_layer_ = nullptr;
         self->overlay_lbl_ = nullptr;
-        self->game_timer_.stop();
+        self->stop_game_timer();
         self->state_ = STATE_READY;
     }
     if (self->title_bar_ == deleted) {
@@ -217,7 +217,7 @@ void UIGamePage::owned_obj_delete_cb(lv_event_t *event) noexcept
         self->game_area_ = nullptr;
         self->render_layer_ = nullptr;
         self->overlay_lbl_ = nullptr;
-        self->game_timer_.stop();
+        self->stop_game_timer();
         self->state_ = STATE_READY;
     }
     } catch (...) {

@@ -26,6 +26,7 @@ class LauncherPageLifecycleModel
 {
 public:
     bool begin_app();
+    bool abort_app();
     bool request_home();
     bool complete_home();
     void cancel_home_request();

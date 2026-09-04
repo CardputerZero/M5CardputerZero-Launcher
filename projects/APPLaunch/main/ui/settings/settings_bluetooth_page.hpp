@@ -31,6 +31,8 @@
 #include "lvgl_components.hpp"
 #undef LVGL_COMPONENTS_ROLLER1_ONLY
 
+bool settings_bluetooth_named_only_enabled();
+
 enum class LvSettingBluetoothListMode { Connected, Scan };
 
 class LvSettingBluetoothPage3 : public DComponens::LvglComponensBase {

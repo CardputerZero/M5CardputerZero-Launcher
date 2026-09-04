@@ -17,6 +17,12 @@
 
 namespace {
 
+cp0::battery::Lifecycle &bq_lifecycle()
+{
+    static cp0::battery::Lifecycle lifecycle;
+    return lifecycle;
+}
+
 cp0_battery_info_t simulated_battery_info()
 {
     cp0_battery_info_t info{};
@@ -110,8 +116,7 @@ int cp0_bq27220_calibrate(int command_index)
 
 void init_bq27220(void)
 {
-    static cp0::battery::Lifecycle lifecycle;
-    lifecycle.start(
+    bq_lifecycle().start(
         [] {
             auto bq27220 = std::make_shared<Bq27220System>();
             using Registration = cp0::SignalRegistration<decltype(cp0_signal_bq27220_api)>;
@@ -126,6 +131,11 @@ void init_bq27220(void)
                 registered, [registration] { registration->reset(); }};
         },
         [] { return cp0::battery::LifecycleResource{true, {}}; });
+}
+
+void deinit_bq27220(void)
+{
+    bq_lifecycle().stop();
 }
 
 }

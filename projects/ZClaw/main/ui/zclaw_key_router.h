@@ -26,6 +26,8 @@ enum class Key {
     Right,
     Up,
     Down,
+    PageUp,
+    PageDown,
     A,
     C,
     F,
@@ -85,6 +87,8 @@ enum class KeyActionType {
     SettingsMoveDown,
     ChatScrollUp,
     ChatScrollDown,
+    ChatPageUp,
+    ChatPageDown,
     ChatOpenInput,
 };
 

@@ -150,7 +150,7 @@ void create_overlay()
 void render(uint32_t now, bool force = false)
 {
     const LowBatteryWarning warning = flow.warning();
-    if (warning == LowBatteryWarning::None) {
+    if (warning == LowBatteryWarning::None || warning == LowBatteryWarning::Undefined) {
         if (overlay)
             lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
         rendered_warning = warning;

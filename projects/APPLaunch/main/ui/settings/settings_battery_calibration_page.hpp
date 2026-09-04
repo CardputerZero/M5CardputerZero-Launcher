@@ -5,10 +5,24 @@
 #include <memory>
 #include <string>
 
+#include "cp0_enum_cast.h"
 #include "lvgl_components.hpp"
 
 class LvSettingBQCalibratePage3 : public LvSettingValuePage3Base {
 public:
+    enum class LayoutMetric : int {
+        ResultX = 8,
+        ResultY = 118,
+        ResultW = 304,
+        ResultH = 14,
+        FooterH = 32,
+    };
+
+    static constexpr int metric(LayoutMetric value)
+    {
+        return CP0_ENUM_CAST_INT(value);
+    }
+
     LvSettingBQCalibratePage3();
 
     LvSettingBQCalibratePage3(
