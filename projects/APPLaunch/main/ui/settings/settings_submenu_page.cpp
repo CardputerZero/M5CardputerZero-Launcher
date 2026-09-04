@@ -251,6 +251,7 @@ void LvSettingRollerPage2::show_power_warning()
     }
     if (content) {
         lv_obj_set_height(content, 32);
+        lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_OFF);
         lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_set_style_border_width(content, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_left(content, 12, LV_PART_MAIN);
@@ -275,6 +276,7 @@ void LvSettingRollerPage2::show_power_warning()
         lv_obj_set_flex_align(footer, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     }
     if (ok_button) {
+        lv_obj_remove_style(ok_button, nullptr, LV_PART_MAIN | LV_STATE_ANY);
         lv_obj_set_width(ok_button, 28);
         lv_obj_set_height(ok_button, 22);
         lv_obj_set_style_bg_opa(ok_button, LV_OPA_TRANSP, LV_PART_MAIN);
