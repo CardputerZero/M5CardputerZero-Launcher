@@ -869,6 +869,7 @@ void LvSettingWifiScanPage3::show_power_warning(){
             lv_obj_set_flex_align(footer, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         }
         if (ok_button) {
+            lv_obj_remove_style(ok_button, nullptr, LV_PART_MAIN | LV_STATE_ANY);
             lv_obj_set_width(ok_button, 28);
             lv_obj_set_height(ok_button, 22);
             lv_obj_set_style_bg_opa(ok_button, LV_OPA_TRANSP, LV_PART_MAIN);
