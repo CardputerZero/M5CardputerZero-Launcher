@@ -7,6 +7,7 @@
 #include "home_icon_buffer_pool.hpp"
 
 #include "lvgl/src/draw/lv_image_decoder_private.h"
+#include "screensaver_fallback.h"
 #include "sample_log.h"
 
 #include <algorithm>
@@ -80,7 +81,6 @@ void HomeIconBufferPool::rebuild(const std::vector<std::string> &icon_paths)
 {
     icons_.clear();
     resized_icons_.clear();
-    fallback_ = create_fallback();
     icons_.reserve(icon_paths.size());
 
     for (const std::string &path : icon_paths) {
@@ -98,7 +98,7 @@ void HomeIconBufferPool::rebuild(const std::vector<std::string> &icon_paths)
 const lv_image_dsc_t *HomeIconBufferPool::find(const std::string &path) const
 {
     const auto found = icons_.find(path);
-    return found == icons_.end() ? as_image(fallback_) : as_image(found->second);
+    return found == icons_.end() ? &screensaver_fallback : as_image(found->second);
 }
 
 const lv_image_dsc_t *HomeIconBufferPool::find(const std::string &path, uint32_t size)
@@ -108,7 +108,7 @@ const lv_image_dsc_t *HomeIconBufferPool::find(const std::string &path, uint32_t
 
     const auto found = icons_.find(path);
     if (found == icons_.end())
-        return as_image(fallback_);
+        return &screensaver_fallback;
 
     const std::string key = path + "\n" + std::to_string(size);
     const auto resized = resized_icons_.find(key);
@@ -127,21 +127,6 @@ void HomeIconBufferPool::swap(HomeIconBufferPool &other) noexcept
 {
     icons_.swap(other.icons_);
     resized_icons_.swap(other.resized_icons_);
-    fallback_.swap(other.fallback_);
-}
-
-HomeIconBufferPool::DrawBufferPtr HomeIconBufferPool::create_fallback()
-{
-    DrawBufferPtr buffer(
-        lv_draw_buf_create(kIconSize, kIconSize, LV_COLOR_FORMAT_ARGB8888, LV_STRIDE_AUTO));
-    if (!buffer) return {};
-
-    for (uint32_t y = 0; y < kIconSize; ++y) {
-        auto *row = static_cast<lv_color32_t *>(lv_draw_buf_goto_xy(buffer.get(), 0, y));
-        for (uint32_t x = 0; x < kIconSize; ++x)
-            row[x] = lv_color32_make(0x44, 0x44, 0x44, 0xFF);
-    }
-    return buffer;
 }
 
 HomeIconBufferPool::DrawBufferPtr

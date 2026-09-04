@@ -15,12 +15,12 @@
 #include "lvgl/src/draw/lv_image_decoder_private.h"
 #include "model/screensaver_model.hpp"
 #include "model/screensaver_runtime_contract.hpp"
+#include "screensaver_fallback.h"
 #include "sample_log.h"
 
 #include <algorithm>
 #include <cstdlib>
 #include <future>
-#include <memory>
 #include <string>
 #include <utility>
 
@@ -39,71 +39,67 @@ public:
 
     bool load(const std::string &path)
     {
-        if (buffer_ || path.empty()) return buffer_ != nullptr;
-        buffer_ = decode_and_prepare(path);
-        return buffer_ != nullptr;
+        if (loaded_ || fallback_active_ || path.empty()) return image() != nullptr;
+        if (decode_and_prepare(path)) {
+            loaded_ = true;
+            return true;
+        }
+
+        // Keep a valid image available after a decoder or filesystem failure.
+        // The embedded resource also prevents every screensaver activation from
+        // retrying the same broken file indefinitely.
+        fallback_active_ = true;
+        return true;
     }
 
     const lv_image_dsc_t *image() const
     {
-        return reinterpret_cast<const lv_image_dsc_t *>(buffer_.get());
+        return (loaded_ || fallback_active_) ? &screensaver_fallback : nullptr;
     }
 
-    void reset() { buffer_.reset(); }
+    bool using_fallback() const { return fallback_active_; }
+
+    void reset()
+    {
+        loaded_ = false;
+        fallback_active_ = false;
+    }
 
 private:
-    struct DrawBufferDeleter
-    {
-        void operator()(lv_draw_buf_t *buffer) const noexcept
-        {
-            if (buffer) lv_draw_buf_destroy(buffer);
-        }
-    };
-
-    using DrawBufferPtr = std::unique_ptr<lv_draw_buf_t, DrawBufferDeleter>;
-
-    static DrawBufferPtr decode_and_prepare(const std::string &path)
+    static bool decode_and_prepare(const std::string &path)
     {
         lv_image_decoder_dsc_t decoder{};
         lv_image_decoder_args_t args{};
         args.no_cache = true;
         if (lv_image_decoder_open(&decoder, path.c_str(), &args) != LV_RESULT_OK)
-            return {};
+            return false;
 
         const lv_draw_buf_t *source = decoder.decoded;
         if (!source || source->header.w == 0 || source->header.h == 0 ||
             source->header.cf != LV_COLOR_FORMAT_ARGB8888) {
             lv_image_decoder_close(&decoder);
-            return {};
+            return false;
         }
 
-        DrawBufferPtr output(lv_draw_buf_create(
-            ScreensaverModel::block_size(), ScreensaverModel::block_size(),
-            LV_COLOR_FORMAT_ARGB8888, LV_STRIDE_AUTO));
-        if (output) {
-            const uint32_t block_size = static_cast<uint32_t>(
-                ScreensaverModel::block_size());
-            for (uint32_t y = 0; y < block_size; ++y) {
-                auto *dst = static_cast<lv_color32_t *>(
-                    lv_draw_buf_goto_xy(output.get(), 0, y));
-                const uint32_t source_y = std::min<uint32_t>(
-                    source->header.h - 1,
-                    y * source->header.h / block_size);
-                const auto *src = static_cast<const lv_color32_t *>(
-                    lv_draw_buf_goto_xy(source, 0, source_y));
-                for (uint32_t x = 0; x < block_size; ++x) {
-                    const uint32_t source_x = std::min<uint32_t>(
-                        source->header.w - 1,
-                        x * source->header.w / block_size);
-                    dst[x] = src[source_x];
-                }
+        const uint32_t block_size = static_cast<uint32_t>(ScreensaverModel::block_size());
+        auto *output = reinterpret_cast<lv_color32_t *>(screensaver_fallback_map);
+        for (uint32_t y = 0; y < block_size; ++y) {
+            const uint32_t source_y = std::min<uint32_t>(
+                source->header.h - 1, y * source->header.h / block_size);
+            const auto *src = static_cast<const lv_color32_t *>(
+                lv_draw_buf_goto_xy(source, 0, source_y));
+            for (uint32_t x = 0; x < block_size; ++x) {
+                const uint32_t source_x = std::min<uint32_t>(
+                    source->header.w - 1, x * source->header.w / block_size);
+                output[y * block_size + x] = src[source_x];
             }
         }
         lv_image_decoder_close(&decoder);
-        return output;
+        return true;
     }
 
-    DrawBufferPtr buffer_;
+    bool loaded_ = false;
+    bool fallback_active_ = false;
 };
 
 lv_obj_t *s_overlay = nullptr;
@@ -280,6 +276,9 @@ void create_objects()
         const std::string path = launcher_platform::path("screensaver.png");
         if (!s_image_cache.load(path))
             SLOGW("[SCREENSAVER] failed to cache image: %s", path.c_str());
+        else if (s_image_cache.using_fallback())
+            SLOGW("[SCREENSAVER] using embedded fallback image after decode failure: %s",
+                  path.c_str());
     }
 
     if (!s_overlay) {

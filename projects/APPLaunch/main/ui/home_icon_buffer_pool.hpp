@@ -37,11 +37,9 @@ private:
 
     using DrawBufferPtr = std::unique_ptr<lv_draw_buf_t, DrawBufferDeleter>;
 
-    static DrawBufferPtr create_fallback();
     static DrawBufferPtr decode_and_prepare(const std::string &path, uint32_t size);
     static const lv_image_dsc_t *as_image(const DrawBufferPtr &buffer);
 
     std::unordered_map<std::string, DrawBufferPtr> icons_;
     std::unordered_map<std::string, DrawBufferPtr> resized_icons_;
-    DrawBufferPtr fallback_;
 };

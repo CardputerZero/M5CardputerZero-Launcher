@@ -15,8 +15,12 @@ assert "Count = 8" in MODEL
 assert "launcher_platform::path(\"screensaver.png\")" in SOURCE
 assert "lv_image_decoder_open(&decoder, path.c_str(), &args)" in SOURCE
 assert "args.no_cache = true;" in SOURCE
-assert "lv_draw_buf_create(" in SOURCE
+assert "screensaver_fallback_map" in SOURCE
+assert "output[y * block_size + x] = src[source_x];" in SOURCE
 assert "s_image_cache.image()" in SOURCE
+assert '#include "screensaver_fallback.h"' in SOURCE
+assert "fallback_active_" in SOURCE
+assert "using embedded fallback image" in SOURCE
 assert "SCREEN_ICON_PIXELS" not in SOURCE
 assert "DEFINE_SCREEN_IMAGE" not in SOURCE
 assert IMAGE.is_file()
