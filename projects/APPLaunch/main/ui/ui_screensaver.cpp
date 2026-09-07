@@ -7,14 +7,21 @@
 #include "ui_screensaver.h"
 
 #include "cp0_lvgl_app.h"
+#include "cp0_enum_cast.h"
 #include "hal_lvgl_bsp.h"
 #include "keyboard_input.h"
+#include "launcher_platform.hpp"
 #include "lvgl/lvgl.h"
+#include "lvgl/src/draw/lv_image_decoder_private.h"
 #include "model/screensaver_model.hpp"
 #include "model/screensaver_runtime_contract.hpp"
+#include "screensaver_fallback.h"
+#include "sample_log.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <future>
+#include <string>
 #include <utility>
 
 namespace {
@@ -23,53 +30,77 @@ constexpr uint32_t kIdleCheckMs = 500;
 constexpr uint32_t kAnimationFrameMs = 40;
 constexpr uint32_t kExitAnimationMs = 350;
 
-#define SCREEN_ICON_PIXELS \
-    0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00, \
-    0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00, \
-    0x00,0x00,0x00,0x00,0x00, 0x0f,0xff,0xff,0xff,0xf0, \
-    0x0f,0xff,0xff,0xff,0xf0, 0x30,0x00,0x00,0x00,0x0c, \
-    0x30,0x00,0x00,0x00,0x0c, 0x30,0x00,0x00,0x00,0x0c, \
-    0x31,0xff,0xff,0xff,0x8c, 0x31,0xff,0xff,0xff,0x8c, \
-    0x36,0x00,0x00,0x00,0x6c, 0x36,0x00,0x00,0x00,0x6c, \
-    0x36,0x00,0x00,0x00,0x6c, 0x36,0x00,0x00,0x00,0x6c, \
-    0x36,0x00,0x00,0x00,0x6c, 0x36,0x00,0x00,0x00,0x6c, \
-    0x36,0x00,0x00,0x00,0x6c, 0x36,0x00,0x00,0x00,0x6c, \
-    0x36,0x00,0x00,0x00,0x6c, 0x36,0x00,0x00,0x00,0x6c, \
-    0x36,0x00,0x00,0x00,0x6c, 0x36,0x00,0x00,0x00,0x6c, \
-    0x36,0x00,0x00,0x00,0x6c, 0x36,0x00,0x00,0x00,0x6c, \
-    0x36,0x00,0x00,0x00,0x6c, 0x36,0x00,0x00,0x00,0x6c, \
-    0x36,0x00,0x00,0x00,0x6c, 0x31,0xff,0xff,0xff,0x8c, \
-    0x31,0xff,0xff,0xff,0x8c, 0x30,0x00,0x00,0x00,0x0c, \
-    0x30,0x00,0x00,0x00,0x0c, 0x30,0x00,0x00,0x00,0x0c, \
-    0x0f,0xff,0xff,0xff,0xf0, 0x0f,0xff,0xff,0xff,0xf0, \
-    0x00,0x3e,0x00,0x7c,0x00, 0x00,0x7c,0x00,0x3e,0x00, \
-    0x00,0xf8,0x00,0x1f,0x00, 0x01,0xf0,0x00,0x0f,0x80, \
-    0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00, \
-    0x00,0x00,0x00,0x00,0x00, 0x00,0x00,0x00,0x00,0x00
+class ScreensaverImageCache
+{
+public:
+    ScreensaverImageCache() = default;
+    ScreensaverImageCache(const ScreensaverImageCache &) = delete;
+    ScreensaverImageCache &operator=(const ScreensaverImageCache &) = delete;
 
-#define DEFINE_SCREEN_IMAGE(name, blue, green, red) \
-    static const uint8_t name##_data[] = { \
-        0x00,0x00,0x00,0x00, blue,green,red,0xff, SCREEN_ICON_PIXELS \
-    }; \
-    static const lv_image_dsc_t name = { \
-        {LV_IMAGE_HEADER_MAGIC, LV_COLOR_FORMAT_I1, 0, 40, 40, 5, 0}, \
-        sizeof(name##_data), name##_data, nullptr, nullptr \
+    bool load(const std::string &path)
+    {
+        if (loaded_ || fallback_active_ || path.empty()) return image() != nullptr;
+        if (decode_and_prepare(path)) {
+            loaded_ = true;
+            return true;
+        }
+
+        // Keep a valid image available after a decoder or filesystem failure.
+        // The embedded resource also prevents every screensaver activation from
+        // retrying the same broken file indefinitely.
+        fallback_active_ = true;
+        return true;
     }
 
-DEFINE_SCREEN_IMAGE(kScreenCyan,    0xff, 0xe5, 0x00);
-DEFINE_SCREEN_IMAGE(kScreenYellow,  0x00, 0xea, 0xff);
-DEFINE_SCREEN_IMAGE(kScreenPink,    0x71, 0x3d, 0xff);
-DEFINE_SCREEN_IMAGE(kScreenMint,    0xae, 0xf0, 0x69);
-DEFINE_SCREEN_IMAGE(kScreenOrange,  0x00, 0x91, 0xff);
-DEFINE_SCREEN_IMAGE(kScreenPurple,  0xf9, 0x00, 0xd5);
-DEFINE_SCREEN_IMAGE(kScreenLime,    0x03, 0xff, 0x76);
-DEFINE_SCREEN_IMAGE(kScreenWhite,   0xff, 0xff, 0xff);
+    const lv_image_dsc_t *image() const
+    {
+        return (loaded_ || fallback_active_) ? &screensaver_fallback : nullptr;
+    }
 
-const lv_image_dsc_t *const kScreenImages[] = {
-    &kScreenCyan, &kScreenYellow, &kScreenPink, &kScreenMint,
-    &kScreenOrange, &kScreenPurple, &kScreenLime, &kScreenWhite,
+    bool using_fallback() const { return fallback_active_; }
+
+    void reset()
+    {
+        loaded_ = false;
+        fallback_active_ = false;
+    }
+
+private:
+    static bool decode_and_prepare(const std::string &path)
+    {
+        lv_image_decoder_dsc_t decoder{};
+        lv_image_decoder_args_t args{};
+        args.no_cache = true;
+        if (lv_image_decoder_open(&decoder, path.c_str(), &args) != LV_RESULT_OK)
+            return false;
+
+        const lv_draw_buf_t *source = decoder.decoded;
+        if (!source || source->header.w == 0 || source->header.h == 0 ||
+            source->header.cf != LV_COLOR_FORMAT_ARGB8888) {
+            lv_image_decoder_close(&decoder);
+            return false;
+        }
+
+        const uint32_t block_size = static_cast<uint32_t>(ScreensaverModel::block_size());
+        auto *output = reinterpret_cast<lv_color32_t *>(screensaver_fallback_map);
+        for (uint32_t y = 0; y < block_size; ++y) {
+            const uint32_t source_y = std::min<uint32_t>(
+                source->header.h - 1, y * source->header.h / block_size);
+            const auto *src = static_cast<const lv_color32_t *>(
+                lv_draw_buf_goto_xy(source, 0, source_y));
+            for (uint32_t x = 0; x < block_size; ++x) {
+                const uint32_t source_x = std::min<uint32_t>(
+                    source->header.w - 1, x * source->header.w / block_size);
+                output[y * block_size + x] = src[source_x];
+            }
+        }
+        lv_image_decoder_close(&decoder);
+        return true;
+    }
+
+    bool loaded_ = false;
+    bool fallback_active_ = false;
 };
-static_assert(sizeof(kScreenImages) / sizeof(kScreenImages[0]) == ScreensaverModel::COLOR_COUNT);
 
 lv_obj_t *s_overlay = nullptr;
 lv_obj_t *s_block = nullptr;
@@ -77,10 +108,11 @@ lv_timer_t *s_timer = nullptr;
 ScreensaverModel s_model;
 bool s_exiting = false;
 std::future<bool> s_audio_prepare_future;
+ScreensaverImageCache s_image_cache;
 
-void set_block_color(size_t color_index)
+void set_block_image()
 {
-    lv_image_set_src(s_block, kScreenImages[color_index]);
+    lv_image_set_src(s_block, s_image_cache.image());
 }
 
 void reset_animation_period()
@@ -240,6 +272,15 @@ void create_objects()
     if (!display)
         return;
 
+    if (!s_image_cache.image()) {
+        const std::string path = launcher_platform::path("screensaver.png");
+        if (!s_image_cache.load(path))
+            SLOGW("[SCREENSAVER] failed to cache image: %s", path.c_str());
+        else if (s_image_cache.using_fallback())
+            SLOGW("[SCREENSAVER] using embedded fallback image after decode failure: %s",
+                  path.c_str());
+    }
+
     if (!s_overlay) {
         lv_obj_t *parent = lv_layer_top();
         if (!parent)
@@ -268,8 +309,8 @@ void create_objects()
     }
     lv_obj_add_event_cb(s_block, block_delete_cb, LV_EVENT_DELETE, nullptr);
     lv_obj_remove_style_all(s_block);
-    lv_obj_set_size(s_block, ScreensaverModel::BLOCK_SIZE, ScreensaverModel::BLOCK_SIZE);
-    set_block_color(0);
+    lv_obj_set_size(s_block, ScreensaverModel::block_size(), ScreensaverModel::block_size());
+    set_block_image();
     lv_obj_clear_flag(s_block, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_clear_flag(s_block, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -314,7 +355,7 @@ void stop_screensaver(bool was_active = false, bool animated = false)
 void start_screensaver()
 {
     create_objects();
-    if (!s_overlay || !s_block)
+    if (!s_overlay || !s_block || !s_image_cache.image())
         return;
 
     lv_display_t *display = lv_display_get_default();
@@ -327,7 +368,7 @@ void start_screensaver()
 
     const ScreensaverFrame frame = s_model.activate(width, height, lv_tick_get());
     lv_obj_set_pos(s_block, frame.x, frame.y);
-    set_block_color(frame.color_index);
+    set_block_image();
 
     suspend_system_sound();
     lv_obj_move_foreground(s_overlay);
@@ -344,8 +385,6 @@ void animate(uint32_t now)
 
     const ScreensaverFrame frame = s_model.advance(
         lv_display_get_horizontal_resolution(display), lv_display_get_vertical_resolution(display), now);
-    if (frame.color_changed)
-        set_block_color(frame.color_index);
     lv_obj_set_pos(s_block, frame.x, frame.y);
 }
 
@@ -401,6 +440,7 @@ extern "C" void ui_screensaver_deinit(void)
         lv_obj_delete(s_overlay);
     s_overlay = nullptr;
     s_block = nullptr;
+    s_image_cache.reset();
     s_model.reset(0);
     s_model.set_foreground(false, 0);
 }

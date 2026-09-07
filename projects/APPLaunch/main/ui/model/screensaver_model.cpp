@@ -36,8 +36,8 @@ bool ScreensaverModel::should_activate(uint32_t now, uint32_t timeout_ms, bool r
 
 ScreensaverFrame ScreensaverModel::activate(int width, int height, uint32_t now)
 {
-    x_milli_ = std::max(0, (width - BLOCK_SIZE) / 4) * 1000;
-    y_milli_ = std::max(0, (height - BLOCK_SIZE) / 3) * 1000;
+    x_milli_ = std::max(0, (width - block_size()) / 4) * 1000;
+    y_milli_ = std::max(0, (height - block_size()) / 3) * 1000;
     velocity_x_ = kVelocityX;
     velocity_y_ = kVelocityY;
     color_index_ = 0;
@@ -58,8 +58,8 @@ ScreensaverFrame ScreensaverModel::advance(int width, int height, uint32_t now)
 
     const uint32_t elapsed = std::min<uint32_t>(elapsed_since(now, last_frame_tick_), 100);
     last_frame_tick_ = now;
-    const int32_t max_x = std::max(0, width - BLOCK_SIZE) * 1000;
-    const int32_t max_y = std::max(0, height - BLOCK_SIZE) * 1000;
+    const int32_t max_x = std::max(0, width - block_size()) * 1000;
+    const int32_t max_y = std::max(0, height - block_size()) * 1000;
     x_milli_ += velocity_x_ * static_cast<int32_t>(elapsed);
     y_milli_ += velocity_y_ * static_cast<int32_t>(elapsed);
 
@@ -74,7 +74,7 @@ ScreensaverFrame ScreensaverModel::advance(int width, int height, uint32_t now)
         velocity_y_ = -velocity_y_;
         collided = true;
     }
-    if (collided) color_index_ = (color_index_ + 1) % COLOR_COUNT;
+    if (collided) color_index_ = (color_index_ + 1) % color_count();
     return frame(collided);
 }
 
