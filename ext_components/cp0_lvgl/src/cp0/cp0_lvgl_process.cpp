@@ -160,7 +160,7 @@ public:
         std::exit(0);
 #else
         std::printf("[CP0] reboot\n");
-        const std::vector<std::string> argv = {"sudo", "reboot"};
+        const std::vector<std::string> argv = {"systemctl", "reboot", "-i"};
         cp0_process_commands::run_argv(argv, true);
 #endif
     }
