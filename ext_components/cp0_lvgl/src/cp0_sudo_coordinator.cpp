@@ -97,7 +97,7 @@ std::vector<Action> Coordinator::start_next_locked(int64_t now_ms)
     return actions;
 }
 
-void Coordinator::terminal_locked(const std::shared_ptr<Request> &request,
+void Coordinator::terminal_locked(std::shared_ptr<Request> request,
                                   cp0_sudo_result_t result, int exit_code)
 {
     if (!request || request->state == State::TERMINAL) return;

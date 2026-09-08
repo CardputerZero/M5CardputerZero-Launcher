@@ -94,7 +94,7 @@ private:
     std::vector<Action> start_next_locked(int64_t now_ms);
     void expire_queued_locked(int64_t now_ms);
     std::vector<Action> promote_reservations_locked(int64_t now_ms);
-    void terminal_locked(const std::shared_ptr<Request> &request,
+    void terminal_locked(std::shared_ptr<Request> request,
                          cp0_sudo_result_t result, int exit_code);
     void remember_terminal_locked(uint64_t id);
 

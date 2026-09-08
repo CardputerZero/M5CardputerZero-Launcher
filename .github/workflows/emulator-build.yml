@@ -38,6 +38,8 @@ jobs:
         mkdir build && cd build
         cmake .. -DCMAKE_BUILD_TYPE=Release
         make -j$(sysctl -n hw.ncpu)
+    - name: Test
+      run: ctest --test-dir projects/CardputerZero-Emulator/build --output-on-failure
     - name: Package
       run: |
         cd projects/CardputerZero-Emulator
@@ -46,7 +48,11 @@ jobs:
         cp -r build/apps dist/CardputerZero-Emulator/
         cp -r build/assets dist/CardputerZero-Emulator/
         cp -r build/images dist/CardputerZero-Emulator/
-        cd dist && tar czf ../CardputerZero-Emulator-macOS.tar.gz CardputerZero-Emulator
+        cp -r build/APPLaunch dist/CardputerZero-Emulator/
+        cd dist/CardputerZero-Emulator
+        SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy EMU_TEST_NAVIGATE_FRAME=10 EMU_TEST_QUIT_FRAME=20 ./cardputer-zero-emu
+        cd ..
+        tar czf ../CardputerZero-Emulator-macOS.tar.gz CardputerZero-Emulator
     - uses: actions/upload-artifact@v4
       with:
         name: emulator-macos

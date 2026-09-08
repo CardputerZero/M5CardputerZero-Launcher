@@ -11,8 +11,13 @@ ${CXX:-g++} -std=c++17 -Wall -Wextra -Werror -pthread \
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 binary="${TMPDIR:-/tmp}/cp0_lvgl_test_async_utils.$$"
+init_plan_object="${TMPDIR:-/tmp}/cp0_lvgl_test_init_plan.$$"
 esc_state_object="${TMPDIR:-/tmp}/cp0_esc_state.$$.$$.o"
-trap 'rm -f "$binary" "$esc_state_object"' EXIT HUP INT TERM
+gc_sections_flag="-Wl,--gc-sections"
+if [ "$(uname -s)" = "Darwin" ]; then
+    gc_sections_flag="-Wl,-dead_strip"
+fi
+trap 'rm -f "$binary" "$init_plan_object" "$esc_state_object"' EXIT HUP INT TERM
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -I"$root/include" \
     -c "$root/src/cp0_esc_state.c" -o "$esc_state_object"
 
@@ -105,9 +110,10 @@ trap 'rm -f "$binary" "$esc_state_object"' EXIT HUP INT TERM
     "$root/tests/test_signal_registration.cpp" -o "$binary"
 "$binary"
 
+"${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
+    -I"$root/src" -c "$root/src/cp0_init_plan.c" -o "$init_plan_object"
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
-    -I"$root/src" \
-    "$root/src/cp0_init_plan.c" \
+    -I"$root/src" "$init_plan_object" \
     "$root/tests/test_init_plan.cpp" -o "$binary"
 "$binary"
 
@@ -211,7 +217,7 @@ trap 'rm -f "$binary" "$esc_state_object"' EXIT HUP INT TERM
 "$binary"
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
-    -ffunction-sections -fdata-sections -Wl,--gc-sections \
+    -ffunction-sections -fdata-sections "$gc_sections_flag" \
     -I"$root/include" -I"$root/src" -I"$root/src/cp0" \
     -I"$root/../../SDK/github_source/eventpp/include" \
     "$root/src/cp0/cp0_process_commands.cpp" \
@@ -238,9 +244,11 @@ trap 'rm -f "$binary" "$esc_state_object"' EXIT HUP INT TERM
     -I"$root/src" "$root/tests/test_sudo_timer_callback_boundary.cpp" -o "$binary"
 "$binary"
 
-"${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
-    -I"$root/src" "$root/tests/test_external_process_group.cpp" -o "$binary"
-"$binary"
+if [ "$(uname -s)" = "Linux" ]; then
+    "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror -pthread \
+        -I"$root/src" "$root/tests/test_external_process_group.cpp" -o "$binary"
+    "$binary"
+fi
 
 "${CXX:-c++}" -std=c++17 -Wall -Wextra -Werror \
     -I"$root/include" "$root/tests/test_esc_exit_policy.cpp" -o "$binary"
@@ -449,11 +457,13 @@ trap 'rm -f "$binary" "$esc_state_object"' EXIT HUP INT TERM
     "$root/tests/test_process_runner.cpp" -o "$binary"
 "$binary"
 
-"${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
-    -I"$root/include" -I"$root/src/cp0" \
-    "$root/src/cp0/cp0_keyboard_keymap.c" \
-    "$root/tests/test_keyboard_keymap.c" -lxkbcommon -o "$binary"
-"$binary"
+if [ "$(uname -s)" = "Linux" ]; then
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror \
+        -I"$root/include" -I"$root/src/cp0" \
+        "$root/src/cp0/cp0_keyboard_keymap.c" \
+        "$root/tests/test_keyboard_keymap.c" -lxkbcommon -o "$binary"
+    "$binary"
+fi
 
 "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -pthread \
     -I"$root/include" -I"$root/src" \

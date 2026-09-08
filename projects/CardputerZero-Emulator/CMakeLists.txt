@@ -5,6 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+include(CTest)
 
 # Paths — same repo, sibling projects
 set(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..)
@@ -103,6 +104,16 @@ endif()
 
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/lib/lvgl ${CMAKE_CURRENT_BINARY_DIR}/lvgl)
+
+# The native CardputerZero SDL runtime provides its own keyboard handler with
+# key-up events, modifiers, and the cp0 keyboard event contract.  Do not also
+# link LVGL's basic SDL keyboard driver on macOS: ELF linkers previously hid
+# the duplicate symbol with --allow-multiple-definition, while ld64 rejects it.
+if(APPLE AND NOT EMSCRIPTEN)
+    get_target_property(LVGL_SRCS lvgl SOURCES)
+    list(FILTER LVGL_SRCS EXCLUDE REGEX ".*/src/drivers/sdl/lv_sdl_keyboard\\.c$")
+    set_property(TARGET lvgl PROPERTY SOURCES ${LVGL_SRCS})
+endif()
 
 file(GLOB APPLAUNCH_LVGL_FREETYPE_SRCS CONFIGURE_DEPENDS
     ${APPLAUNCH_LVGL_OVERRIDE}/lv_freetype*.c
@@ -308,10 +319,12 @@ endif()
 if(APPLE OR (UNIX AND NOT EMSCRIPTEN))
     set_target_properties(cardputer-zero-emu PROPERTIES ENABLE_EXPORTS ON)
 endif()
-if(UNIX AND NOT APPLE AND NOT WIN32)
+if(UNIX AND NOT WIN32)
     target_sources(cardputer-zero-emu PRIVATE ${CP0_LVGL_SDL_SRCS})
     target_compile_definitions(cardputer-zero-emu PRIVATE HAL_PLATFORM_SDL=1)
-    target_link_options(cardputer-zero-emu PRIVATE -Wl,--allow-multiple-definition)
+    if(NOT APPLE)
+        target_link_options(cardputer-zero-emu PRIVATE -Wl,--allow-multiple-definition)
+    endif()
 endif()
 
 target_include_directories(cardputer-zero-emu PRIVATE
@@ -428,6 +441,44 @@ if(TARGET APPLaunch)
         COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/apps
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:APPLaunch> ${CMAKE_CURRENT_BINARY_DIR}/apps/
         COMMENT "Copying APPLaunch"
+    )
+endif()
+
+if(APPLE AND BUILD_TESTING)
+    add_test(
+        NAME emulator-macos-runtime
+        COMMAND ${CMAKE_COMMAND} -E env
+            SDL_VIDEODRIVER=dummy
+            SDL_AUDIODRIVER=dummy
+            EMU_TEST_CLICK_FRAME=10
+            EMU_TEST_NAVIGATE_FRAME=10
+            EMU_TEST_RESET_FRAME=20
+            EMU_TEST_QUIT_FRAME=40
+            $<TARGET_FILE:cardputer-zero-emu>
+    )
+    set_tests_properties(emulator-macos-runtime PROPERTIES
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:cardputer-zero-emu>
+        PASS_REGULAR_EXPRESSION "\\[EMU\\] Host cp0 keyboard driver"
+        FAIL_REGULAR_EXPRESSION "TEST (click )?(failed|missed|did not)"
+        TIMEOUT 30
+    )
+
+    add_test(
+        NAME emulator-macos-screensaver-wake
+        COMMAND ${CMAKE_COMMAND} -E env
+            SDL_VIDEODRIVER=dummy
+            SDL_AUDIODRIVER=dummy
+            EMU_DEBUG_INPUT=1
+            EMU_SCREENSAVER_TIMEOUT_SECONDS=1
+            EMU_TEST_NAVIGATE_FRAME=300
+            EMU_TEST_QUIT_FRAME=350
+            $<TARGET_FILE:cardputer-zero-emu>
+    )
+    set_tests_properties(emulator-macos-screensaver-wake PROPERTIES
+        WORKING_DIRECTORY $<TARGET_FILE_DIR:cardputer-zero-emu>
+        PASS_REGULAR_EXPRESSION
+            "Keyboard filter key=106 state=1 handler=app consumed=1"
+        TIMEOUT 30
     )
 endif()
 

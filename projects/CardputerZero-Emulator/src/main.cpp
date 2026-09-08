@@ -1,4 +1,5 @@
 #include "lvgl/lvgl.h"
+#include "keyboard_input.h"
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <cstdio>
@@ -29,7 +30,9 @@ static constexpr int LCD_SW = 640;
 static constexpr int LCD_SH = 340;
 static constexpr int LCD_W  = 320;
 static constexpr int LCD_H  = 170;
-static constexpr float SCALE = 0.5f;
+static constexpr float DEFAULT_WINDOW_SCALE = 1.0f;
+static constexpr float MIN_WINDOW_SCALE = 0.5f;
+static constexpr float MAX_WINDOW_SCALE = 2.0f;
 
 struct KeyRect { int x, y, w, h; SDL_Keycode key; };
 static KeyRect g_keys[4][11] = {
@@ -53,6 +56,7 @@ static KeyRect g_keys[4][11] = {
 };
 
 // ── Side buttons + POWER ────────────────────────────────────────
+static constexpr int SIDE_NEXT = 3;
 static constexpr int SIDE_POWER = 4; // index of POWER in g_side_keys
 static constexpr int NUM_SIDE_KEYS = 5;
 static KeyRect g_side_keys[NUM_SIDE_KEYS] = {
@@ -109,7 +113,9 @@ static uint32_t     *g_lcd_buf = nullptr;
 
 typedef void (*sdl_kbd_handler_fn)(SDL_Event *);
 typedef void *(*sdl_kbd_create_fn)(void);
+typedef int (*keyboard_filter_fn)(const struct key_item *);
 static sdl_kbd_handler_fn g_kbd_handler = nullptr;
+static keyboard_filter_fn g_keyboard_filter = nullptr;
 
 static float g_dpi_scale = 1.0f;  // renderer_pixels / window_points
 
@@ -118,17 +124,13 @@ static int g_side_pr = -1;  // pressed side key index
 // Convert mouse window coords → skin coords (1280x840)
 static void mouse_to_skin(int mx, int my, int *sx, int *sy)
 {
-    int rw, rh;
-    SDL_GetRendererOutputSize(g_ren, &rw, &rh);
-    *sx = mx * SKIN_W / (rw > 0 ? rw : SKIN_W);
-    *sy = my * SKIN_H / (rh > 0 ? rh : SKIN_H);
-    // On Retina: rw=1280, mouse is in 640 logical → sx = mx*1280/1280 wrong
-    // Actually SDL mouse coords are always in window logical points
-    // We need: sx = mx * SKIN_W / window_w
-    int ww, wh;
-    SDL_GetWindowSize(g_win, &ww, &wh);
-    *sx = mx * SKIN_W / (ww > 0 ? ww : 1);
-    *sy = my * SKIN_H / (wh > 0 ? wh : 1);
+    // SDL_RenderSetLogicalSize filters mouse events into renderer-logical
+    // coordinates before they reach SDL_PollEvent. Scaling them by the window
+    // size again makes real mouse clicks miss, especially on Retina displays.
+    int logical_w = 0, logical_h = 0;
+    SDL_RenderGetLogicalSize(g_ren, &logical_w, &logical_h);
+    *sx = mx * SKIN_W / (logical_w > 0 ? logical_w : SKIN_W);
+    *sy = my * SKIN_H / (logical_h > 0 ? logical_h : SKIN_H);
 }
 
 static bool hit_key(int mx, int my, int *r, int *c)
@@ -251,7 +253,7 @@ static void render()
 typedef void (*ui_init_fn)(void);
 typedef void (*ui_deinit_fn)(void);
 
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if !defined(_WIN32)
 extern "C" {
 void init_lvgl_env(void);
 void init_lvgl_event(void);
@@ -272,6 +274,7 @@ void init_lvgl_saved_settings(void);
 void init_camera(void);
 void init_input(void);
 void lv_sdl_keyboard_handler(SDL_Event *event);
+void cp0_sdl_keyboard_set_filter(keyboard_filter_fn filter);
 }
 
 static void emu_init_cp0_runtime()
@@ -351,6 +354,22 @@ static unsigned emu_test_frame(const char *name)
     return static_cast<unsigned>(frame);
 }
 
+static float emu_window_scale()
+{
+    const char *value = getenv("EMU_WINDOW_SCALE");
+    if (!value || !*value) return DEFAULT_WINDOW_SCALE;
+
+    char *end = nullptr;
+    const float scale = strtof(value, &end);
+    if (*end != '\0' || !(scale >= MIN_WINDOW_SCALE && scale <= MAX_WINDOW_SCALE)) {
+        fprintf(stderr,
+                "[EMU] Ignoring invalid EMU_WINDOW_SCALE=%s (expected %.1f-%.1f)\n",
+                value, MIN_WINDOW_SCALE, MAX_WINDOW_SCALE);
+        return DEFAULT_WINDOW_SCALE;
+    }
+    return scale;
+}
+
 int main(int argc, char *argv[])
 {
     set_exe_dir();
@@ -358,6 +377,11 @@ int main(int argc, char *argv[])
     const unsigned test_reset_frame = emu_test_frame("EMU_TEST_RESET_FRAME");
     const unsigned test_quit_frame = emu_test_frame("EMU_TEST_QUIT_FRAME");
     const unsigned test_navigate_frame = emu_test_frame("EMU_TEST_NAVIGATE_FRAME");
+    const unsigned test_click_frame = emu_test_frame("EMU_TEST_CLICK_FRAME");
+    const bool debug_input = getenv("EMU_DEBUG_INPUT") != nullptr;
+    const float window_scale = emu_window_scale();
+    const int win_w = static_cast<int>(SKIN_W * window_scale);
+    const int win_h = static_cast<int>(SKIN_H * window_scale);
 
 #ifdef EMU_STATIC_APP
     // Windows: app statically linked, no dlopen
@@ -374,9 +398,13 @@ int main(int argc, char *argv[])
     printf("========================================\n");
     printf("  M5CardputerZero Emulator\n");
     printf("  App : %s\n", app_path);
-    printf("  LCD : %dx%d  Window: %dx%d\n",
-           LCD_W, LCD_H, (int)(SKIN_W*SCALE), (int)(SKIN_H*SCALE));
+    printf("  LCD : %dx%d (displayed %dx%d)  Window: %dx%d\n",
+           LCD_W, LCD_H,
+           static_cast<int>(LCD_SW * window_scale),
+           static_cast<int>(LCD_SH * window_scale),
+           win_w, win_h);
     printf("  Modifiers: click Aa/fn/ctrl to toggle\n");
+    printf("  Resize the window to zoom; EMU_WINDOW_SCALE=0.5 restores compact mode\n");
     printf("========================================\n");
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) != 0) {
@@ -385,15 +413,19 @@ int main(int argc, char *argv[])
     }
     IMG_Init(IMG_INIT_PNG);
 
-    int win_w = (int)(SKIN_W * SCALE), win_h = (int)(SKIN_H * SCALE);
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "nearest");
     g_win = SDL_CreateWindow("M5CardputerZero Emulator",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        win_w, win_h, SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI);
+        win_w, win_h,
+        SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
     if (!g_win) {
         fprintf(stderr, "window: %s\n", SDL_GetError());
         return 1;
     }
+    SDL_SetWindowMinimumSize(
+        g_win,
+        static_cast<int>(SKIN_W * MIN_WINDOW_SCALE),
+        static_cast<int>(SKIN_H * MIN_WINDOW_SCALE));
     g_ren = SDL_CreateRenderer(g_win, -1,
         SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
     if (!g_ren)
@@ -403,6 +435,7 @@ int main(int argc, char *argv[])
         return 1;
     }
     SDL_RenderSetLogicalSize(g_ren, SKIN_W, SKIN_H);
+    SDL_StartTextInput();
 
     // On Retina, renderer output is 2x the window size
     int render_w = win_w, render_h = win_h;
@@ -434,7 +467,7 @@ int main(int argc, char *argv[])
                            LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_color_format(disp, LV_COLOR_FORMAT_RGB565);
 
-#if !defined(_WIN32) && !defined(__APPLE__)
+#if !defined(_WIN32)
     emu_init_cp0_runtime();
     g_kbd_handler = lv_sdl_keyboard_handler;
 #endif
@@ -453,6 +486,9 @@ int main(int argc, char *argv[])
 
     auto kbd_create = (sdl_kbd_create_fn)emu_dlsym(app, "lv_sdl_keyboard_create");
     g_kbd_handler = (sdl_kbd_handler_fn)emu_dlsym(app, "lv_sdl_keyboard_handler");
+    g_keyboard_filter =
+        (keyboard_filter_fn)emu_dlsym(app, "ui_screensaver_filter_key");
+    cp0_sdl_keyboard_set_filter(g_keyboard_filter);
     if (!g_kbd_handler)
         g_kbd_handler = (sdl_kbd_handler_fn)emu_dlsym(RTLD_DEFAULT, "lv_sdl_keyboard_handler");
 
@@ -466,6 +502,8 @@ int main(int argc, char *argv[])
         lv_indev_set_type(kb, LV_INDEV_TYPE_KEYPAD);
         printf("[EMU] Built-in keyboard driver\n");
     }
+    if (g_keyboard_filter)
+        printf("[EMU] App input filter loaded\n");
 
     ui_init_fn app_init = (ui_init_fn)emu_dlsym(app, "ui_init");
     if (!app_init) { fprintf(stderr, "[EMU] ui_init missing\n"); return 1; }
@@ -479,14 +517,41 @@ int main(int argc, char *argv[])
     unsigned frame_count = 0;
     bool test_reset_done = false;
     bool test_navigate_done = false;
+    bool test_click_queued = false;
+    bool test_click_done = false;
+    bool test_failed = false;
+    static constexpr uint32_t TEST_MOUSE_ID = 0x43503054;
     while (true) {
         SDL_Event ev;
         while (SDL_PollEvent(&ev)) {
             if (ev.type == SDL_QUIT) goto done;
 
             if (ev.type == SDL_MOUSEBUTTONDOWN) {
+                if (g_keyboard_filter) {
+                    struct key_item pointer_activity = {};
+                    pointer_activity.key_state = KBD_KEY_RELEASED;
+                    const int consumed = g_keyboard_filter(&pointer_activity);
+                    if (debug_input)
+                        printf("[EMU] Pointer activity filter=%d raw=(%d,%d)\n",
+                               consumed, ev.button.x, ev.button.y);
+                    if (consumed)
+                        continue;
+                }
                 int r, c;
                 int side = hit_side_key(ev.button.x, ev.button.y);
+                if (ev.button.which == TEST_MOUSE_ID) {
+                    test_click_done = side == SIDE_NEXT;
+                    test_failed = !test_click_done;
+                    printf("[EMU] TEST click %s raw=(%d,%d) side=%d\n",
+                           test_click_done ? "hit NEXT" : "missed NEXT",
+                           ev.button.x, ev.button.y, side);
+                }
+                if (debug_input) {
+                    int skin_x = 0, skin_y = 0;
+                    mouse_to_skin(ev.button.x, ev.button.y, &skin_x, &skin_y);
+                    printf("[EMU] Mouse down raw=(%d,%d) skin=(%d,%d) side=%d\n",
+                           ev.button.x, ev.button.y, skin_x, skin_y, side);
+                }
                 if (side == SIDE_POWER) {
                     g_side_pr = side;
                     const SDL_MessageBoxButtonData btns[] = {
@@ -542,6 +607,10 @@ int main(int argc, char *argv[])
             }
             else if (ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP ||
                      ev.type == SDL_TEXTINPUT) {
+                if (debug_input)
+                    printf("[EMU] SDL input event type=%u sym=%d\n",
+                           ev.type,
+                           ev.type == SDL_TEXTINPUT ? 0 : ev.key.keysym.sym);
                 if (g_kbd_handler) g_kbd_handler(&ev);
             }
         }
@@ -555,6 +624,29 @@ int main(int argc, char *argv[])
             inject_sdl_key(SDLK_RIGHT, true);
             inject_sdl_key(SDLK_RIGHT, false);
             test_navigate_done = true;
+        }
+        if (!test_click_queued && test_click_frame && frame_count >= test_click_frame) {
+            SDL_Event down = {};
+            down.type = SDL_MOUSEBUTTONDOWN;
+            down.button.windowID = SDL_GetWindowID(g_win);
+            down.button.which = TEST_MOUSE_ID;
+            down.button.button = SDL_BUTTON_LEFT;
+            down.button.state = SDL_PRESSED;
+            const float logical_x =
+                static_cast<float>(g_side_keys[SIDE_NEXT].x + g_side_keys[SIDE_NEXT].w / 2);
+            const float logical_y =
+                static_cast<float>(g_side_keys[SIDE_NEXT].y + g_side_keys[SIDE_NEXT].h / 2);
+            SDL_RenderLogicalToWindow(
+                g_ren, logical_x, logical_y, &down.button.x, &down.button.y);
+            SDL_Event up = down;
+            up.type = SDL_MOUSEBUTTONUP;
+            up.button.state = SDL_RELEASED;
+            if (SDL_PushEvent(&down) < 0 || SDL_PushEvent(&up) < 0) {
+                fprintf(stderr, "[EMU] TEST failed to queue mouse click: %s\n", SDL_GetError());
+                test_failed = true;
+            }
+            printf("[EMU] TEST click queued at frame %u\n", frame_count);
+            test_click_queued = true;
         }
         if (!test_reset_done && test_reset_frame && frame_count >= test_reset_frame) {
             printf("[EMU] TEST reset at frame %u\n", frame_count);
@@ -581,6 +673,10 @@ int main(int argc, char *argv[])
     }
 
 done:
+    if (test_click_frame && !test_click_done) {
+        fprintf(stderr, "[EMU] TEST click did not reach NEXT\n");
+        test_failed = true;
+    }
 #ifdef EMU_STATIC_APP
     ui_deinit();
     printf("[EMU] App deinitialized\n");
@@ -592,13 +688,15 @@ done:
 #endif
     free(g_lcd_buf);
 #ifndef EMU_STATIC_APP
+    cp0_sdl_keyboard_set_filter(nullptr);
     emu_dlclose(app);
 #endif
+    SDL_StopTextInput();
     SDL_DestroyTexture(g_lcd_tex);
     SDL_DestroyTexture(g_skin_tex);
     SDL_DestroyRenderer(g_ren);
     SDL_DestroyWindow(g_win);
     IMG_Quit();
     SDL_Quit();
-    return 0;
+    return test_failed ? 1 : 0;
 }
