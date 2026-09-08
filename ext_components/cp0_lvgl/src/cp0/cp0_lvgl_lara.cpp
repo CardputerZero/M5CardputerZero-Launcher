@@ -18,6 +18,7 @@
 #include <cstring>
 #include <ctime>
 #include <poll.h>
+#include <string>
 #include <unistd.h>
 
 #ifndef SLOGI
@@ -55,6 +56,71 @@ protected:
 #endif
 
 namespace cp0_lora_backend {
+
+struct ExtPowerState {
+    int ext5v = 0;
+    int grove5v = 0;
+    bool ext5v_changed = false;
+    bool grove5v_changed = false;
+    bool active = false;
+};
+
+static ExtPowerState g_ext_power;
+
+static bool read_ext_power(const char *name, int *value)
+{
+    if (!name || !value) return false;
+    bool valid = false;
+    cp0_signal_settings_api({"GpioGet", name}, [&](int code, std::string response) {
+        if (code == 0 && (response == "0" || response == "1")) {
+            *value = response == "1" ? 1 : 0;
+            valid = true;
+        }
+    });
+    return valid;
+}
+
+static bool write_ext_power(const char *name, int value)
+{
+    if (!name) return false;
+    int result = -1;
+    cp0_signal_settings_api({"GpioSet", name, value ? "1" : "0"},
+                             [&](int code, std::string) { result = code; });
+    return result == 0;
+}
+
+static bool enable_ext_power()
+{
+    if (g_ext_power.active) return true;
+    if (!read_ext_power("EXT5V", &g_ext_power.ext5v) ||
+        !read_ext_power("GROVE5V", &g_ext_power.grove5v)) {
+        g_ext_power = {};
+        return false;
+    }
+
+    if (!g_ext_power.ext5v && !write_ext_power("EXT5V", 1)) {
+        g_ext_power = {};
+        return false;
+    }
+    g_ext_power.ext5v_changed = g_ext_power.ext5v == 0;
+    if (!g_ext_power.grove5v && !write_ext_power("GROVE5V", 1)) {
+        if (g_ext_power.ext5v_changed) (void)write_ext_power("EXT5V", g_ext_power.ext5v);
+        g_ext_power = {};
+        return false;
+    }
+    g_ext_power.grove5v_changed = g_ext_power.grove5v == 0;
+    g_ext_power.active = true;
+    return true;
+}
+
+static void restore_ext_power()
+{
+    if (!g_ext_power.active) return;
+    if (g_ext_power.grove5v_changed) (void)write_ext_power("GROVE5V", g_ext_power.grove5v);
+    if (g_ext_power.ext5v_changed) (void)write_ext_power("EXT5V", g_ext_power.ext5v);
+    g_ext_power = {};
+}
+
 // ============================================================
 //  Hardware configuration and state
 // ============================================================
@@ -168,6 +234,7 @@ static void lora_release_hardware()
     g_lora.spi.close();
     g_lora.close_gpio_lines();
     cp0_lora_hat_power_controller::shutdown();
+    restore_ext_power();
     g_lora.reset_runtime_flags();
 }
 
@@ -748,6 +815,13 @@ static void lora_init_hardware(void)
     // A failed probe can leave SPI/GPIO handles allocated. Release all of
     // them before retrying so entering the page again is deterministic.
     lora_release_hardware();
+
+    lora_set_diag_step("ext_power_enable", 0, "enable EXT5V and GROVE5V outputs");
+    if (!enable_ext_power()) {
+        lora_set_diag_step("ext_power_enable", 1, "failed to enable EXT5V/GROVE5V outputs");
+        lora_release_hardware();
+        return;
+    }
 
     lora_set_diag_step("i2c_scan", 0, "scan 0x43 before LoRa init");
     if (cp0_lora_pi4io_controller::scan_and_initialize()) {

@@ -206,6 +206,7 @@ UILoraPage::~UILoraPage()
     if (initialization_state_) initialization_state_->stop_requested.store(true, std::memory_order_release);
     cp0_lora_request_stop();
     if (init_thread_.joinable()) init_thread_.join();
+    (void)lora_app_detail::call_lora_api({"Shutdown"});
     detach_delete_callbacks();
 }
 
