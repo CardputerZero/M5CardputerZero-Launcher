@@ -11,7 +11,7 @@
 
 namespace {
 
-constexpr std::array<uint32_t, 5> kFontSizes = {10, 12, 14, 16, 22};
+constexpr std::array<uint32_t, 5> kFontSizes = {12, 12, 14, 16, 22};
 
 bool file_exists(const std::string &path)
 {
@@ -118,7 +118,7 @@ const lv_font_t *WizardFonts::get(std::size_t index,
     return built_in;
 }
 
-const lv_font_t *WizardFonts::xs() const { return get(0, &lv_font_montserrat_10); }
+const lv_font_t *WizardFonts::xs() const { return get(0, &lv_font_montserrat_12); }
 const lv_font_t *WizardFonts::sm() const { return get(1, &lv_font_montserrat_12); }
 const lv_font_t *WizardFonts::md() const { return get(2, &lv_font_montserrat_14); }
 const lv_font_t *WizardFonts::lg() const { return get(3, &lv_font_montserrat_16); }
